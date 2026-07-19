@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "global": {
+    "countMultiplier": 1.0,
+    "scaleSpecialZombies": false,
+    "seed": 1463899717
+  },
+  "levels": {
+    "1-1": {
+      "countMultiplier": 1.0,
+      "waves": {
+        "1": 2.0
+      }
+    },
+    "1-2": {
+      "countMultiplier": 3.0,
+      "waves": {
+        "1": 2.0
+      }
+    }
+  }
+}
