@@ -1,0 +1,47 @@
+# This checkout also contains a locally installed copy of Plants vs. Zombies.
+# Git is intentionally an allow-list so proprietary game files can never be
+# staged by a broad `git add -A`.
+/*
+
+# Project files allowed at repository root.
+!/.gitignore
+!/README.md
+!/CHANGELOG.md
+!/CONTRIBUTING.md
+!/CONTRIBUTORS.md
+!/COPYRIGHT_NOTICE.md
+!/PVZ传统改版技术路线.md
+
+# GitHub project metadata and CI.
+!/.github/
+!/.github/**
+
+# Mod source, patcher, tests and module documentation.
+!/modding/
+!/modding/**
+/modding/build/
+/modding/build-*/
+/modding/dist/
+/modding/.vs/
+
+# Runtime configuration examples only. Logs, saves and generated data stay local.
+!/pvzmod/
+/pvzmod/*
+!/pvzmod/config/
+!/pvzmod/config/**
+
+# Editor and compiler debris that may appear inside allowed trees.
+**/.vs/
+**/CMakeFiles/
+**/CMakeCache.txt
+**/*.user
+**/*.suo
+**/*.obj
+**/*.pdb
+**/*.ilk
+**/*.lib
+**/*.exp
+**/*.dll
+**/*.exe
+**/*.zip
+**/*.7z

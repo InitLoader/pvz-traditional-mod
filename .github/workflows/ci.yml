@@ -1,0 +1,22 @@
+name: Win32 CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure Win32
+        run: cmake -S modding -B build-ci -A Win32
+
+      - name: Build Release
+        run: cmake --build build-ci --config Release
+
+      - name: Run tests
+        run: ctest --test-dir build-ci -C Release --output-on-failure
