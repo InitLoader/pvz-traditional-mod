@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "seed": 1511505931,
+
+  // 原版 1.0.0.1051 的全部有效防具/额外生命池。
+  // 数值保持下列默认值时 DLL 不写内存，完全沿用游戏初始化结果；只修改需要覆盖的那一项即可。
+  // 原版保留 HelmType 5=红眼、6=头带、9=高坚果枚举，但本版本没有独立防具生命赋值，因此不伪造可改数值。
+  "originalArmorHealth": {
+    "trafficCone": 370,      // 僵尸 ID 2，头盔槽，路障默认 370
+    "bucket": 1100,          // 僵尸 ID 4，头盔槽，铁桶默认 1100
+    "newspaper": 150,        // 僵尸 ID 5，盾牌槽，报纸默认 150
+    "screenDoor": 1100,      // 僵尸 ID 6，盾牌槽，铁门默认 1100
+    "footballHelmet": 1400,  // 僵尸 ID 7，头盔槽，橄榄球头盔默认 1400
+    "bobsled": 300,          // 僵尸 ID 13，头盔槽，雪橇车防护默认 300
+    "balloon": 20,           // 僵尸 ID 16，飞行生命池，气球默认 20
+    "diggerHelmet": 100,     // 僵尸 ID 17，头盔槽，矿工帽默认 100
+    "ladder": 500,           // 僵尸 ID 21，盾牌槽，梯子默认 500
+    "wallnutHead": 1100,     // 僵尸 ID 27，头盔槽，坚果头默认 1100
+    "tallnutHead": 2200      // 僵尸 ID 31，头盔槽，高坚果头默认 2200
+  },
+
+  // Mod 防具 ID 与原版内部枚举分开。tier 是改版进阶等级，不等于对象内的槽位编号。
+  // 1051 版全部 11 类原版防护均有视觉适配器；未启用的示例在 armorRolls 中保持 chance=0。
+  "armorDefinitions": {
+    "1001": {
+      "name": "一级铁桶防具",
+      "tier": 1,
+      "visual": "bucket",
+      "health": 1100 // 原版铁桶防具生命 1100
+    },
+    "1002": {
+      "name": "一级路障防具",
+      "tier": 1,
+      "visual": "cone",
+      "health": 370 // 原版路障防具生命 370
+    },
+    "1003": {
+      "name": "二级橄榄球头盔",
+      "tier": 2,
+      "visual": "footballHelmet",
+      "health": 1400 // 原版橄榄球头盔生命 1400
+    },
+    "1004": {
+      "name": "一级矿工头盔",
+      "tier": 1,
+      "visual": "diggerHelmet",
+      "health": 100 // 原版矿工头盔生命 100
+    },
+    "1005": {
+      "name": "一级雪橇防护",
+      "tier": 1,
+      "visual": "bobsled",
+      "health": 300 // 原版雪橇防护生命 300
+    },
+    "2001": {
+      "name": "二级铁门防具",
+      "tier": 2,
+      "visual": "door",
+      "health": 1100 // 原版铁门防具生命 1100
+    },
+     "3001": {
+      "name": "一级坚果头",
+      "tier": 1,
+      "visual": "wallnutHead",
+      "health": 1100 // 原版坚果头防具生命 1100
+    },
+    "3002": {
+      "name": "二级高坚果头",
+      "tier": 2,
+      "visual": "tallnutHead",
+      "health": 2200 // 原版高坚果头防具生命 2200
+    },
+      "4001": {
+      "name": "二级梯子",
+      "tier": 2,
+      "visual": "ladder",
+      "health": 1100 // 你的覆盖值；原版梯子防具生命 500
+    },
+      "5001": {
+      "name": "二级报纸",
+      "tier": 2,
+      "visual": "newspaper",
+      "health": 1100 // 你的覆盖值；原版报纸防具生命 150
+    },
+    "6001": {
+      "name": "一级气球防护",
+      "tier": 1,
+      "visual": "balloon",
+      "health": 20 // 原版气球生命 20
+    }
+  },
+
+  // 稀疏覆盖：这里只有僵尸 ID 0（普通僵尸），其他僵尸全部保持原版。
+  "zombies": {
+    "0": {
+      "bodyHealth": 540,  // 原版普通僵尸本体 270
+      "attackDamage": 8,  // 原版每次有效啃食 4
+      "armorRolls": [
+        { "armorId": 1001, "chance": 0 }, // 0=不出现，100=必出现
+        { "armorId": 1002, "chance": 0 },
+        { "armorId": 1003, "chance": 0 },
+        { "armorId": 1004, "chance": 0 },
+        { "armorId": 1005, "chance": 0 },
+        { "armorId": 2001, "chance": 0 },
+        { "armorId": 4001, "chance": 0 },
+        { "armorId": 5001, "chance": 0 },
+        { "armorId": 3001, "chance": 0 },
+        { "armorId": 3002, "chance": 0 },
+        { "armorId": 6001, "chance": 0 }
+      ]
+    }
+  }
+}

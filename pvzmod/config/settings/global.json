@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "economy": {
+    "sunPickupValues": {
+      "normal": 50,
+      "small": 25,
+      "large": 100
+    }
+  }
+}

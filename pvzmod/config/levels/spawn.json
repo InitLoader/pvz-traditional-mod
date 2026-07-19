@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "levels": {
+    "1-1": {
+      "enabled": true,
+      "seed": 1101,
+      "preserveOriginalSpecialZombies": true,
+      "allowSpecialZombieIds": false,
+      "zombies": [
+        {
+          "id": 0,
+          "weight": 10
+        },
+        {
+          "id": 2,
+          "weight": 70,
+          "minimumCount": 1
+        },
+        {
+          "id": 3,
+          "weight": 50,
+          "minimumCount": 1
+        }
+      ]
+    },
+    "1-2": {
+      "enabled": false,
+      "seed": 1101,
+      "preserveOriginalSpecialZombies": true,
+      "allowSpecialZombieIds": false,
+      "zombies": [
+        {
+          "id": 4,
+          "weight": 40
+        },
+        {
+          "id": 2,
+          "weight": 50,
+          "minimumCount": 1
+        },
+        {
+          "id": 3,
+          "weight": 40,
+          "minimumCount": 1
+        }
+      ]
+    }
+  }
+}
