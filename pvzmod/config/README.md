@@ -18,7 +18,7 @@
 - 图片只能放在游戏目录下的 `pvzmod/images/`，禁止绝对路径、UNC 路径和 `..`；当前接受 PNG、JPG/JPEG、BMP、GIF。
 - `elites/zombies.jsonc` 管理精英数字 `runtimeId`、字符串 ID、适用僵尸、生成概率、优先级、视觉和技能。未列出的僵尸继续执行原版行为。
 - 默认示例让普通僵尸 ID `0` 有 20% 概率成为 `RAGE`。`BERSERK` 在生成时应用生命、水平速度和啃食伤害倍率；红色 tint 不依赖外部图片。
-- `overlayTextureId: "KILL"` 会查询贴图注册表。图片不存在、解码失败或 ID 未注册时只跳过覆盖贴图，不取消精英属性和技能。
+- `visual.replacements[]` 会查询贴图注册表并真正替换 Reanimation 图片轨道。`scope` 可为 `body` 或 `special`；普通僵尸优先使用 `target` 语义部位，高级配置可直接写 `track`。图片不存在、解码失败、附加动画不存在或轨道不匹配时只跳过该项，不取消精英属性和技能。
 - 两份配置都在 DLL 启动时读取；更改后需完全退出并重启游戏。图片首次使用时延迟加载，并在本次进程内缓存，不支持热替换。
 
 示例：
@@ -34,6 +34,21 @@
 ```
 
 图片应放在 `pvzmod/images/zi/kill.png`。仓库不附带这张素材；未放入时日志中的一次缺失警告属于安全降级。
+
+精英视觉示例：
+
+```jsonc
+"visual": {
+  "tint": { "red": 255, "green": 48, "blue": 48, "alpha": 255 },
+  "replacements": [
+    { "scope": "body", "target": "head", "textureId": "KILL" },
+    // target 与 track 二选一；下面是高级原版轨道写法。
+    // { "scope": "body", "track": "Zombie_tie", "textureId": "RAGE_TIE" }
+  ]
+}
+```
+
+`target: "head"` 对应普通僵尸主动画的 `anim_head1`，图片会跟随头部轨道；它不是固定坐标贴图。完整语义 target、普通僵尸全部 30 个图片轨道和特殊僵尸轨道见 `modding/ZOMBIE_TEXTURE_TRACKS.md`。
 
 ## 选卡分页与自定义植物（0.8.1）
 

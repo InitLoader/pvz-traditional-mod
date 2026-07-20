@@ -54,7 +54,10 @@ void* ResolveExternalTexture(std::string_view textureId, void* lawnApp);
 
 - `BERSERK` 生成技能增加生命、移动速度和啃食伤害。
 - `visual.tint` 通过原版 `Graphics::SetColor` 与 `SetColorizeImages` 把整只僵尸染红，绘制后恢复原 Graphics 状态，不污染其他单位。
-- `visual.overlayTextureId` 可引用 `KILL`，在僵尸坐标基础上按 `offsetX/offsetY` 绘制外部 PNG。图片不存在时仍保留红色精英效果。
+- `visual.replacements[]` 将外部图片写入 Reanimation 轨道的 `mImageOverride`，图片会随对应骨骼部位移动、旋转和缩放，不再使用僵尸坐标上的静态叠加层。
+- 每个替换项包含 `scope`、`textureId`，并在 `target` 与 `track` 中二选一。`scope: "body"` 使用 `mBodyReanimID`；`scope: "special"` 使用 `mSpecialHeadReanimID` 所指向的附加动画。
+- `target` 是普通僵尸族的稳定语义部位，例如 `head`、`jaw`、`body`；`track` 是高级原版轨道名，例如 `Zombie_tie`。轨道不存在时只跳过该项并记录一次警告。
+- 图片不存在时仍保留红色精英效果。完整部位与特殊僵尸轨道目录见 `ZOMBIE_TEXTURE_TRACKS.md`。
 - 删除僵尸对象时必须清理侧挂状态；再次使用同一地址的新僵尸必须重新抽取。
 
 ## 4. 技能注册接口
