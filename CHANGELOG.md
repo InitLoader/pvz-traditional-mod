@@ -4,6 +4,19 @@
 
 ## Unreleased
 
+### Added in 0.10.0-dev
+
+- 增加 `resources/animations.jsonc` 与 `pvzmod/animations/` 分类外部动作资源目录。
+- 增加 Raw `.reanim` 安全解析器，支持 FPS、轨道和 `x/y/kx/ky/sx/sy/f/a/i/font/text` Transform。
+- 增加动作循环、速率、混合帧、帧事件、定位轨道和外部贴图 ID 的启动时交叉校验。
+- 增加只读外部动画注册表和制作示例；当前阶段不安装 Reanimation ABI 注入 Hook。
+- 增加外部动作制作、独立植物/僵尸、存档和后续运行时注入技术文档。
+
+### Safety in 0.10.0-dev
+
+- 动画路径被限制在 `pvzmod/animations/`，拒绝目录穿越、DTD/实体、非有限浮点、重复字段、未知字段、轨道帧数不一致和超限文件。
+- 单个动画校验失败时只跳过该动画并写日志，不会把半初始化 Definition 交给原版游戏。
+
 ### Added in 0.9.0
 
 - 增加精英僵尸数字编号、`Zombie* + instanceId` 侧挂状态和可注册技能事件接口。

@@ -1,5 +1,11 @@
 # PvZ Mod 运行时模块架构
 
+## 0.10.0 外部动作资源边界
+
+`external_animation_config` 只解析 `animations.jsonc` 元数据，`raw_reanim` 只负责受限 Raw XML、逐帧字段继承和结构校验，`external_animation_runtime` 只做启动时路径解析、贴图 ID/动作/事件/定位轨道交叉校验和只读注册。三者不得并回 `pvz_hook.cpp`；启动器仍只按顺序初始化贴图注册表和动画注册表。
+
+当前阶段故意不安装 `ReanimationInitializeType` Detour，也不扩大原版 `ReanimationType` 数组。后续注入必须新增 `custom_reanim_definition`、`animation_instance_hook`、`animation_controller` 和 `animation_event_bus`，并先核对 1.0.0.1051 的 Definition/Track/Transform ABI。完整格式、制作流程和真正新增实体的侧挂模型见 `EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`。
+
 ## 0.9.0 精英与通用外部贴图边界
 
 `external_texture_config/runtime` 建立通用字符串贴图 ID 注册表，只负责路径安全、原版 `SexyAppBase::GetImage` 加载和进程内缓存。精英、植物和 UI 只能按 ID 查询 `Image*`，不得各自复制图片解析器。
@@ -64,6 +70,9 @@ elite_skill_registry.cpp     # 技能 ID 注册与事件分发
 elite_zombie_hook.cpp        # 精英侧挂状态、红色绘制、贴图和清理
 external_texture_config.cpp  # 通用外部贴图注册表解析
 external_texture_runtime.cpp # 原版图片加载与 Image* 缓存
+external_animation_config.* # 外部动画元数据、动作和事件配置
+raw_reanim.*                # Raw .reanim 安全解析与帧继承
+external_animation_runtime.* # 资源交叉校验和只读动画注册表
 
 *_config.h / *_config.cpp    # 纯配置解析和校验，可由单元测试直接调用
 wave_generator.*             # 不访问游戏内存的纯生成算法

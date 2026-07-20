@@ -35,6 +35,15 @@
 
 图片应放在 `pvzmod/images/zi/kill.png`。仓库不附带这张素材；未放入时日志中的一次缺失警告属于安全降级。
 
+## 外部动作资源（0.10.0-dev）
+
+- `resources/animations.jsonc` 注册外部动画 ID、Raw `.reanim` 路径、图片符号映射、动作、事件和定位轨道。
+- 动画文件必须位于 `pvzmod/animations/`，图片继续位于 `pvzmod/images/`；配置不能引用绝对路径、盘符、UNC 或 `..`。
+- `images` 的值必须是 `resources/textures.jsonc` 已注册的贴图 ID。
+- `actions` 至少包含一个动作；每个动作通过 `track` 指向 Raw `.reanim` 的 `anim_*` 轨道。
+- 事件使用相对动作帧 `frame` 或 `normalizedTime`，二者必须且只能填写一个。
+- 当前阶段只完成解析、校验和注册，尚未注入原版 Reanimation 对象；完整制作与实施边界见 `modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`。
+
 精英视觉示例：
 
 ```jsonc
@@ -78,6 +87,7 @@ pvzmod/
 │  └─ schemas/      # JSON Schema 和配置版本定义
 ├─ saves/           # Mod 独立存档，不放配置模板
 ├─ images/          # 用户提供的外部图片；按用途继续分子目录
+├─ animations/      # Raw .reanim 外部动作；按植物、僵尸和 UI 分类
 └─ logs/            # 运行日志
 ```
 
@@ -95,6 +105,7 @@ pvzmod/
 - `levels/wave_multipliers.json`：全局、关卡和单波的僵尸数量倍率。
 - `settings/global.json`：全局经济和通用规则；当前包含普通、小型、大型阳光拾取价值。
 - `resources/textures.jsonc`：通用外部贴图 ID、受限相对路径和原版图片加载缓存。
+- `resources/animations.jsonc`：外部 Raw Reanimation、动作、事件、定位轨道和贴图符号映射。
 - `elites/zombies.jsonc`：精英编号、概率、视觉、贴图引用和技能绑定。
 - `plants/attacks.jsonc`：植物攻击伤害稀疏覆盖；文件内已列出所有数值攻击的原版默认值。
 - `zombies/attributes.jsonc`：完整原版防具生命目录、按僵尸 ID 稀疏覆盖本体生命/啃食伤害，以及带等级和概率的额外防具。

@@ -1,5 +1,11 @@
 # Plants vs. Zombies 1.0.0.1051 传统改版技术路线
 
+## 0.10.0-dev 外部动作资源与独立实体基础
+
+新增 `pvzmod/config/resources/animations.jsonc` 和 `pvzmod/animations/` 分类目录。第一阶段已实现 Raw `.reanim` 的受限解析、动作轨道、循环、播放速度、混合帧、帧事件、定位轨道和外部贴图 ID 交叉校验，并在 DLL 启动时建立只读注册表；尚未安装 Reanimation Definition 注入 Hook，因此当前不会替换游戏内动画。
+
+真正新增植物和僵尸采用“原版 Plant/Zombie 对象池载体 + DLL 侧独立逻辑 ID、外部 Definition、行为控制器和 Mod 存档”的路线。载体只用于保持 Board 遍历、碰撞和回收安全，不再提供名称、属性、图片、动作或攻击逻辑；暂不扩大原版固定 SeedType、ZombieType 和 ReanimationType 数组。完整制作流程、JSONC 契约、安全限制和后续 ABI 注入方案见 `modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`。
+
 ## 0.9.0 设计契约：精英僵尸、技能接口与外部贴图
 
 精英僵尸使用数字 `runtimeId` 和字符串 `id` 双重标识，生成后以 `Zombie* + instanceId` 保存在 DLL 侧挂表；寄存器只负责 Hook 边界的临时传递，不能长期保存精英编号。首个 `RAGE` 规则让普通僵尸按确定性概率成为红色狂暴怪，并通过 `BERSERK` 技能增加生命、速度和攻击。

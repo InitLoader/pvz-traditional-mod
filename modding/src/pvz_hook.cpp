@@ -3,6 +3,7 @@
 #include "hook_modules.h"
 #include "hook_utils.h"
 #include "logger.h"
+#include "external_animation_runtime.h"
 #include "external_texture_runtime.h"
 
 #include <MinHook.h>
@@ -20,6 +21,10 @@ bool InstallPvZHooks() {
     bool success = true;
     if (!InitializeExternalTextureRuntime(moduleBase)) {
         LogError("External texture runtime failed to initialize.");
+        success = false;
+    }
+    if (!InitializeExternalAnimationRuntime(moduleBase)) {
+        LogError("One or more external animations failed validation; animation injection remains inactive.");
         success = false;
     }
     if (!InstallEliteZombieHooks(moduleBase)) {
@@ -56,14 +61,14 @@ bool InstallPvZHooks() {
     }
 
     if (success) {
-        LogInfo("Installed wave, sun, plant attack, zombie, elite, external texture, paged chooser, and custom plant modules for PvZ 1.0.0.1051.");
+        LogInfo("Installed wave, sun, plant attack, zombie, elite, external texture/animation registry, paged chooser, and custom plant modules for PvZ 1.0.0.1051.");
     }
     return success;
 }
 
 DWORD WINAPI InitializeModThread(void* moduleParameter) {
     InitializeLogger(static_cast<HMODULE>(moduleParameter));
-    LogInfo("pvzmod.dll loaded; mod runtime version 0.9.0.");
+    LogInfo("pvzmod.dll loaded; mod runtime version 0.10.0-dev.");
     if (!InstallPvZHooks()) {
         LogError("One or more isolated hook modules are inactive; see earlier log entries.");
     }

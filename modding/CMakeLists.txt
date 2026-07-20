@@ -32,14 +32,24 @@ FetchContent_Declare(
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 
-FetchContent_MakeAvailable(nlohmann_json minhook)
+set(tinyxml2_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(tinyxml2_INSTALL OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    tinyxml2
+    URL https://github.com/leethomason/tinyxml2/archive/refs/tags/10.0.0.tar.gz
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+
+FetchContent_MakeAvailable(nlohmann_json minhook tinyxml2)
 
 add_library(pvz_wave_core STATIC
     src/custom_plant_config.cpp
     src/elite_zombie_config.cpp
+    src/external_animation_config.cpp
     src/external_texture_config.cpp
     src/global_config.cpp
     src/plant_attack_config.cpp
+    src/raw_reanim.cpp
     src/seed_ui_config.cpp
     src/spawn_config.cpp
     src/wave_generator.cpp
@@ -49,7 +59,7 @@ add_library(pvz_wave_core STATIC
     src/zombie_config.cpp
 )
 target_include_directories(pvz_wave_core PUBLIC src)
-target_link_libraries(pvz_wave_core PUBLIC nlohmann_json::nlohmann_json)
+target_link_libraries(pvz_wave_core PUBLIC nlohmann_json::nlohmann_json tinyxml2::tinyxml2)
 target_compile_definitions(pvz_wave_core PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
 
 add_library(pvzmod SHARED
@@ -58,6 +68,7 @@ add_library(pvzmod SHARED
     src/dllmain.cpp
     src/elite_skill_registry.cpp
     src/elite_zombie_hook.cpp
+    src/external_animation_runtime.cpp
     src/external_texture_runtime.cpp
     src/game_tooltip_text.cpp
     src/hook_utils.cpp
@@ -89,7 +100,11 @@ add_executable(PvZWaveConfigTests
     tests/wave_config_tests.cpp
 )
 target_link_libraries(PvZWaveConfigTests PRIVATE pvz_wave_core)
-target_compile_definitions(PvZWaveConfigTests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_compile_definitions(PvZWaveConfigTests PRIVATE
+    NOMINMAX
+    WIN32_LEAN_AND_MEAN
+    PVZMOD_REPOSITORY_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
 
 enable_testing()
 add_test(NAME wave_config_tests COMMAND PvZWaveConfigTests)

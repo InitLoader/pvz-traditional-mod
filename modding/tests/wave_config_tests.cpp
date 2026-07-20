@@ -1,8 +1,10 @@
 #include "global_config.h"
 #include "custom_plant_config.h"
 #include "elite_zombie_config.h"
+#include "external_animation_config.h"
 #include "external_texture_config.h"
 #include "plant_attack_config.h"
+#include "raw_reanim.h"
 #include "seed_ui_config.h"
 #include "spawn_config.h"
 #include "wave_generator.h"
@@ -544,6 +546,162 @@ void TestExternalTextureConfigRejectsTraversal() {
     Expect(!loaded.Ok(), "external texture paths containing traversal must be rejected");
 }
 
+void TestExternalAnimationConfigAndRawReanim() {
+    const std::filesystem::path configPath =
+        std::filesystem::temp_directory_path() / "pvzmod_external_animations_test.jsonc";
+    const std::filesystem::path reanimPath =
+        std::filesystem::temp_directory_path() / "pvzmod_external_animation_test.reanim";
+    {
+        std::ofstream output(configPath, std::ios::binary | std::ios::trunc);
+        output << R"({
+          "schemaVersion":1,
+          "animations":[{
+            "id":"PLANT_DEMO_01",
+            "path":"pvzmod/animations/plants/demo/demo.reanim",
+            "carrierReanimation":"REANIM_PEASHOOTER",
+            "images":{"IMAGE_REANIM_DEMO_BODY":"KILL"},
+            "actions":{
+              "idle":{"track":"anim_idle","loop":"loop","rate":1.25},
+              "attack":{"track":"anim_attack","loop":"once_hold","blendFrames":3,
+                "events":[{"id":"FIRE_PROJECTILE","frame":1}]}
+            },
+            "locators":{"projectile":"locator_mouth"}
+          }]
+        })";
+    }
+    {
+        std::ofstream output(reanimPath, std::ios::binary | std::ios::trunc);
+        output << R"(<doScale>1</doScale>
+<fps>12</fps>
+<track><name>anim_idle</name>
+  <t><f>0</f></t><t></t><t><f>-1</f></t><t></t>
+</track>
+<track><name>anim_attack</name>
+  <t><f>-1</f></t><t><f>0</f></t><t></t><t></t>
+</track>
+<track><name>body</name>
+  <t><i>IMAGE_REANIM_DEMO_BODY</i><x>2.5</x><a>0.75</a></t><t></t><t></t><t></t>
+</track>
+<track><name>locator_mouth</name>
+  <t><x>8</x><y>-3</y><f>0</f></t><t></t><t></t><t></t>
+</track>)";
+    }
+
+    const auto config = pvzmod::LoadExternalAnimationConfig(configPath);
+    const auto raw = pvzmod::LoadRawReanim(reanimPath);
+    std::error_code error;
+    std::filesystem::remove(configPath, error);
+    std::filesystem::remove(reanimPath, error);
+
+    Expect(config.Ok() && config.config->animations.size() == 1,
+           "external animation metadata should parse");
+    if (config.Ok()) {
+        const auto* animation = config.config->Find("PLANT_DEMO_01");
+        Expect(animation != nullptr && animation->images.at("IMAGE_REANIM_DEMO_BODY") == "KILL",
+               "animation image symbols should retain external texture ids");
+        const auto* attack = animation == nullptr ? nullptr : animation->FindAction("attack");
+        Expect(attack != nullptr && attack->loop == pvzmod::ExternalAnimationLoopMode::OnceHold &&
+                   attack->blendFrames == 3 && attack->events.size() == 1,
+               "animation action playback and event metadata should parse");
+    }
+    Expect(raw.Ok() && raw.definition->FrameCount() == 4,
+           "Raw reanimation tracks with equal frame counts should parse");
+    if (raw.Ok()) {
+        const auto* idle = raw.definition->FindTrack("anim_idle");
+        const auto* body = raw.definition->FindTrack("body");
+        const auto range = idle == nullptr ? std::nullopt : idle->VisibleFrameRange();
+        Expect(range.has_value() && range->first == 0 && range->second == 2,
+               "visibility should inherit until a later explicit hidden frame");
+        Expect(body != nullptr && body->transforms[1].image == "IMAGE_REANIM_DEMO_BODY" &&
+                   body->transforms[1].x.has_value() &&
+                   std::abs(*body->transforms[1].x - 2.5) < 0.0001,
+               "transform values should inherit from previous Raw reanimation frames");
+    }
+}
+
+void TestExternalAnimationConfigRejectsUnsafeInput() {
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "pvzmod_external_animation_unsafe_test.jsonc";
+    {
+        std::ofstream output(path, std::ios::binary | std::ios::trunc);
+        output << R"({"schemaVersion":1,"animations":[{
+          "id":"BAD","path":"pvzmod/animations/../images/secret.reanim",
+          "carrierReanimation":"REANIM_PEASHOOTER",
+          "actions":{"attack":{"track":"anim_attack","events":[
+            {"id":"BAD_EVENT","frame":1,"normalizedTime":0.5}
+          ]}}
+        }]})";
+    }
+    const auto loaded = pvzmod::LoadExternalAnimationConfig(path);
+    std::error_code error;
+    std::filesystem::remove(path, error);
+    Expect(!loaded.Ok(), "external animation traversal and ambiguous event times must be rejected");
+}
+
+void TestRawReanimRejectsUnsafeOrMalformedInput() {
+    const std::filesystem::path mismatchedPath =
+        std::filesystem::temp_directory_path() / "pvzmod_raw_reanim_mismatch_test.reanim";
+    const std::filesystem::path entityPath =
+        std::filesystem::temp_directory_path() / "pvzmod_raw_reanim_entity_test.reanim";
+    {
+        std::ofstream output(mismatchedPath, std::ios::binary | std::ios::trunc);
+        output << R"(<fps>12</fps>
+<track><name>a</name><t></t><t></t></track>
+<track><name>b</name><t></t></track>)";
+    }
+    {
+        std::ofstream output(entityPath, std::ios::binary | std::ios::trunc);
+        output << R"(<!DOCTYPE x [<!ENTITY bad "boom">]>
+<fps>12</fps><track><name>a</name><t><text>&bad;</text></t></track>)";
+    }
+    const auto mismatched = pvzmod::LoadRawReanim(mismatchedPath);
+    const auto entity = pvzmod::LoadRawReanim(entityPath);
+    std::error_code error;
+    std::filesystem::remove(mismatchedPath, error);
+    std::filesystem::remove(entityPath, error);
+    Expect(!mismatched.Ok(), "Raw reanimation tracks with different frame counts must be rejected");
+    Expect(!entity.Ok(), "Raw reanimation DTD and entity declarations must be rejected");
+}
+
+void TestRepositoryExternalAnimationExample() {
+    const std::filesystem::path root = std::filesystem::path(PVZMOD_REPOSITORY_ROOT).lexically_normal();
+    const auto textures = pvzmod::LoadExternalTextureConfig(
+        root / "pvzmod/config/resources/textures.jsonc");
+    const auto animations = pvzmod::LoadExternalAnimationConfig(
+        root / "pvzmod/config/resources/animations.jsonc");
+    Expect(textures.Ok(), "repository external texture example should parse");
+    Expect(animations.Ok(), "repository external animation example should parse");
+    if (!textures.Ok() || !animations.Ok()) return;
+
+    for (const auto& [animationId, animation] : animations.config->animations) {
+        const auto raw = pvzmod::LoadRawReanim(root / std::filesystem::u8path(animation.path));
+        Expect(raw.Ok(), "repository Raw reanimation example should parse: " + animationId);
+        if (!raw.Ok()) continue;
+        for (const auto& [symbol, textureId] : animation.images) {
+            (void)symbol;
+            Expect(textures.config->Find(textureId) != nullptr,
+                   "repository animation image binding should reference a registered texture");
+        }
+        for (const auto& [actionId, action] : animation.actions) {
+            const auto* track = raw.definition->FindTrack(action.track);
+            Expect(track != nullptr, "repository action should reference an existing track: " + actionId);
+            if (track == nullptr) continue;
+            const auto range = track->VisibleFrameRange();
+            Expect(range.has_value(), "repository action track should have a visible range: " + actionId);
+            if (!range.has_value()) continue;
+            for (const auto& event : action.events) {
+                Expect(!event.frame.has_value() || *event.frame < range->second,
+                       "repository event frame should be relative to and inside its action");
+            }
+        }
+        for (const auto& [logicalName, trackName] : animation.locators) {
+            (void)logicalName;
+            Expect(raw.definition->FindTrack(trackName) != nullptr,
+                   "repository locator should reference an existing Raw track");
+        }
+    }
+}
+
 void TestEliteZombieConfigAndPriority() {
     const std::filesystem::path path =
         std::filesystem::temp_directory_path() / "pvzmod_elite_zombies_test.jsonc";
@@ -619,6 +777,10 @@ int main() {
     TestSeedUiAndCustomPlantConfig();
     TestExternalTextureConfigAndAliases();
     TestExternalTextureConfigRejectsTraversal();
+    TestExternalAnimationConfigAndRawReanim();
+    TestExternalAnimationConfigRejectsUnsafeInput();
+    TestRawReanimRejectsUnsafeOrMalformedInput();
+    TestRepositoryExternalAnimationExample();
     TestEliteZombieConfigAndPriority();
 
     if (g_failures != 0) {

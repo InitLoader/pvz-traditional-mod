@@ -28,6 +28,7 @@
 - `P03` — 关卡配置已能改变出怪和数量，但还不是完整关卡编辑器，不能新建地图网格、背景、关卡流程或胜负条件。
 - `P04` — UI 已完成选卡分页按钮和自定义卡片交互；通用设置页、主菜单入口、图鉴和完整界面改造尚未完成。
 - `T01` — 精英僵尸已完成实例编号与侧挂状态、确定性概率、属性倍率、技能事件、红色视觉标记和外部贴图引用；当前只有 `RAGE/BERSERK` 垂直切片，掉落和更多技能尚未实现。
+- `P05` — 外部动作资源已完成 `animations.jsonc`、Raw `.reanim` 安全解析、动作/事件/定位轨道校验和只读注册表；尚未把自定义 Definition 注入原版 `ReanimationHolder`，因此暂时不会改变游戏内植物或僵尸动画。
 
 ### ⬜ 尚未实现
 
@@ -40,6 +41,7 @@
 - `T08` — 自动打包 Release、安装器和多游戏版本适配。
 
 详细设计和实现依据见 [`PVZ传统改版技术路线.md`](PVZ传统改版技术路线.md)。
+外部动作制作、配置和真正新增实体的分阶段契约见 [`modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`](modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md)。
 
 ## 仓库内容
 
@@ -49,6 +51,7 @@
 - `pvzmod/config`：按关卡、植物、僵尸、UI 和全局设置分类的配置示例。
 - `PVZ传统改版技术路线.md`：逆向结论、模块边界、配置规则与后续路线。
 - `modding/ARCHITECTURE.md`：代码架构和 Hook 接入说明。
+- `modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`：外部 Reanimation 制作、解析、动作事件和独立实体方案。
 
 完整配置说明见 [`modding/README.md`](modding/README.md) 与 [`pvzmod/config/README.md`](pvzmod/config/README.md)。
 

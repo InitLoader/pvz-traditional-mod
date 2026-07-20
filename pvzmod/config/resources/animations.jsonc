@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+
+  // 外部动作定义只放在 pvzmod/animations/。当前版本会完成解析、校验和注册，
+  // 但尚未把外部 Definition 注入原版 ReanimationHolder。
+  "animations": [
+    {
+      "id": "PLANT_DEMO_EXTERNAL",
+      "path": "pvzmod/animations/plants/demo_external/demo_external.reanim",
+
+      // 只用于后续安全进入原版动画对象池，不提供实际图片或动作。
+      "carrierReanimation": "REANIM_PEASHOOTER",
+
+      // Raw .reanim 图片符号 -> resources/textures.jsonc 中的贴图 ID。
+      "images": {
+        "IMAGE_REANIM_PVZMOD_DEMO_BODY": "KILL"
+      },
+
+      "actions": {
+        "idle": {
+          "track": "anim_idle",
+          "loop": "loop",
+          "rate": 12,
+          "blendFrames": 4
+        },
+        "attack": {
+          "track": "anim_attack",
+          "loop": "once_hold",
+          "rate": 18,
+          "blendFrames": 3,
+          "events": [
+            {
+              "id": "FIRE_PROJECTILE",
+              "frame": 6,
+              "oncePerLoop": true
+            }
+          ]
+        }
+      },
+
+      "locators": {
+        "projectile": "locator_mouth"
+      }
+    }
+  ]
+}
