@@ -4,6 +4,16 @@
 
 ## Unreleased
 
+### Added in 0.10.1-dev
+
+- 增加原版 PC `.reanim.compiled` 直接读取：校验 `DEADFED4` 外层、zlib 解压、`B393B4C0` Schema 和 16/12/44 字节缓存结构。
+- 增加 Raw/compiled 自动格式分流，并允许只读引用 `compiled/reanim/*.reanim.compiled` 或加载 `pvzmod/animations/` 下的自制 compiled。
+- 增加 `PvZReanimValidator` 命令行工具和原版 `Blover.reanim.compiled` 配置示例。
+
+### Safety in 0.10.1-dev
+
+- compiled 解码器不使用缓存内旧进程指针，限制压缩/解压大小、轨道、帧、Transform 和字符串数量，并拒绝结构尺寸、Schema、长度或尾随数据不匹配的文件。
+
 ### Added in 0.10.0-dev
 
 - 增加 `resources/animations.jsonc` 与 `pvzmod/animations/` 分类外部动作资源目录。

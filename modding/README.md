@@ -106,7 +106,7 @@ cmake --build H:\pvz\modding\build --config Release
 ctest --test-dir H:\pvz\modding\build -C Release --output-on-failure
 ```
 
-构建会下载固定版本的 nlohmann/json 3.11.3、MinHook 1.3.4 和 tinyxml2 10.0.0。
+构建会下载固定版本的 nlohmann/json 3.11.3、MinHook 1.3.4、tinyxml2 10.0.0 和 zlib 1.3.1。
 
 ## 安装
 

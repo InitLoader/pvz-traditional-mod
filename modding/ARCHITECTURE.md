@@ -1,5 +1,9 @@
 # PvZ Mod 运行时模块架构
 
+## 0.10.1 原版 compiled 资源读取
+
+`compiled_reanim` 独立负责 PC `.reanim.compiled` 的 Cookie、zlib、Schema 和固定结构解码；`reanim_loader` 只按完整后缀把输入分流到 Raw XML 或 compiled 解码器。两种输入最终都转换为同一个规范化 `RawReanimDefinition`，因此动作、事件、挂点和后续 Definition 注入不需要维护两套逻辑。缓存中的指针字段只按布局跳过，禁止解引用。
+
 ## 0.10.0 外部动作资源边界
 
 `external_animation_config` 只解析 `animations.jsonc` 元数据，`raw_reanim` 只负责受限 Raw XML、逐帧字段继承和结构校验，`external_animation_runtime` 只做启动时路径解析、贴图 ID/动作/事件/定位轨道交叉校验和只读注册。三者不得并回 `pvz_hook.cpp`；启动器仍只按顺序初始化贴图注册表和动画注册表。
@@ -72,6 +76,8 @@ external_texture_config.cpp  # 通用外部贴图注册表解析
 external_texture_runtime.cpp # 原版图片加载与 Image* 缓存
 external_animation_config.* # 外部动画元数据、动作和事件配置
 raw_reanim.*                # Raw .reanim 安全解析与帧继承
+compiled_reanim.*           # 原版 PC compiled/zlib 缓存安全解码
+reanim_loader.*             # Raw 与 compiled 自动格式分流
 external_animation_runtime.* # 资源交叉校验和只读动画注册表
 
 *_config.h / *_config.cpp    # 纯配置解析和校验，可由单元测试直接调用

@@ -4,11 +4,13 @@
 
 ## 1. 当前实现状态
 
-`0.10.0-dev` 已完成第一阶段：
+`0.10.1-dev` 已完成第一阶段：
 
 - `pvzmod/config/resources/animations.jsonc` 外部动画注册表。
 - `pvzmod/animations/` 分类资源目录和安全路径限制。
 - Raw `.reanim` 解析器，支持 `fps`、`doScale`、轨道和逐帧 Transform。
+- 原版 PC `.reanim.compiled` 解码器，支持 `DEADFED4 + zlib` 外层、原版 Definition/Track/Transform 缓存结构和 `-10000` 字段继承占位值。
+- 格式自动识别入口和 `PvZReanimValidator` 命令行检查工具。
 - 支持的 Transform 字段为 `x/y/kx/ky/sx/sy/f/a/i/font/text`。
 - 动作、循环方式、播放速度、混合帧、帧事件和定位轨道配置。
 - 动画、动作轨道、事件帧、定位轨道和外部贴图 ID 的启动时交叉校验。
@@ -53,10 +55,12 @@ pvzmod/
 │  └─ zombies/<entity>/
 └─ animations/
    ├─ plants/<entity>/<animation>.reanim
-   └─ zombies/<entity>/<animation>.reanim
+   └─ zombies/<entity>/<animation>.reanim.compiled
+
+compiled/reanim/                            # 游戏本体已有的原版 compiled 动画，只读引用
 ```
 
-JSON/JSONC 只能放在 `pvzmod/config/` 的所属分类中；Raw 动画只能放在 `pvzmod/animations/`；图片继续只放在 `pvzmod/images/`。配置和运行资源不能散放在游戏根目录。
+JSON/JSONC 只能放在 `pvzmod/config/` 的所属分类中；自制 Raw/compiled 动画只能放在 `pvzmod/animations/`；图片继续只放在 `pvzmod/images/`。`compiled/reanim/` 只用于引用游戏本体已有资源，不能作为新增 Mod 文件的散放目录。
 
 ## 4. 动画注册格式
 
@@ -107,9 +111,9 @@ JSON/JSONC 只能放在 `pvzmod/config/` 的所属分类中；Raw 动画只能�
 ### 字段规则
 
 - `id`：大小写敏感，匹配 `[A-Za-z0-9_]+`，长度 1–64。
-- `path`：必须是 `pvzmod/animations/` 下的相对 `.reanim` 路径，拒绝绝对路径、盘符、UNC 和 `..`。
+- `path`：支持 `pvzmod/animations/` 下的 `.reanim` 或 `.reanim.compiled`；也支持只读引用 `compiled/reanim/*.reanim.compiled` 原版资源。拒绝绝对路径、盘符、UNC 和 `..`。
 - `carrierReanimation`：稳定的原版动画符号名，只作为对象池载体，不代表复用其图片或动作。
-- `images`：Raw Reanimation 中的图片符号到外部贴图 ID 的映射；贴图 ID 必须已经登记在 `textures.jsonc`。
+- `images`：Raw 或自制 compiled Reanimation 中的图片符号到外部贴图 ID 的映射；贴图 ID 必须已经登记在 `textures.jsonc`。直接引用原版 compiled 时可以继续使用其原版图片符号。
 - `actions`：至少一个动作，动作 ID 匹配 `[A-Za-z0-9_]+`。
 - `loop`：`loop`、`once`、`once_hold`。
 - `rate`：大于 0 且不超过 120。
@@ -118,7 +122,7 @@ JSON/JSONC 只能放在 `pvzmod/config/` 的所属分类中；Raw 动画只能�
 - `events[].normalizedTime`：0–1；与 `frame` 二选一。
 - `locators`：逻辑挂点名到实际轨道名的映射，目标轨道必须存在。
 
-## 5. Raw `.reanim` 安全边界
+## 5. Raw 与 compiled 安全边界
 
 运行时解析器采用拒绝优先策略：
 
@@ -131,6 +135,15 @@ JSON/JSONC 只能放在 `pvzmod/config/` 的所属分类中；Raw 动画只能�
 - 轨道名大小写不敏感地保持唯一。
 - 拒绝未知 XML 字段、重复 Transform 字段、DTD 和实体声明。
 - 单个动画失败只跳过该动画并写日志，不把半初始化 Definition 交给原版游戏。
+
+原版 PC `.reanim.compiled` 额外执行：
+
+- 校验外层 Cookie `0xDEADFED4`、声明解压长度和完整 zlib 输入。
+- 解压结果不超过 64 MiB，防止压缩炸弹。
+- 校验内层 Schema `0xB393B4C0`。
+- 只接受 32 位 PC 结构尺寸：Definition 16、Track 12、Transform 44 字节。
+- 忽略缓存中的旧进程指针，只读取计数、FPS、浮点 Transform 和尾随字符串，绝不直接解引用文件内指针。
+- 校验无尾随数据、统一帧数以及和 Raw 格式相同的轨道、Transform、字符串和数量上限。
 
 ## 6. 动画制作流程
 
@@ -163,14 +176,20 @@ shadow.png
 
 ### 6.3 工具路线
 
-1. 使用 PopStudio 或 Twinning 解码一个相近的原版 `.reanim.compiled`。
-2. 转为 Raw XML、JSON 或 XFL，保留原版坐标比例作为参考。
+1. 可以直接把原版路径写成 `compiled/reanim/Blover.reanim.compiled`；不再强制预先转换。
+2. 需要编辑动作时，再使用 PopStudio、Twinning 或 EffectViewer 转为 Raw XML、JSON 或 XFL，保留原版坐标比例作为参考。
 3. 在 Adobe Animate/XFL 时间轴或兼容编辑流程中替换部件并制作动作。
 4. 使用 `FlashReanimExportAsRaw_Xml.jsfl` 或转换工具导出 Raw `.reanim`。
 5. 把图片符号写入 `animations.jsonc.images`，把贴图文件登记到 `textures.jsonc`。
 6. 完全退出并重新启动游戏，通过 `pvzmod/logs/pvzmod.log` 检查解析和交叉校验。
 
-运行时第一选择是 Raw `.reanim`，不直接依赖原版 compiled 缓存。`.reanim.compiled` 只作为制作端导入/导出格式。
+运行时会根据完整后缀自动选择 Raw XML 或原版 PC compiled 解码器。检查文件可运行：
+
+```powershell
+H:\pvz\modding\build\Release\PvZReanimValidator.exe H:\pvz\compiled\reanim\Blover.reanim.compiled
+```
+
+原版 compiled 只允许从 `compiled/reanim/` 读取；自制 compiled 必须放入 `pvzmod/animations/` 对应分类目录。
 
 ## 7. 真正新增实体架构
 

@@ -1,3 +1,4 @@
+#include "compiled_reanim.h"
 #include "global_config.h"
 #include "custom_plant_config.h"
 #include "elite_zombie_config.h"
@@ -5,6 +6,7 @@
 #include "external_texture_config.h"
 #include "plant_attack_config.h"
 #include "raw_reanim.h"
+#include "reanim_loader.h"
 #include "seed_ui_config.h"
 #include "spawn_config.h"
 #include "wave_generator.h"
@@ -14,12 +16,18 @@
 #include "zombie_config.h"
 
 #include <array>
+#include <bit>
 #include <cmath>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
+
+#include <zlib.h>
 
 namespace {
 
@@ -501,6 +509,84 @@ void TestSeedUiAndCustomPlantConfig() {
     }
 }
 
+void AppendU32(std::vector<std::uint8_t>& output, const std::uint32_t value) {
+    output.push_back(static_cast<std::uint8_t>(value));
+    output.push_back(static_cast<std::uint8_t>(value >> 8U));
+    output.push_back(static_cast<std::uint8_t>(value >> 16U));
+    output.push_back(static_cast<std::uint8_t>(value >> 24U));
+}
+
+void AppendI32(std::vector<std::uint8_t>& output, const std::int32_t value) {
+    AppendU32(output, std::bit_cast<std::uint32_t>(value));
+}
+
+void AppendFloat(std::vector<std::uint8_t>& output, const float value) {
+    AppendU32(output, std::bit_cast<std::uint32_t>(value));
+}
+
+void AppendString(std::vector<std::uint8_t>& output, const std::string& value) {
+    AppendI32(output, static_cast<std::int32_t>(value.size()));
+    output.insert(output.end(), value.begin(), value.end());
+}
+
+std::vector<std::uint8_t> BuildCompiledReanimFixture() {
+    constexpr float missing = -10000.0f;
+    std::vector<std::uint8_t> payload;
+    AppendU32(payload, 0xB393B4C0U);
+    AppendU32(payload, 0U);
+    AppendI32(payload, 2);
+    AppendFloat(payload, 12.0f);
+    AppendU32(payload, 0U);
+    AppendI32(payload, 12);
+    for (int track = 0; track < 2; ++track) {
+        AppendU32(payload, 0U);
+        AppendU32(payload, 0U);
+        AppendI32(payload, 4);
+    }
+
+    const auto appendTrack = [&](const std::string& name, const bool imageTrack) {
+        AppendString(payload, name);
+        AppendI32(payload, 44);
+        for (int frame = 0; frame < 4; ++frame) {
+            const float x = imageTrack && frame == 0 ? 2.5f : missing;
+            const float visible = !imageTrack && frame == 0 ? 0.0f :
+                                  (!imageTrack && frame == 2 ? -1.0f : missing);
+            AppendFloat(payload, x);
+            AppendFloat(payload, missing);
+            AppendFloat(payload, missing);
+            AppendFloat(payload, missing);
+            AppendFloat(payload, missing);
+            AppendFloat(payload, missing);
+            AppendFloat(payload, visible);
+            AppendFloat(payload, imageTrack && frame == 0 ? 0.75f : missing);
+            AppendU32(payload, 0U);
+            AppendU32(payload, 0U);
+            AppendU32(payload, 0U);
+        }
+        for (int frame = 0; frame < 4; ++frame) {
+            AppendString(payload, imageTrack && frame == 0 ? "IMAGE_REANIM_TEST_BODY" : "");
+            AppendString(payload, "");
+            AppendString(payload, "");
+        }
+    };
+    appendTrack("anim_idle", false);
+    appendTrack("body", true);
+
+    uLongf compressedSize = compressBound(static_cast<uLong>(payload.size()));
+    std::vector<std::uint8_t> compressed(static_cast<std::size_t>(compressedSize));
+    const int status = compress2(
+        reinterpret_cast<Bytef*>(compressed.data()), &compressedSize,
+        reinterpret_cast<const Bytef*>(payload.data()), static_cast<uLong>(payload.size()), Z_BEST_SPEED);
+    if (status != Z_OK) throw std::runtime_error("test fixture compression failed");
+    compressed.resize(static_cast<std::size_t>(compressedSize));
+
+    std::vector<std::uint8_t> result;
+    AppendU32(result, 0xDEADFED4U);
+    AppendU32(result, static_cast<std::uint32_t>(payload.size()));
+    result.insert(result.end(), compressed.begin(), compressed.end());
+    return result;
+}
+
 void TestExternalTextureConfigAndAliases() {
     const std::filesystem::path path =
         std::filesystem::temp_directory_path() / "pvzmod_external_textures_test.jsonc";
@@ -663,6 +749,68 @@ void TestRawReanimRejectsUnsafeOrMalformedInput() {
     Expect(!entity.Ok(), "Raw reanimation DTD and entity declarations must be rejected");
 }
 
+void TestCompiledReanimDecoding() {
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "pvzmod_compiled_reanim_test.reanim.compiled";
+    const std::filesystem::path bombPath =
+        std::filesystem::temp_directory_path() / "pvzmod_compiled_reanim_bomb_test.reanim.compiled";
+    std::vector<std::uint8_t> fixture = BuildCompiledReanimFixture();
+    {
+        std::ofstream output(path, std::ios::binary | std::ios::trunc);
+        output.write(reinterpret_cast<const char*>(fixture.data()), static_cast<std::streamsize>(fixture.size()));
+    }
+    fixture[4] = 0xFF;
+    fixture[5] = 0xFF;
+    fixture[6] = 0xFF;
+    fixture[7] = 0x7F;
+    {
+        std::ofstream output(bombPath, std::ios::binary | std::ios::trunc);
+        output.write(reinterpret_cast<const char*>(fixture.data()), static_cast<std::streamsize>(fixture.size()));
+    }
+
+    const auto loaded = pvzmod::LoadCompiledReanim(path);
+    const auto dispatched = pvzmod::LoadReanimDefinition(path);
+    const auto bomb = pvzmod::LoadCompiledReanim(bombPath);
+    std::error_code error;
+    std::filesystem::remove(path, error);
+    std::filesystem::remove(bombPath, error);
+
+    Expect(loaded.Ok() && dispatched.Ok(),
+           "original Windows .reanim.compiled data should decode through the direct and automatic loaders");
+    if (loaded.Ok()) {
+        Expect(loaded.definition->tracks.size() == 2 && loaded.definition->FrameCount() == 4,
+               "compiled definition should retain its track and frame counts");
+        const auto* idle = loaded.definition->FindTrack("anim_idle");
+        const auto* body = loaded.definition->FindTrack("body");
+        const auto range = idle == nullptr ? std::nullopt : idle->VisibleFrameRange();
+        Expect(range.has_value() && range->first == 0 && range->second == 2,
+               "compiled visibility placeholders should normalize to the original visible range");
+        Expect(body != nullptr && body->transforms[1].image == "IMAGE_REANIM_TEST_BODY" &&
+                   body->transforms[1].x == 2.5f && body->transforms[1].alpha == 0.75f,
+               "compiled placeholder values should inherit image and transform data");
+    }
+    Expect(!bomb.Ok(), "compiled caches declaring an unsafe decompressed size must be rejected");
+}
+
+void TestExternalAnimationConfigAcceptsCompiledPaths() {
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "pvzmod_compiled_animation_paths_test.jsonc";
+    {
+        std::ofstream output(path, std::ios::binary | std::ios::trunc);
+        output << R"({"schemaVersion":1,"animations":[
+          {"id":"ORIGINAL_BLOVER","path":"compiled/reanim/Blover.reanim.compiled",
+           "carrierReanimation":"REANIM_BLOVER","actions":{"idle":{"track":"anim_idle"}}},
+          {"id":"MOD_COMPILED","path":"pvzmod/animations/plants/test/test.reanim.compiled",
+           "carrierReanimation":"REANIM_PEASHOOTER","actions":{"idle":{"track":"anim_idle"}}}
+        ]})";
+    }
+    const auto loaded = pvzmod::LoadExternalAnimationConfig(path);
+    std::error_code error;
+    std::filesystem::remove(path, error);
+    Expect(loaded.Ok() && loaded.config->animations.size() == 2,
+           "animation config should accept original and mod-owned .reanim.compiled paths");
+}
+
 void TestRepositoryExternalAnimationExample() {
     const std::filesystem::path root = std::filesystem::path(PVZMOD_REPOSITORY_ROOT).lexically_normal();
     const auto textures = pvzmod::LoadExternalTextureConfig(
@@ -674,8 +822,14 @@ void TestRepositoryExternalAnimationExample() {
     if (!textures.Ok() || !animations.Ok()) return;
 
     for (const auto& [animationId, animation] : animations.config->animations) {
-        const auto raw = pvzmod::LoadRawReanim(root / std::filesystem::u8path(animation.path));
-        Expect(raw.Ok(), "repository Raw reanimation example should parse: " + animationId);
+        const std::filesystem::path animationPath = root / std::filesystem::u8path(animation.path);
+        if (!std::filesystem::exists(animationPath) && pvzmod::IsCompiledReanimPath(animationPath)) {
+            // Original compiled assets are intentionally not committed; the synthetic cache test
+            // validates the decoder in clean CI, while an installed game validates the real file.
+            continue;
+        }
+        const auto raw = pvzmod::LoadReanimDefinition(animationPath);
+        Expect(raw.Ok(), "repository reanimation example should parse: " + animationId);
         if (!raw.Ok()) continue;
         for (const auto& [symbol, textureId] : animation.images) {
             (void)symbol;
@@ -780,6 +934,8 @@ int main() {
     TestExternalAnimationConfigAndRawReanim();
     TestExternalAnimationConfigRejectsUnsafeInput();
     TestRawReanimRejectsUnsafeOrMalformedInput();
+    TestCompiledReanimDecoding();
+    TestExternalAnimationConfigAcceptsCompiledPaths();
     TestRepositoryExternalAnimationExample();
     TestEliteZombieConfigAndPriority();
 

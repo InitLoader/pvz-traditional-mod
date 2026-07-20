@@ -42,19 +42,34 @@ std::string ValidateAnimationPath(const std::string& rawPath) {
     }
     path = path.lexically_normal();
     auto component = path.begin();
-    if (component == path.end() || _stricmp(component->string().c_str(), "pvzmod") != 0) {
-        throw std::runtime_error("path must be inside pvzmod/animations");
+    if (component == path.end()) throw std::runtime_error("path must not be empty");
+    const bool modAnimation = _stricmp(component->string().c_str(), "pvzmod") == 0;
+    const bool originalCompiled = _stricmp(component->string().c_str(), "compiled") == 0;
+    ++component;
+    if (component == path.end()) throw std::runtime_error("path must name an animation file");
+    if (modAnimation && _stricmp(component->string().c_str(), "animations") != 0) {
+        throw std::runtime_error("mod animation paths must be inside pvzmod/animations");
+    }
+    if (originalCompiled && _stricmp(component->string().c_str(), "reanim") != 0) {
+        throw std::runtime_error("original compiled paths must be inside compiled/reanim");
+    }
+    if (!modAnimation && !originalCompiled) {
+        throw std::runtime_error("path must be inside pvzmod/animations or compiled/reanim");
     }
     ++component;
-    if (component == path.end() || _stricmp(component->string().c_str(), "animations") != 0) {
-        throw std::runtime_error("path must be inside pvzmod/animations");
+    if (component == path.end()) throw std::runtime_error("path must name an animation file");
+
+    std::string fileName = path.filename().string();
+    std::transform(fileName.begin(), fileName.end(), fileName.begin(), [](const unsigned char character) {
+        return static_cast<char>(std::tolower(character));
+    });
+    const bool raw = fileName.ends_with(".reanim") && !fileName.ends_with(".reanim.compiled");
+    const bool compiled = fileName.ends_with(".reanim.compiled");
+    if (!raw && !compiled) {
+        throw std::runtime_error("animation path must end with .reanim or .reanim.compiled");
     }
-    ++component;
-    if (component == path.end()) {
-        throw std::runtime_error("path must name a file below pvzmod/animations");
-    }
-    if (_stricmp(path.extension().string().c_str(), ".reanim") != 0) {
-        throw std::runtime_error("external animation path must end with .reanim");
+    if (originalCompiled && !compiled) {
+        throw std::runtime_error("compiled/reanim only accepts original .reanim.compiled files");
     }
     return path.generic_string();
 }

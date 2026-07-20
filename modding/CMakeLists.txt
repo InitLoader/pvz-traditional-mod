@@ -40,9 +40,19 @@ FetchContent_Declare(
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 
-FetchContent_MakeAvailable(nlohmann_json minhook tinyxml2)
+set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SKIP_INSTALL_ALL ON CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    zlib
+    URL https://github.com/madler/zlib/archive/refs/tags/v1.3.1.tar.gz
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+
+FetchContent_MakeAvailable(nlohmann_json minhook tinyxml2 zlib)
+set_target_properties(zlib PROPERTIES EXCLUDE_FROM_ALL TRUE)
 
 add_library(pvz_wave_core STATIC
+    src/compiled_reanim.cpp
     src/custom_plant_config.cpp
     src/elite_zombie_config.cpp
     src/external_animation_config.cpp
@@ -50,6 +60,7 @@ add_library(pvz_wave_core STATIC
     src/global_config.cpp
     src/plant_attack_config.cpp
     src/raw_reanim.cpp
+    src/reanim_loader.cpp
     src/seed_ui_config.cpp
     src/spawn_config.cpp
     src/wave_generator.cpp
@@ -59,7 +70,11 @@ add_library(pvz_wave_core STATIC
     src/zombie_config.cpp
 )
 target_include_directories(pvz_wave_core PUBLIC src)
-target_link_libraries(pvz_wave_core PUBLIC nlohmann_json::nlohmann_json tinyxml2::tinyxml2)
+target_link_libraries(pvz_wave_core PUBLIC
+    nlohmann_json::nlohmann_json
+    tinyxml2::tinyxml2
+    zlibstatic
+)
 target_compile_definitions(pvz_wave_core PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
 
 add_library(pvzmod SHARED
@@ -95,6 +110,12 @@ add_executable(PvZModPatcher
 )
 target_compile_definitions(PvZModPatcher PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE)
 target_link_libraries(PvZModPatcher PRIVATE bcrypt)
+
+add_executable(PvZReanimValidator
+    tools/reanim_validator.cpp
+)
+target_link_libraries(PvZReanimValidator PRIVATE pvz_wave_core)
+target_compile_definitions(PvZReanimValidator PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE)
 
 add_executable(PvZWaveConfigTests
     tests/wave_config_tests.cpp

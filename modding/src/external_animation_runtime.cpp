@@ -2,6 +2,7 @@
 
 #include "external_texture_runtime.h"
 #include "logger.h"
+#include "reanim_loader.h"
 
 #include <filesystem>
 #include <cwchar>
@@ -79,10 +80,17 @@ bool InitializeExternalAnimationRuntime(std::uint8_t* moduleBase) {
     }
 
     std::error_code error;
-    const std::filesystem::path animationRoot = std::filesystem::weakly_canonical(
+    const std::filesystem::path modAnimationRoot = std::filesystem::weakly_canonical(
         root / L"pvzmod" / L"animations", error);
     if (error) {
         LogWarning("Cannot resolve pvzmod/animations: " + error.message());
+        return false;
+    }
+    error.clear();
+    const std::filesystem::path originalAnimationRoot = std::filesystem::weakly_canonical(
+        root / L"compiled" / L"reanim", error);
+    if (error) {
+        LogWarning("Cannot resolve compiled/reanim: " + error.message());
         return false;
     }
 
@@ -91,8 +99,12 @@ bool InitializeExternalAnimationRuntime(std::uint8_t* moduleBase) {
         error.clear();
         const std::filesystem::path absolutePath = std::filesystem::weakly_canonical(
             root / std::filesystem::u8path(config.path), error);
-        if (error || !IsUnderDirectory(absolutePath, animationRoot)) {
-            LogWarning("External animation '" + animationId + "' escaped pvzmod/animations and was skipped.");
+        const bool allowedPath = !error &&
+            (IsUnderDirectory(absolutePath, modAnimationRoot) ||
+             (IsCompiledReanimPath(absolutePath) && IsUnderDirectory(absolutePath, originalAnimationRoot)));
+        if (!allowedPath) {
+            LogWarning("External animation '" + animationId +
+                       "' escaped pvzmod/animations or compiled/reanim and was skipped.");
             error.clear();
             continue;
         }
@@ -102,7 +114,7 @@ bool InitializeExternalAnimationRuntime(std::uint8_t* moduleBase) {
             error.clear();
             continue;
         }
-        RawReanimLoadResult loadedRaw = LoadRawReanim(absolutePath);
+        RawReanimLoadResult loadedRaw = LoadReanimDefinition(absolutePath);
         if (!loadedRaw.Ok()) {
             LogWarning(loadedRaw.error + "; animation '" + animationId + "' was skipped.");
             continue;

@@ -1,5 +1,9 @@
 # Plants vs. Zombies 1.0.0.1051 传统改版技术路线
 
+## 0.10.1-dev 原版 compiled Reanimation 读取
+
+外部动画入口现在同时接受 Raw `.reanim` 和原版 32 位 PC `.reanim.compiled`。compiled 解码器验证 `0xDEADFED4`、zlib 解压长度、`0xB393B4C0` Schema 以及 16/12/44 字节的 Definition/Track/Transform 缓存结构，忽略文件中的旧指针并重建安全的 DLL 侧动画定义。配置可以直接引用 `compiled/reanim/Blover.reanim.compiled`，自制 compiled 仍必须分类放入 `pvzmod/animations/`。
+
 ## 0.10.0-dev 外部动作资源与独立实体基础
 
 新增 `pvzmod/config/resources/animations.jsonc` 和 `pvzmod/animations/` 分类目录。第一阶段已实现 Raw `.reanim` 的受限解析、动作轨道、循环、播放速度、混合帧、帧事件、定位轨道和外部贴图 ID 交叉校验，并在 DLL 启动时建立只读注册表；尚未安装 Reanimation Definition 注入 Hook，因此当前不会替换游戏内动画。
