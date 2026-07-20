@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+
+  // 通用外部贴图注册表。ID 允许英文字母、数字和下划线，大小写敏感。
+  // 图片必须放在游戏目录的 pvzmod/images/ 下；修改后需完全退出并重启游戏。
+  "textures": [
+    {
+      "id": "KILL",
+      "path": "pvzmod/images/zi/kill.png"
+    }
+  ]
+}

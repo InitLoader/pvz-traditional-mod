@@ -32,6 +32,7 @@ pvzmod/
 │  ├─ plants/       # 植物属性、技能和卡片参数
 │  ├─ zombies/      # 普通僵尸属性与行为参数
 │  ├─ elites/       # 精英编号、倍率、技能和生成规则
+│  ├─ resources/    # 通用外部贴图字符串 ID 注册表
 │  ├─ bosses/       # 各大关 Boss 阶段和技能
 │  ├─ ui/           # UI 布局、按钮、文本和界面开关
 │  ├─ settings/     # Mod 全局设置和难度配置
@@ -53,6 +54,8 @@ pvzmod/
 - `levels/spawn.json`：关卡僵尸类型、权重和保底数量。
 - `levels/wave_multipliers.json`：全局、关卡和单波的僵尸数量倍率。
 - `settings/global.json`：全局经济和通用规则；当前包含普通、小型、大型阳光拾取价值。
+- `resources/textures.jsonc`：通用外部贴图 ID、受限相对路径和原版图片加载缓存。
+- `elites/zombies.jsonc`：精英编号、概率、视觉、贴图引用和技能绑定。
 - `plants/attacks.jsonc`：植物攻击伤害稀疏覆盖；文件内已列出所有数值攻击的原版默认值。
 - `zombies/attributes.jsonc`：完整原版防具生命目录、按僵尸 ID 稀疏覆盖本体生命/啃食伤害，以及带等级和概率的额外防具。
 

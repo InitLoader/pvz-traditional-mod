@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "seed": 1380275022,
+
+  "elites": [
+    {
+      "runtimeId": 1,
+      "id": "RAGE",
+      "name": "狂暴僵尸",
+      "enabled": true,
+      "priority": 100,
+
+      // 普通僵尸 ID 0 有 20% 概率成为该精英。
+      "eligibleZombieIds": [0],
+      "chance": 20,
+
+      "skills": [
+        {
+          "id": "BERSERK",
+          "parameters": {
+            "healthMultiplier": 1.5,
+            "speedMultiplier": 1.35,
+            "attackMultiplier": 2.0
+          }
+        }
+      ],
+
+      "visual": {
+        "tint": { "red": 255, "green": 48, "blue": 48, "alpha": 255 },
+        "overlayTextureId": "KILL",
+        "offsetX": 18,
+        "offsetY": -18
+      }
+    }
+  ]
+}

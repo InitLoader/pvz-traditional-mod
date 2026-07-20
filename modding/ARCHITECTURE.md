@@ -1,5 +1,11 @@
 # PvZ Mod 运行时模块架构
 
+## 0.9.0 精英与通用外部贴图边界
+
+`external_texture_config/runtime` 建立通用字符串贴图 ID 注册表，只负责路径安全、原版 `SexyAppBase::GetImage` 加载和进程内缓存。精英、植物和 UI 只能按 ID 查询 `Image*`，不得各自复制图片解析器。
+
+`elite_zombie_config/hook` 保存数字 `runtimeId`、字符串精英 ID、确定性概率和 `Zombie* + instanceId` 侧挂状态；`elite_skill_registry` 注册技能回调；`zombie_event_bus` 是基础僵尸 Hook 向扩展模块发事件的唯一桥。完整约定和首个 `RAGE + BERSERK` 示例见 `ELITE_AND_TEXTURE_DESIGN.md`。
+
 ## 0.8.3 选卡页绘制分流
 
 - 第 0 页保持调用完整的原版 `SeedChooserScreen::Draw`，原版卡片位置、绘制和交互全部恢复。
@@ -52,6 +58,12 @@ wave_hook.cpp                # 关卡出怪和数量倍率
 sun_hook.cpp                 # 阳光价值
 plant_attack_hook.cpp        # 植物投射物和直接攻击
 zombie_hook.cpp              # 僵尸生成、属性、防具和啃食伤害
+zombie_event_bus.cpp         # 僵尸生命周期与伤害扩展事件
+elite_zombie_config.cpp      # 精英概率、视觉和技能绑定配置
+elite_skill_registry.cpp     # 技能 ID 注册与事件分发
+elite_zombie_hook.cpp        # 精英侧挂状态、红色绘制、贴图和清理
+external_texture_config.cpp  # 通用外部贴图注册表解析
+external_texture_runtime.cpp # 原版图片加载与 Image* 缓存
 
 *_config.h / *_config.cpp    # 纯配置解析和校验，可由单元测试直接调用
 wave_generator.*             # 不访问游戏内存的纯生成算法
@@ -69,7 +81,7 @@ wave_multiplier.*            # 不访问游戏内存的纯倍率算法
 
 ## 僵尸与精英扩展边界
 
-`zombie_config` 定义基础本体血量、独立攻击伤害、防具定义和防具概率；`zombie_hook` 只把有效配置应用到原版对象。未来 `elite_config` 和 `elite_hook` 使用独立文件，并通过僵尸实例 ID/侧挂状态引用精英编号，不把精英技能分支继续堆入 `zombie_hook.cpp`。
+`zombie_config` 定义基础本体血量、独立攻击伤害、防具定义和防具概率；`zombie_hook` 只把有效配置应用到原版对象。0.9.0 的 `elite_zombie_config` 和 `elite_zombie_hook` 使用独立文件，并通过僵尸实例 ID/侧挂状态引用精英编号，不把精英技能分支继续堆入 `zombie_hook.cpp`。
 
 防具视觉采用适配器思路：`cone`、`bucket` 和 `door` 使用普通僵尸动画轨道；`wallnutHead` 为普通僵尸 ID 0 使用原版 ID 27 初始化器建立独立附着动画，并以实例侧挂状态处理掉头清理。其他动画族以后新增自己的视觉适配器。配置中的 Mod 防具 ID 和进阶等级不直接复用原版 `HelmType/ShieldType`，从而允许后续新增原创防具而不破坏原版枚举。
 
