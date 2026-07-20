@@ -561,7 +561,10 @@ void TestEliteZombieConfigAndPriority() {
               "runtimeId":1,"id":"RAGE","name":"rage","priority":20,
               "eligibleZombieIds":[0],"chance":100,
               "skills":[{"id":"BERSERK","parameters":{"healthMultiplier":1.5}}],
-              "visual":{"overlayTextureId":"KILL","offsetX":18,"offsetY":-18}
+              "visual":{"replacements":[
+                {"scope":"body","target":"head","textureId":"KILL"},
+                {"scope":"body","track":"Zombie_tie","textureId":"UI_2"}
+              ]}
             }
           ]
         })";
@@ -583,6 +586,16 @@ void TestEliteZombieConfigAndPriority() {
     const bool first = pvzmod::EliteRollSucceeds(123, 0, 77, 1, 33.0);
     const bool second = pvzmod::EliteRollSucceeds(123, 0, 77, 1, 33.0);
     Expect(first == second, "elite probability must be deterministic for the same instance key");
+    const auto& replacements = loaded.config->elites[1].visual.replacements;
+    Expect(replacements.size() == 2 && replacements[0].track == "anim_head1" &&
+           replacements[0].target == "head" && replacements[1].track == "Zombie_tie",
+           "semantic texture targets and explicit tracks should parse to real reanimation tracks");
+    Expect(pvzmod::ZombieTextureTrackForTarget("body") == std::optional<std::string_view>("Zombie_body"),
+           "ordinary zombie body target should resolve to Zombie_body");
+    Expect(pvzmod::IsReanimationTrackName("Layer 47") &&
+           pvzmod::IsReanimationTrackName("Boss-outerarm_finger4") &&
+           !pvzmod::IsReanimationTrackName("../bad"),
+           "advanced track validation should accept original names and reject traversal-like input");
 }
 
 }  // namespace

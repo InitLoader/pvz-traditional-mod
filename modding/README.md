@@ -364,7 +364,7 @@ Mod 存档放在 `pvzmod/saves`，日志放在 `pvzmod/logs`，两者都不能�
 { "id": "KILL", "path": "pvzmod/images/zi/kill.png" }
 ```
 
-`ID` 支持英文、数字和下划线且区分大小写。加载失败只影响这张覆盖贴图，红色 tint、属性倍率、技能和原版绘制继续运行；失败 ID 在同一进程内只记录一次。当前已在 `1-10` 验证逐实例红色狂暴僵尸和缺图降级，尚未提供 `kill.png`，因此成功解码和最终头部挂点仍需素材到位后验证。
+`ID` 支持英文、数字和下划线且区分大小写。加载失败只影响这张替换贴图，红色 tint、属性倍率、技能和原版绘制继续运行；失败 ID 在同一进程内只记录一次。当前已在 `1-10` 验证逐实例红色狂暴僵尸、缺图降级，以及 64×64 `KILL` PNG 成功解码并替换普通僵尸 `anim_head1` 头部轨道。图片沿用原轨道的移动、旋转、缩放和显隐；完整部位目录见 [ZOMBIE_TEXTURE_TRACKS.md](H:/pvz/modding/ZOMBIE_TEXTURE_TRACKS.md)。
 
 技能由注册表按事件分发：`Spawn`、`BeforeUpdate`、`AfterUpdate`、`BeforeAttack`、`BeforeDraw`、`AfterDraw`、`Remove`。JSON 只能引用 DLL 已注册的技能 ID，未知技能会禁用整份精英配置，不能从配置执行任意代码。完整接口和安全边界见 [ELITE_AND_TEXTURE_DESIGN.md](H:/pvz/modding/ELITE_AND_TEXTURE_DESIGN.md)。
 

@@ -4,7 +4,7 @@
 
 `external_texture_config/runtime` 建立通用字符串贴图 ID 注册表，只负责路径安全、原版 `SexyAppBase::GetImage` 加载和进程内缓存。精英、植物和 UI 只能按 ID 查询 `Image*`，不得各自复制图片解析器。
 
-`elite_zombie_config/hook` 保存数字 `runtimeId`、字符串精英 ID、确定性概率和 `Zombie* + instanceId` 侧挂状态；`elite_skill_registry` 注册技能回调；`zombie_event_bus` 是基础僵尸 Hook 向扩展模块发事件的唯一桥。完整约定和首个 `RAGE + BERSERK` 示例见 `ELITE_AND_TEXTURE_DESIGN.md`。
+`elite_zombie_config/hook` 保存数字 `runtimeId`、字符串精英 ID、确定性概率、`Zombie* + instanceId` 侧挂状态和 Reanimation 轨道替换；`elite_skill_registry` 注册技能回调；`zombie_event_bus` 是基础僵尸 Hook 向扩展模块发事件的唯一桥。完整约定和首个 `RAGE + BERSERK` 示例见 `ELITE_AND_TEXTURE_DESIGN.md`，普通与特殊僵尸图片轨道见 `ZOMBIE_TEXTURE_TRACKS.md`。
 
 ## 0.8.3 选卡页绘制分流
 

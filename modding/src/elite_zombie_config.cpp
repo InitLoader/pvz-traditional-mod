@@ -3,6 +3,8 @@
 #include "external_texture_config.h"
 
 #include <algorithm>
+#include <array>
+#include <cctype>
 #include <cmath>
 #include <fstream>
 #include <limits>
@@ -56,7 +58,55 @@ std::uint64_t Mix64(std::uint64_t value) {
     return value ^ (value >> 31U);
 }
 
+constexpr std::array<std::pair<std::string_view, std::string_view>, 30> kZombieTextureTargets = {{
+    {"inner_arm_hand", "anim_innerarm3"},
+    {"inner_arm_lower", "anim_innerarm2"},
+    {"inner_arm_upper", "anim_innerarm1"},
+    {"flag_hand", "Zombie_flaghand"},
+    {"screen_door_inner_arm", "Zombie_innerarm_screendoor"},
+    {"neck", "Zombie_neck"},
+    {"head", "anim_head1"},
+    {"inner_leg_upper", "Zombie_innerleg_upper"},
+    {"inner_leg_lower", "Zombie_innerleg_lower"},
+    {"inner_leg_foot", "Zombie_innerleg_foot"},
+    {"outer_leg_upper", "Zombie_outerleg_upper"},
+    {"outer_leg_foot", "Zombie_outerleg_foot"},
+    {"outer_leg_lower", "Zombie_outerleg_lower"},
+    {"body", "Zombie_body"},
+    {"ducky_tube", "Zombie_duckytube"},
+    {"water_splash", "Zombie_whitewater"},
+    {"tie", "Zombie_tie"},
+    {"jaw", "anim_head2"},
+    {"tongue", "anim_tongue"},
+    {"mustache", "Zombie_mustache"},
+    {"screen_door", "anim_screendoor"},
+    {"screen_door_inner_hand", "Zombie_innerarm_screendoor_hand"},
+    {"screen_door_outer_arm", "Zombie_outerarm_screendoor"},
+    {"outer_arm_hand", "Zombie_outerarm_hand"},
+    {"outer_arm_upper", "Zombie_outerarm_upper"},
+    {"snorkel_water_splash", "Zombie_whitewater2"},
+    {"outer_arm_lower", "Zombie_outerarm_lower"},
+    {"hair", "anim_hair"},
+    {"cone", "anim_cone"},
+    {"bucket", "anim_bucket"},
+}};
+
 }  // namespace
+
+std::optional<std::string_view> ZombieTextureTrackForTarget(const std::string_view target) {
+    const auto found = std::find_if(kZombieTextureTargets.begin(), kZombieTextureTargets.end(),
+        [target](const auto& entry) { return entry.first == target; });
+    if (found == kZombieTextureTargets.end()) return std::nullopt;
+    return found->second;
+}
+
+bool IsReanimationTrackName(const std::string_view track) {
+    if (track.empty() || track.size() > 96 || track.front() == ' ' || track.back() == ' ') return false;
+    return std::all_of(track.begin(), track.end(), [](const unsigned char character) {
+        return std::isalnum(character) != 0 || character == '_' || character == '-' ||
+            character == '.' || character == ' ';
+    });
+}
 
 double EliteSkillBinding::Parameter(const std::string_view name, const double fallback) const {
     const auto found = parameters.find(std::string(name));
@@ -163,13 +213,65 @@ EliteZombieConfigLoadResult LoadEliteZombieConfig(const std::filesystem::path& p
                         Integer(*tint, "red", 255, 0, 255), Integer(*tint, "green", 255, 0, 255),
                         Integer(*tint, "blue", 255, 0, 255), Integer(*tint, "alpha", 255, 0, 255)};
                 }
-                elite.visual.overlayTextureId = String(*visual, "overlayTextureId");
-                if (!elite.visual.overlayTextureId.empty() &&
-                    !IsExternalResourceId(elite.visual.overlayTextureId)) {
-                    throw std::runtime_error("visual.overlayTextureId must match [A-Za-z0-9_]+");
+                if (visual->contains("overlayTextureId") || visual->contains("offsetX") ||
+                    visual->contains("offsetY")) {
+                    throw std::runtime_error(
+                        "visual.overlayTextureId/offsetX/offsetY were replaced by visual.replacements");
                 }
-                elite.visual.offsetX = Integer(*visual, "offsetX", 0, -1000, 1000);
-                elite.visual.offsetY = Integer(*visual, "offsetY", 0, -1000, 1000);
+                if (const auto replacements = visual->find("replacements"); replacements != visual->end()) {
+                    if (!replacements->is_array()) {
+                        throw std::runtime_error("visual.replacements must be an array");
+                    }
+                    if (replacements->size() > 64) {
+                        throw std::runtime_error("at most 64 visual replacements are allowed per elite");
+                    }
+                    std::unordered_set<std::string> replacementKeys;
+                    for (const json& replacementItem : *replacements) {
+                        if (!replacementItem.is_object()) {
+                            throw std::runtime_error("each visual.replacements entry must be an object");
+                        }
+                        EliteTrackReplacement replacement;
+                        const std::string scope = String(replacementItem, "scope", "body");
+                        if (scope == "body") replacement.scope = EliteTextureScope::Body;
+                        else if (scope == "special") replacement.scope = EliteTextureScope::Special;
+                        else throw std::runtime_error("replacement scope must be 'body' or 'special'");
+
+                        replacement.textureId = String(replacementItem, "textureId");
+                        if (!IsExternalResourceId(replacement.textureId)) {
+                            throw std::runtime_error(
+                                "replacement textureId must match [A-Za-z0-9_]+ and contain 1-64 characters");
+                        }
+                        replacement.target = String(replacementItem, "target");
+                        const std::string explicitTrack = String(replacementItem, "track");
+                        if (replacement.target.empty() == explicitTrack.empty()) {
+                            throw std::runtime_error("replacement must contain exactly one of target or track");
+                        }
+                        if (!replacement.target.empty()) {
+                            if (replacement.scope != EliteTextureScope::Body) {
+                                throw std::runtime_error("replacement target aliases are only valid for body scope");
+                            }
+                            const auto track = ZombieTextureTrackForTarget(replacement.target);
+                            if (!track.has_value()) {
+                                throw std::runtime_error("unknown ordinary-zombie replacement target: " +
+                                                         replacement.target);
+                            }
+                            replacement.track = std::string(*track);
+                        } else {
+                            if (!IsReanimationTrackName(explicitTrack)) {
+                                throw std::runtime_error(
+                                    "replacement track must contain only letters, digits, space, _, -, or .");
+                            }
+                            replacement.track = explicitTrack;
+                        }
+                        const std::string replacementKey =
+                            (replacement.scope == EliteTextureScope::Body ? "body:" : "special:") +
+                            replacement.track;
+                        if (!replacementKeys.insert(replacementKey).second) {
+                            throw std::runtime_error("visual.replacements cannot replace the same scope/track twice");
+                        }
+                        elite.visual.replacements.push_back(std::move(replacement));
+                    }
+                }
             }
             parsed.elites.push_back(std::move(elite));
         }

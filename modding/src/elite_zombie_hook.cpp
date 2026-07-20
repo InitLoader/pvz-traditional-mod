@@ -20,6 +20,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 extern "C" void* g_originalEliteZombieUpdate = nullptr;
 extern "C" void* g_originalEliteZombieDraw = nullptr;
@@ -37,7 +38,9 @@ namespace {
 constexpr std::uintptr_t kZombieUpdateRva = 0x0012AE60;
 constexpr std::uintptr_t kZombieDrawRva = 0x0012E2E0;
 constexpr std::uintptr_t kZombieDeleteRva = 0x001302F0;
-constexpr std::uintptr_t kGraphicsDrawImageRva = 0x00187150;
+constexpr std::uintptr_t kLawnAppReanimationTryToGetRva = 0x00053CB0;
+constexpr std::uintptr_t kReanimationTrackExistsRva = 0x000732C0;
+constexpr std::uintptr_t kReanimationSetImageOverrideRva = 0x00073490;
 
 constexpr std::array<std::uint8_t, 12> kZombieUpdatePrologue = {
     0x55, 0x8B, 0xEC, 0x83, 0xE4, 0xF8, 0x51, 0x53, 0x56, 0x8B, 0xF0, 0x83};
@@ -49,12 +52,11 @@ constexpr std::array<std::uint8_t, 12> kZombieDeletePrologue = {
 constexpr std::ptrdiff_t kAppOffset = 0x00;
 constexpr std::ptrdiff_t kBoardOffset = 0x04;
 constexpr std::ptrdiff_t kZombieTypeOffset = 0x24;
-constexpr std::ptrdiff_t kPosXOffset = 0x2C;
-constexpr std::ptrdiff_t kPosYOffset = 0x30;
 constexpr std::ptrdiff_t kVelocityXOffset = 0x34;
-constexpr std::ptrdiff_t kAltitudeOffset = 0x84;
 constexpr std::ptrdiff_t kBodyHealthOffset = 0xC8;
 constexpr std::ptrdiff_t kBodyMaxHealthOffset = 0xCC;
+constexpr std::ptrdiff_t kBodyReanimationIdOffset = 0x118;
+constexpr std::ptrdiff_t kSpecialReanimationIdOffset = 0x144;
 constexpr std::ptrdiff_t kZombieInstanceIdOffset = 0x158;
 constexpr std::ptrdiff_t kGraphicsColorOffset = 0x30;
 constexpr std::ptrdiff_t kGraphicsColorizeOffset = 0x48;
@@ -76,6 +78,8 @@ std::uint8_t* g_eliteModuleBase = nullptr;
 std::shared_ptr<const EliteZombieConfig> g_eliteConfig;
 std::mutex g_eliteMutex;
 std::unordered_map<void*, EliteZombieState> g_eliteStates;
+std::mutex g_visualLogMutex;
+std::unordered_set<std::string> g_visualMessages;
 
 template <typename T>
 T& Field(void* object, const std::ptrdiff_t offset) {
@@ -184,15 +188,89 @@ void CallOriginalZombieDraw(void* zombie, void* graphics) {
     }
 }
 
-void DrawImageRaw(void* graphics, void* image, const int x, const int y) {
-    if (graphics == nullptr || image == nullptr || g_eliteModuleBase == nullptr) return;
-    void* target = g_eliteModuleBase + kGraphicsDrawImageRva;
+void LogVisualMessageOnce(const std::string& key, const bool warning, const std::string& message) {
+    {
+        std::lock_guard lock(g_visualLogMutex);
+        if (!g_visualMessages.insert(key).second) return;
+    }
+    if (warning) LogWarning(message);
+    else LogInfo(message);
+}
+
+void* ResolveZombieReanimation(void* zombie, const EliteTextureScope scope) {
+    if (zombie == nullptr || g_eliteModuleBase == nullptr) return nullptr;
+    void* lawnApp = Field<void*>(zombie, kAppOffset);
+    if (lawnApp == nullptr) return nullptr;
+    const std::ptrdiff_t idOffset = scope == EliteTextureScope::Body ?
+        kBodyReanimationIdOffset : kSpecialReanimationIdOffset;
+    const std::uint32_t reanimationId = Field<std::uint32_t>(zombie, idOffset);
+    if (reanimationId == std::numeric_limits<std::uint32_t>::max()) return nullptr;
+    // 1.0.0.1051 is optimized with a nonstandard internal convention:
+    // EAX=LawnApp*, ECX=ReanimationID, no stack arguments.
+    void* target = g_eliteModuleBase + kLawnAppReanimationTryToGetRva;
+    void* reanimation = nullptr;
     __asm {
-        mov eax, graphics
-        mov ebx, image
-        push y
-        push x
+        mov eax, lawnApp
+        mov ecx, reanimationId
         call target
+        mov reanimation, eax
+    }
+    return reanimation;
+}
+
+bool ReanimationTrackExists(void* reanimation, const char* track) {
+    // Reanimation::TrackExists expects EBX=this and one callee-cleaned stack argument.
+    void* target = g_eliteModuleBase + kReanimationTrackExistsRva;
+    int exists = 0;
+    __asm {
+        push ebx
+        mov ebx, reanimation
+        push track
+        call target
+        movzx eax, al
+        mov exists, eax
+        pop ebx
+    }
+    return exists != 0;
+}
+
+void SetReanimationImageOverride(void* reanimation, const char* track, void* image) {
+    // Reanimation::SetImageOverride expects ECX=this, EAX=track and one
+    // callee-cleaned Image* stack argument.
+    void* target = g_eliteModuleBase + kReanimationSetImageOverrideRva;
+    __asm {
+        mov ecx, reanimation
+        mov eax, track
+        push image
+        call target
+    }
+}
+
+void ApplyEliteTrackReplacements(void* zombie, const EliteZombieState& state) {
+    if (zombie == nullptr || state.definition == nullptr) return;
+    void* lawnApp = Field<void*>(zombie, kAppOffset);
+    for (const EliteTrackReplacement& replacement : state.definition->visual.replacements) {
+        const std::string scopeName = replacement.scope == EliteTextureScope::Body ? "body" : "special";
+        const std::string messageKey = state.definition->id + ":" + scopeName + ":" + replacement.track;
+        void* image = ResolveExternalTexture(replacement.textureId, lawnApp);
+        if (image == nullptr) continue;
+        void* reanimation = ResolveZombieReanimation(zombie, replacement.scope);
+        if (reanimation == nullptr) {
+            LogVisualMessageOnce("missing-reanim:" + messageKey, true,
+                "Elite '" + state.definition->id + "' cannot replace " + scopeName + " track '" +
+                replacement.track + "': the reanimation is not available for this zombie type.");
+            continue;
+        }
+        if (!ReanimationTrackExists(reanimation, replacement.track.c_str())) {
+            LogVisualMessageOnce("missing-track:" + messageKey, true,
+                "Elite '" + state.definition->id + "' cannot find " + scopeName + " track '" +
+                replacement.track + "'; this replacement was skipped.");
+            continue;
+        }
+        SetReanimationImageOverride(reanimation, replacement.track.c_str(), image);
+        LogVisualMessageOnce("applied:" + messageKey, false,
+            "Elite '" + state.definition->id + "' replaced " + scopeName + " track '" +
+            replacement.track + "' with texture '" + replacement.textureId + "'.");
     }
 }
 
@@ -214,10 +292,12 @@ bool InstallEliteZombieHooks(std::uint8_t* moduleBase) {
         } else {
             g_eliteConfig = std::make_shared<EliteZombieConfig>(*loaded.config);
             for (const EliteZombieDefinition& elite : g_eliteConfig->elites) {
-                if (!elite.visual.overlayTextureId.empty() &&
-                    !ExternalTextureIsRegistered(elite.visual.overlayTextureId)) {
-                    LogWarning("Elite '" + elite.id + "' references unregistered texture '" +
-                               elite.visual.overlayTextureId + "'; the overlay will be skipped.");
+                for (const EliteTrackReplacement& replacement : elite.visual.replacements) {
+                    if (!ExternalTextureIsRegistered(replacement.textureId)) {
+                        LogWarning("Elite '" + elite.id + "' references unregistered texture '" +
+                                   replacement.textureId + "'; track '" + replacement.track +
+                                   "' will keep its original image.");
+                    }
                 }
             }
             LogInfo("Loaded " + std::to_string(g_eliteConfig->elites.size()) +
@@ -243,7 +323,7 @@ bool InstallEliteZombieHooks(std::uint8_t* moduleBase) {
                              &g_originalEliteZombieDelete, "Zombie::Delete")) {
         return false;
     }
-    LogInfo("Installed elite zombie lifecycle, skill, tint, and external overlay hooks.");
+    LogInfo("Installed elite zombie lifecycle, skill, tint, and reanimation track-replacement hooks.");
     return true;
 }
 
@@ -271,6 +351,7 @@ extern "C" void __stdcall EliteZombieDrawBridge(void* zombie, void* graphics) {
         return;
     }
     pvzmod::DispatchStateSkills(zombie, *state, pvzmod::EliteSkillEvent::BeforeDraw);
+    pvzmod::ApplyEliteTrackReplacements(zombie, *state);
     pvzmod::GameColor previousColor{};
     bool previousColorize = false;
     const bool tinted = state->definition->visual.tint.has_value() && graphics != nullptr;
@@ -287,19 +368,6 @@ extern "C" void __stdcall EliteZombieDrawBridge(void* zombie, void* graphics) {
         pvzmod::Field<pvzmod::GameColor>(graphics, pvzmod::kGraphicsColorOffset) = previousColor;
         pvzmod::Field<std::uint8_t>(graphics, pvzmod::kGraphicsColorizeOffset) =
             previousColorize ? 1 : 0;
-    }
-    const pvzmod::EliteVisualDefinition& visual = state->definition->visual;
-    if (!visual.overlayTextureId.empty() && graphics != nullptr) {
-        void* image = pvzmod::ResolveExternalTexture(
-            visual.overlayTextureId, pvzmod::Field<void*>(zombie, pvzmod::kAppOffset));
-        if (image != nullptr) {
-            const int x = static_cast<int>(std::lround(
-                pvzmod::Field<float>(zombie, pvzmod::kPosXOffset))) + visual.offsetX;
-            const int y = static_cast<int>(std::lround(
-                pvzmod::Field<float>(zombie, pvzmod::kPosYOffset) -
-                pvzmod::Field<float>(zombie, pvzmod::kAltitudeOffset))) + visual.offsetY;
-            pvzmod::DrawImageRaw(graphics, image, x, y);
-        }
     }
     pvzmod::DispatchStateSkills(zombie, *state, pvzmod::EliteSkillEvent::AfterDraw);
 }

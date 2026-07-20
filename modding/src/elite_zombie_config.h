@@ -17,11 +17,21 @@ struct EliteTint {
     int alpha = 255;
 };
 
+enum class EliteTextureScope {
+    Body,
+    Special,
+};
+
+struct EliteTrackReplacement {
+    EliteTextureScope scope = EliteTextureScope::Body;
+    std::string target;
+    std::string track;
+    std::string textureId;
+};
+
 struct EliteVisualDefinition {
     std::optional<EliteTint> tint;
-    std::string overlayTextureId;
-    int offsetX = 0;
-    int offsetY = 0;
+    std::vector<EliteTrackReplacement> replacements;
 };
 
 struct EliteSkillBinding {
@@ -59,6 +69,8 @@ struct EliteZombieConfigLoadResult {
 };
 
 [[nodiscard]] EliteZombieConfigLoadResult LoadEliteZombieConfig(const std::filesystem::path& path);
+[[nodiscard]] std::optional<std::string_view> ZombieTextureTrackForTarget(std::string_view target);
+[[nodiscard]] bool IsReanimationTrackName(std::string_view track);
 [[nodiscard]] bool EliteRollSucceeds(
     std::uint32_t seed, int zombieType, std::uint32_t zombieInstanceId, int runtimeId, double chance);
 [[nodiscard]] const EliteZombieDefinition* PickEliteZombie(
