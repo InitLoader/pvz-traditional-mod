@@ -29,6 +29,9 @@
 /pvzmod/*
 !/pvzmod/config/
 !/pvzmod/config/**
+!/pvzmod/images/
+/pvzmod/images/*
+!/pvzmod/images/README.md
 
 # Editor and compiler debris that may appear inside allowed trees.
 **/.vs/

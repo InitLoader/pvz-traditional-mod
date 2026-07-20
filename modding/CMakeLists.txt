@@ -36,6 +36,8 @@ FetchContent_MakeAvailable(nlohmann_json minhook)
 
 add_library(pvz_wave_core STATIC
     src/custom_plant_config.cpp
+    src/elite_zombie_config.cpp
+    src/external_texture_config.cpp
     src/global_config.cpp
     src/plant_attack_config.cpp
     src/seed_ui_config.cpp
@@ -54,6 +56,9 @@ add_library(pvzmod SHARED
     src/custom_plant_hook.cpp
     src/custom_plant_text_hook.cpp
     src/dllmain.cpp
+    src/elite_skill_registry.cpp
+    src/elite_zombie_hook.cpp
+    src/external_texture_runtime.cpp
     src/game_tooltip_text.cpp
     src/hook_utils.cpp
     src/logger.cpp
@@ -64,6 +69,7 @@ add_library(pvzmod SHARED
     src/sun_hook.cpp
     src/wave_hook.cpp
     src/zombie_hook.cpp
+    src/zombie_event_bus.cpp
 )
 target_include_directories(pvzmod PRIVATE src)
 target_link_libraries(pvzmod PRIVATE pvz_wave_core minhook)

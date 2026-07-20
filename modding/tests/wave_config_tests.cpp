@@ -1,5 +1,7 @@
 #include "global_config.h"
 #include "custom_plant_config.h"
+#include "elite_zombie_config.h"
+#include "external_texture_config.h"
 #include "plant_attack_config.h"
 #include "seed_ui_config.h"
 #include "spawn_config.h"
@@ -497,6 +499,92 @@ void TestSeedUiAndCustomPlantConfig() {
     }
 }
 
+void TestExternalTextureConfigAndAliases() {
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "pvzmod_external_textures_test.jsonc";
+    {
+        std::ofstream output(path, std::ios::binary | std::ios::trunc);
+        output << R"({
+          "schemaVersion":1,
+          "textures":[
+            {"id":"KILL","path":"pvzmod/images/zi/kill.png"},
+            {"ID":"UI_2","Patch":"pvzmod/images/ui/page_2.jpg"}
+          ]
+        })";
+    }
+    const auto loaded = pvzmod::LoadExternalTextureConfig(path);
+    std::error_code error;
+    std::filesystem::remove(path, error);
+    Expect(loaded.Ok() && loaded.config->textures.size() == 2,
+           "external texture registry should parse canonical and compatibility aliases");
+    if (loaded.Ok()) {
+        const auto* kill = loaded.config->Find("KILL");
+        const auto* ui = loaded.config->Find("UI_2");
+        Expect(kill != nullptr && kill->path == "pvzmod/images/zi/kill.png",
+               "KILL should retain its normalized path");
+        Expect(ui != nullptr && ui->path == "pvzmod/images/ui/page_2.jpg",
+               "ID and Patch aliases should normalize to the standard definition");
+    }
+    Expect(pvzmod::IsExternalResourceId("zombie_head_01"),
+           "letters, digits, and underscores should be valid resource ids");
+    Expect(!pvzmod::IsExternalResourceId("zombie-head"),
+           "hyphens should be rejected from resource ids");
+}
+
+void TestExternalTextureConfigRejectsTraversal() {
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "pvzmod_external_texture_traversal_test.jsonc";
+    {
+        std::ofstream output(path, std::ios::binary | std::ios::trunc);
+        output << R"({"schemaVersion":1,"textures":[{"id":"BAD","path":"pvzmod/images/../secret.png"}]})";
+    }
+    const auto loaded = pvzmod::LoadExternalTextureConfig(path);
+    std::error_code error;
+    std::filesystem::remove(path, error);
+    Expect(!loaded.Ok(), "external texture paths containing traversal must be rejected");
+}
+
+void TestEliteZombieConfigAndPriority() {
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "pvzmod_elite_zombies_test.jsonc";
+    {
+        std::ofstream output(path, std::ios::binary | std::ios::trunc);
+        output << R"({
+          "schemaVersion":1,
+          "seed":123,
+          "elites":[
+            {
+              "runtimeId":2,"id":"LOW","priority":10,"eligibleZombieIds":[0],"chance":100,
+              "skills":[],"visual":{"tint":{"red":255,"green":80,"blue":80,"alpha":255}}
+            },
+            {
+              "runtimeId":1,"id":"RAGE","name":"rage","priority":20,
+              "eligibleZombieIds":[0],"chance":100,
+              "skills":[{"id":"BERSERK","parameters":{"healthMultiplier":1.5}}],
+              "visual":{"overlayTextureId":"KILL","offsetX":18,"offsetY":-18}
+            }
+          ]
+        })";
+    }
+    const auto loaded = pvzmod::LoadEliteZombieConfig(path);
+    std::error_code error;
+    std::filesystem::remove(path, error);
+    Expect(loaded.Ok() && loaded.config->elites.size() == 2,
+           "elite zombie definitions should parse");
+    if (!loaded.Ok()) return;
+    const pvzmod::EliteZombieDefinition* selected = pvzmod::PickEliteZombie(*loaded.config, 0, 77);
+    Expect(selected != nullptr && selected->id == "RAGE",
+           "higher priority matching elite should win deterministic selection");
+    Expect(pvzmod::PickEliteZombie(*loaded.config, 2, 77) == nullptr,
+           "ineligible zombie types should remain ordinary");
+    const auto& berserk = loaded.config->elites[1].skills[0];
+    Expect(std::abs(berserk.Parameter("healthMultiplier", 1.0) - 1.5) < 0.0001,
+           "elite skill numeric parameters should be retained");
+    const bool first = pvzmod::EliteRollSucceeds(123, 0, 77, 1, 33.0);
+    const bool second = pvzmod::EliteRollSucceeds(123, 0, 77, 1, 33.0);
+    Expect(first == second, "elite probability must be deterministic for the same instance key");
+}
+
 }  // namespace
 
 int main() {
@@ -516,6 +604,9 @@ int main() {
     TestZombieConfigRejectsMissingArmorDefinition();
     TestZombieConfigRejectsUnknownOriginalArmor();
     TestSeedUiAndCustomPlantConfig();
+    TestExternalTextureConfigAndAliases();
+    TestExternalTextureConfigRejectsTraversal();
+    TestEliteZombieConfigAndPriority();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " test(s) failed.\n";
