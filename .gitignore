@@ -22,6 +22,10 @@
 /modding/build/
 /modding/build-*/
 /modding/dist/
+/modding/PvZAnimationStudio/bin/
+/modding/PvZAnimationStudio/obj/
+/modding/PvZAnimationStudio.Tests/bin/
+/modding/PvZAnimationStudio.Tests/obj/
 /modding/.vs/
 
 # Runtime configuration examples only. Logs, saves and generated data stay local.

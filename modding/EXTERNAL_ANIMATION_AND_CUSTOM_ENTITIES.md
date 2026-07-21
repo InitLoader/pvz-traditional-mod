@@ -132,7 +132,7 @@ JSON/JSONC 只能放在 `pvzmod/config/` 的所属分类中；自制 Raw/compile
 - FPS 必须在 `(0, 120]`。
 - Alpha 必须在 `[0, 1]`。
 - 浮点数必须有限并处于安全范围。
-- 轨道名大小写不敏感地保持唯一。
+- 轨道名必须为 1–128 个字符；允许原版数据中实际存在的同名轨道，编辑器按轨道顺序完整保留。
 - 拒绝未知 XML 字段、重复 Transform 字段、DTD 和实体声明。
 - 单个动画失败只跳过该动画并写日志，不把半初始化 Definition 交给原版游戏。
 
@@ -176,12 +176,14 @@ shadow.png
 
 ### 6.3 工具路线
 
-1. 可以直接把原版路径写成 `compiled/reanim/Blover.reanim.compiled`；不再强制预先转换。
-2. 需要编辑动作时，再使用 PopStudio、Twinning 或 EffectViewer 转为 Raw XML、JSON 或 XFL，保留原版坐标比例作为参考。
-3. 在 Adobe Animate/XFL 时间轴或兼容编辑流程中替换部件并制作动作。
-4. 使用 `FlashReanimExportAsRaw_Xml.jsfl` 或转换工具导出 Raw `.reanim`。
-5. 把图片符号写入 `animations.jsonc.images`，把贴图文件登记到 `textures.jsonc`。
+1. 运行 `modding/dist/PvZAnimationStudio/PvZAnimationStudio.exe`，可直接打开原版 `.reanim.compiled`，也可新建植物或僵尸工程。
+2. 在中文分层画布和时间轴中设置 K 帧；起止关键帧之间可生成线性或平滑位移、旋转、缩放和透明度补间。
+3. 工具动态识别全部 `anim_*`，眨眼和未知特殊动作不会因不在内置模板中被丢弃。
+4. 导入 PNG 后，工具可自动生成图片、动作、植物/僵尸配置片段以及 Raw/compiled，并可打包 ZIP 或一键合并 JSONC。
+5. 需要 Adobe Animate/XFL、骨骼或曲线手柄等进阶功能时，可使用 PopStudio、Twinning、EffectViewer 或 JSFL 流程转为 Raw，再回到本工具检查和打包。
 6. 完全退出并重新启动游戏，通过 `pvzmod/logs/pvzmod.log` 检查解析和交叉校验。
+
+制作器的完整操作、工程目录、格式边界和回归命令见 `PvZAnimationStudio/README.md`。
 
 运行时会根据完整后缀自动选择 Raw XML 或原版 PC compiled 解码器。检查文件可运行：
 
