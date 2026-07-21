@@ -205,21 +205,11 @@ RawReanimDefinition DecodePayload(const std::span<const std::uint8_t> payload) {
     RawReanimDefinition result;
     result.fps = fps;
     result.tracks.reserve(trackHeaders.size());
-    std::vector<std::string> foldedTrackNames;
-    foldedTrackNames.reserve(trackHeaders.size());
     std::size_t commonFrameCount = 0;
     for (const TrackHeader& header : trackHeaders) {
         RawReanimTrack track;
         track.name = reader.ReadString("track name", 128);
         if (track.name.empty()) throw std::runtime_error("track name must not be empty");
-        std::string folded = track.name;
-        std::transform(folded.begin(), folded.end(), folded.begin(), [](const unsigned char character) {
-            return static_cast<char>(std::tolower(character));
-        });
-        if (std::find(foldedTrackNames.begin(), foldedTrackNames.end(), folded) != foldedTrackNames.end()) {
-            throw std::runtime_error("track names must be unique");
-        }
-        foldedTrackNames.push_back(std::move(folded));
 
         if (reader.ReadI32("ReanimatorTransform size") != kTransformSize) {
             throw std::runtime_error("ReanimatorTransform size is not 44 bytes");

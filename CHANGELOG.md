@@ -4,6 +4,19 @@
 
 ## Unreleased
 
+### Added in animation-studio-dev
+
+- 增加全中文 `PvZAnimationStudio` 独立桌面工具，提供分层预览、时间轴、K 帧、拖动、旋转、缩放、透明度、线性/平滑补间和播放。
+- 支持新建植物/僵尸工程，动态识别所有 `anim_*` 动作，分类常用植物、僵尸、Boss、特殊动作和眨眼。
+- 支持 Raw `.reanim` 和原版 PC `.reanim.compiled` 读取、编辑、导出与重新打包，以及 PNG 资源绑定。
+- 增加 Mod ZIP、贴图/动画/实体 JSONC 片段生成和带 `.pvzstudio.bak` 的一键配置安装。
+- 增加无第三方测试项目，覆盖格式往返、关键帧补间、JSONC 注释保留和 ZIP 内容。
+
+### Validation in animation-studio-dev
+
+- WPF Release 构建零警告通过。
+- 本地 `compiled/reanim` 的 143 个原版 compiled 文件全部通过“读取 → compiled 重打包 → Raw 导出 → 两种格式再读取”回归，包括原版合法同名轨道；C++ 运行时校验器也全部接受。
+
 ### Added in 0.10.1-dev
 
 - 增加原版 PC `.reanim.compiled` 直接读取：校验 `DEADFED4` 外层、zlib 解压、`B393B4C0` Schema 和 16/12/44 字节缓存结构。

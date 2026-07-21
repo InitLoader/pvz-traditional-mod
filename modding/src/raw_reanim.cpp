@@ -8,7 +8,6 @@
 #include <fstream>
 #include <limits>
 #include <stdexcept>
-#include <unordered_set>
 
 #include <tinyxml2.h>
 
@@ -187,7 +186,6 @@ RawReanimLoadResult LoadRawReanim(const std::filesystem::path& path) {
 
         RawReanimDefinition definition;
         bool sawFps = false;
-        std::unordered_set<std::string> trackNames;
         std::size_t totalTransforms = 0;
         for (const tinyxml2::XMLElement* child = root->FirstChildElement(); child != nullptr;
              child = child->NextSiblingElement()) {
@@ -209,11 +207,6 @@ RawReanimLoadResult LoadRawReanim(const std::filesystem::path& path) {
             } else if (name == "track") {
                 if (definition.tracks.size() >= kMaxTracks) throw std::runtime_error("too many tracks");
                 RawReanimTrack track = ParseTrack(*child);
-                std::string folded = track.name;
-                std::transform(folded.begin(), folded.end(), folded.begin(), [](const unsigned char c) {
-                    return static_cast<char>(std::tolower(c));
-                });
-                if (!trackNames.insert(folded).second) throw std::runtime_error("track names must be unique");
                 totalTransforms += track.transforms.size();
                 if (totalTransforms > kMaxTotalTransforms) throw std::runtime_error("too many total transforms");
                 definition.tracks.push_back(std::move(track));

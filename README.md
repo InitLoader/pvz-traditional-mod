@@ -20,6 +20,7 @@
 - `F08` — 选卡分页、原版页与自定义页切换、原版式选入/退回动画、手型光标和工具提示。
 - `F09` — 配置目录分类、JSON/JSONC 校验、无配置回退原版及运行日志。
 - `F10` — 通用外部贴图注册表、受限路径校验、字符串 ID 查询、原版图片加载器与进程缓存；支持按僵尸 Reanimation 部位/轨道替换，贴图缺失时安全跳过。
+- `F11` — 独立中文动画制作器：分层画布、时间轴、K 帧、位移/旋转/缩放/透明度补间、Raw/compiled 读取与重打包、动作分类、PNG 绑定、JSONC/ZIP 打包和一键安装。
 
 ### 🟡 部分实现
 
@@ -29,6 +30,7 @@
 - `P04` — UI 已完成选卡分页按钮和自定义卡片交互；通用设置页、主菜单入口、图鉴和完整界面改造尚未完成。
 - `T01` — 精英僵尸已完成实例编号与侧挂状态、确定性概率、属性倍率、技能事件、红色视觉标记和外部贴图引用；当前只有 `RAGE/BERSERK` 垂直切片，掉落和更多技能尚未实现。
 - `P05` — 外部动作资源已完成 Raw `.reanim` 与原版 PC `.reanim.compiled` 自动读取、安全解析、动作/事件/定位轨道校验和只读注册表；尚未把自定义 Definition 注入原版 `ReanimationHolder`，因此暂时不会改变游戏内植物或僵尸动画。
+- `P06` — 动画制作器会动态保留所有 `anim_*` 动作并支持眨眼/特殊动作编辑；当前补间为逐帧烘焙，尚未实现贝塞尔曲线、骨骼 IK、音频轨和完整撤销系统。
 
 ### ⬜ 尚未实现
 
@@ -42,12 +44,15 @@
 
 详细设计和实现依据见 [`PVZ传统改版技术路线.md`](PVZ传统改版技术路线.md)。
 外部动作制作、配置和真正新增实体的分阶段契约见 [`modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`](modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md)。
+动画制作器操作与边界见 [`modding/PvZAnimationStudio/README.md`](modding/PvZAnimationStudio/README.md)。
 
 ## 仓库内容
 
 - `modding/src`：按功能拆分的运行时 Hook 模块。
 - `modding/patcher`：仅支持已校验 `1.0.0.1051` 文件的补丁加载器。
 - `modding/tests`：配置与生成逻辑回归测试。
+- `modding/PvZAnimationStudio`：全中文 Reanimation 动画制作器和自动配置/打包器。
+- `modding/PvZAnimationStudio.Tests`：Raw/compiled 往返、补间、JSONC 与打包自测。
 - `pvzmod/config`：按关卡、植物、僵尸、UI 和全局设置分类的配置示例。
 - `PVZ传统改版技术路线.md`：逆向结论、模块边界、配置规则与后续路线。
 - `modding/ARCHITECTURE.md`：代码架构和 Hook 接入说明。

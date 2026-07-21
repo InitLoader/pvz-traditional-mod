@@ -1,5 +1,11 @@
 # PvZ Mod 运行时模块架构
 
+## 动画制作器边界
+
+`PvZAnimationStudio` 是独立 WPF 工具，不链接或注入 `pvzmod.dll`。`Models` 保存可序列化工程；`RawReanimCodec`/`CompiledReanimCodec` 只做格式往返；`TweenService` 只烘焙数值补间；`ActionCatalogService` 动态识别全部 `anim_*`；`OriginalResourceService` 只索引图片；`ProjectPackageService` 只生成分类资源、配置片段和安装合并。UI、编解码、补间、资源索引与打包禁止并入一个类。
+
+编辑器输出必须经过独立运行时管线才能进入游戏。它不能绕过 `custom_reanim_definition`、`animation_instance_hook`、动作事件总线或自定义实体侧挂状态，也不能因 UI 中存在“新僵尸”表单就宣称游戏端已经支持新僵尸。
+
 ## 0.10.1 原版 compiled 资源读取
 
 `compiled_reanim` 独立负责 PC `.reanim.compiled` 的 Cookie、zlib、Schema 和固定结构解码；`reanim_loader` 只按完整后缀把输入分流到 Raw XML 或 compiled 解码器。两种输入最终都转换为同一个规范化 `RawReanimDefinition`，因此动作、事件、挂点和后续 Definition 注入不需要维护两套逻辑。缓存中的指针字段只按布局跳过，禁止解引用。

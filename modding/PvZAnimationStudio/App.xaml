@@ -1,0 +1,38 @@
+<Application x:Class="PvZAnimationStudio.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="MainWindow.xaml">
+  <Application.Resources>
+    <SolidColorBrush x:Key="PanelBrush" Color="#20252D" />
+    <SolidColorBrush x:Key="PanelBorderBrush" Color="#3A424E" />
+    <SolidColorBrush x:Key="AccentBrush" Color="#68C66C" />
+    <Style TargetType="Window">
+      <Setter Property="Background" Value="#15191F" />
+      <Setter Property="Foreground" Value="#EEF3F7" />
+      <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
+    </Style>
+    <Style TargetType="Button">
+      <Setter Property="Margin" Value="3" />
+      <Setter Property="Padding" Value="10,5" />
+      <Setter Property="Background" Value="#323A45" />
+      <Setter Property="Foreground" Value="#F4F6F8" />
+      <Setter Property="BorderBrush" Value="#4B5665" />
+    </Style>
+    <Style TargetType="TextBox">
+      <Setter Property="Margin" Value="3" />
+      <Setter Property="Padding" Value="5,3" />
+      <Setter Property="Background" Value="#101319" />
+      <Setter Property="Foreground" Value="#F5F7F9" />
+      <Setter Property="BorderBrush" Value="#47515E" />
+    </Style>
+    <Style TargetType="ComboBox">
+      <Setter Property="Margin" Value="3" />
+      <Setter Property="Padding" Value="4,2" />
+    </Style>
+    <Style TargetType="GroupBox">
+      <Setter Property="Margin" Value="5" />
+      <Setter Property="Padding" Value="5" />
+      <Setter Property="BorderBrush" Value="#3A424E" />
+    </Style>
+  </Application.Resources>
+</Application>
