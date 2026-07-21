@@ -2,7 +2,9 @@
 
 ## 动画制作器边界
 
-`PvZAnimationStudio` 是独立 WPF 工具，不链接或注入 `pvzmod.dll`。`Models` 保存可序列化工程；`RawReanimCodec`/`CompiledReanimCodec` 只做格式往返；`ReanimationRenderMath` 复现原版矩阵、左上注册点和资源子帧语义；`ActionCatalogService` 与 `ActionViewService` 分别负责动作识别和动作局部视图；`EntityPreviewProfileService` 负责原版多 Reanimation 组合与普通僵尸可选装备过滤；`OriginalResourceService` 只索引图片并合成原版 JPG + 灰度透明蒙版；`EditHistoryService`/`ProjectCloneService` 保存会话级完整撤销与恢复；`TweenService` 只烘焙数值补间；`ProjectPackageService` 只生成分类资源、配置片段和安装合并。UI、渲染数学、编解码、历史、补间、资源索引与打包禁止并入一个类。
+`PvZAnimationStudio` 是独立 WPF 工具，不链接或注入 `pvzmod.dll`。`Models` 保存可序列化工程；`RawReanimCodec`/`CompiledReanimCodec` 只做格式往返；`ReanimationRenderMath` 复现原版矩阵、左上注册点和资源子帧语义；`ActionCatalogService` 与 `ActionViewService` 分别负责动作识别和动作局部视图；`EntityPreviewProfileService` 负责原版多 Reanimation 组合与普通僵尸可选装备过滤；`OriginalResourceService` 只索引图片并合成原版 JPG + 灰度透明蒙版；`ProjectFileService` 负责旧 JSON 和安全受限的 `.pvza` 单文件工程，保存时嵌入全部引用图片及子帧布局；`WorkspaceHostControl` 只维护可拆分区域树、比例和独立窗口，具体动画视图、时间轴、资源浏览器和属性检查器仍是独立控件；`EditHistoryService`/`ProjectCloneService` 保存会话级完整撤销与恢复；`TweenService` 只烘焙数值补间；`ProjectPackageService` 只生成分类资源、配置片段和安装合并。UI、工作区树、渲染数学、编解码、历史、补间、资源索引与打包禁止并入一个类。
+
+`.pvza` 是 ZIP 容器，但只能包含根目录 `project.json` 和受限的 `assets/` 图片。读取端限制文件数量、单图大小、总大小并拒绝 `..` 和非 `assets/` 路径；图片解压到按工程路径、长度和修改时间散列出的本地缓存。保存端把原版 JPG+灰度遮罩先合成为带 Alpha 的 PNG，连同 `cols/rows` 一起写入工程。工作区是可序列化的二叉拆分树；GridSplitter 只更新比例，区域类型、拆分、关闭和独立窗口不侵入动画模型。
 
 预览必须区分“完整实体审计”和“单动作编辑”。完整视图可按配置叠加豌豆头、三线射手三头等原版附属动作，并隐藏普通僵尸骨架上未启用的路障、铁桶、铁门等可选装备；选中动作后只显示该动作影响的轨道与关键帧。所有会改变工程内容的入口——画布变换、K 帧、补间、帧/轨道/动作增删、动作参数、实体属性、FPS 和图片绑定——必须进入同一无步数截断的会话历史，`Ctrl+Z` 逐项撤销，`Ctrl+Y`/`Ctrl+Shift+Z` 按原顺序恢复；撤销后发生新编辑时丢弃旧恢复分支。
 
@@ -10,7 +12,7 @@
 
 ## 0.10.1 原版 compiled 资源读取
 
-`compiled_reanim` 独立负责 PC `.reanim.compiled` 的 Cookie、zlib、Schema 和固定结构解码；`reanim_loader` 只按完整后缀把输入分流到 Raw XML 或 compiled 解码器。两种输入最终都转换为同一个规范化 `RawReanimDefinition`，因此动作、事件、挂点和后续 Definition 注入不需要维护两套逻辑。缓存中的指针字段只按布局跳过，禁止解引用。
+`compiled_reanim` 独立负责 PC `.reanim.compiled` 的 Cookie、zlib、Schema 和固定结构解码；编辑器打开文件时优先嗅探 `DEADFED4` Cookie，再按完整后缀分流，运行时 `reanim_loader` 仍执行路径与后缀白名单。两种输入最终都转换为同一个规范化 `RawReanimDefinition`，因此动作、事件、挂点和后续 Definition 注入不需要维护两套逻辑。缓存中的指针字段只按布局跳过，禁止解引用。
 
 ## 0.10.0 外部动作资源边界
 

@@ -265,6 +265,32 @@ public sealed class EditorViewModel : ObservableObject
         NotifyVisualChanged();
     }
 
+    public AnimationTrack AddImageTrack(string name, string imageSymbol, float x, float y)
+    {
+        RecordUndo("拖入图片轨道");
+        if (string.IsNullOrWhiteSpace(name)) name = "图片部件";
+        var baseName = name;
+        var suffix = 2;
+        while (Project.Animation.FindTrack(name) is not null) name = $"{baseName}_{suffix++}";
+        var track = new AnimationTrack { Name = name };
+        track.EnsureFrameCount(Math.Max(1, Project.Animation.FrameCount));
+        var frame = track.Frames[Math.Clamp(CurrentFrame, 0, track.Frames.Count - 1)];
+        frame.X = x;
+        frame.Y = y;
+        frame.ScaleX = 1;
+        frame.ScaleY = 1;
+        frame.Frame = 0;
+        frame.Alpha = 1;
+        frame.Image = imageSymbol;
+        Project.Animation.Tracks.Add(track);
+        SelectedTrack = track;
+        RaisePropertyChanged(nameof(Tracks));
+        RaiseTimelineProperties();
+        RaiseFrameProperties();
+        NotifyVisualChanged();
+        return track;
+    }
+
     public void RemoveSelectedTrack()
     {
         if (SelectedTrack is null || Project.Animation.Tracks.Count <= 1) return;

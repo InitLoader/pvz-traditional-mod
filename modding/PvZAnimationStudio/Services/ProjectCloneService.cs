@@ -29,7 +29,12 @@ public sealed class ProjectCloneService
             Damage = source.Damage,
             ShotsPerAttack = source.ShotsPerAttack,
             Animation = CloneAnimation(source.Animation),
-            ImageBindings = new Dictionary<string, string>(source.ImageBindings, StringComparer.OrdinalIgnoreCase)
+            ImageBindings = new Dictionary<string, string>(source.ImageBindings, StringComparer.OrdinalIgnoreCase),
+            ImageLayouts = source.ImageLayouts.ToDictionary(
+                item => item.Key,
+                item => new ImageLayoutDefinition { Columns = item.Value.Columns, Rows = item.Value.Rows },
+                StringComparer.OrdinalIgnoreCase),
+            WorkspaceLayout = source.WorkspaceLayout.Clone()
         };
         clone.Actions = new ObservableCollection<ActionDefinition>(source.Actions.Select(CloneAction));
         return clone;

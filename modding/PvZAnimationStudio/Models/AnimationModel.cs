@@ -259,7 +259,7 @@ public sealed class EditorProject : ObservableObject
     private string? _projectPath;
     private string? _sourceAnimationPath;
 
-    public int SchemaVersion { get; set; } = 1;
+    public int SchemaVersion { get; set; } = 2;
     public string Id { get => _id; set => SetField(ref _id, value); }
     public string DisplayName { get => _displayName; set => SetField(ref _displayName, value); }
     public string Description { get => _description; set => SetField(ref _description, value); }
@@ -283,4 +283,6 @@ public sealed class EditorProject : ObservableObject
     public AnimationDocument Animation { get; set; } = new();
     public ObservableCollection<ActionDefinition> Actions { get; set; } = [];
     public Dictionary<string, string> ImageBindings { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, ImageLayoutDefinition> ImageLayouts { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public WorkspaceLayoutState WorkspaceLayout { get; set; } = WorkspaceLayoutState.CreateDefault();
 }

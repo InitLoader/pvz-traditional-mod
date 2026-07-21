@@ -23,6 +23,12 @@ public sealed class TimelineControl : FrameworkElement
         UpdateExtent();
     }
 
+    public void Unbind()
+    {
+        if (_viewModel is not null) _viewModel.VisualStateChanged -= OnVisualStateChanged;
+        _viewModel = null;
+    }
+
     protected override void OnRender(DrawingContext context)
     {
         base.OnRender(context);

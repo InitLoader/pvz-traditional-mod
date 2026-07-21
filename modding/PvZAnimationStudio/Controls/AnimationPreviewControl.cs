@@ -9,6 +9,8 @@ using PvZAnimationStudio.ViewModels;
 
 namespace PvZAnimationStudio.Controls;
 
+public sealed record ExternalImagesDroppedEventArgs(IReadOnlyList<string> Files, Point WorldPosition);
+
 public sealed class AnimationPreviewControl : FrameworkElement
 {
     private enum GizmoHandle { None, FreeMove, MoveX, MoveY, Rotate, ScaleX, ScaleY, ScaleUniform }
@@ -28,15 +30,20 @@ public sealed class AnimationPreviewControl : FrameworkElement
     private Vector _pan;
     private double _zoom = 1;
 
+    public event EventHandler<ExternalImagesDroppedEventArgs>? ExternalImagesDropped;
+
     public AnimationPreviewControl()
     {
         Focusable = true;
         ClipToBounds = true;
+        AllowDrop = true;
         Cursor = Cursors.Arrow;
         MouseDown += OnMouseDown;
         MouseMove += OnMouseMove;
         MouseUp += OnMouseUp;
         MouseWheel += OnMouseWheel;
+        DragOver += OnDragOver;
+        Drop += OnDrop;
         MouseLeave += (_, _) => { if (_activeHandle == GizmoHandle.None) Cursor = Cursors.Arrow; };
     }
 
@@ -47,6 +54,14 @@ public sealed class AnimationPreviewControl : FrameworkElement
         _resources = resources;
         _viewModel.VisualStateChanged += OnVisualStateChanged;
         InvalidateVisual();
+    }
+
+    public void Unbind()
+    {
+        if (_viewModel is not null) _viewModel.VisualStateChanged -= OnVisualStateChanged;
+        _viewModel = null;
+        _resources = null;
+        _renderedParts.Clear();
     }
 
     public void ResetView()
@@ -177,6 +192,37 @@ public sealed class AnimationPreviewControl : FrameworkElement
     }
 
     private Point GetOrigin() => new(ActualWidth / 2 + _pan.X, ActualHeight / 2 + _pan.Y);
+
+    private void OnDragOver(object sender, DragEventArgs eventArgs)
+    {
+        eventArgs.Effects = GetDroppedImages(eventArgs.Data).Count > 0 ? DragDropEffects.Copy : DragDropEffects.None;
+        eventArgs.Handled = true;
+    }
+
+    private void OnDrop(object sender, DragEventArgs eventArgs)
+    {
+        var files = GetDroppedImages(eventArgs.Data);
+        if (files.Count == 0) return;
+        var screen = eventArgs.GetPosition(this);
+        var origin = GetOrigin();
+        var world = new Point((screen.X - origin.X) / _zoom, (screen.Y - origin.Y) / _zoom);
+        ExternalImagesDropped?.Invoke(this, new ExternalImagesDroppedEventArgs(files, world));
+        eventArgs.Effects = DragDropEffects.Copy;
+        eventArgs.Handled = true;
+    }
+
+    private static IReadOnlyList<string> GetDroppedImages(IDataObject data)
+    {
+        if (!data.GetDataPresent(DataFormats.FileDrop) || data.GetData(DataFormats.FileDrop) is not string[] files)
+            return [];
+        return files.Where(file => File.Exists(file) && Path.GetExtension(file) is var extension &&
+                                   (extension.Equals(".png", StringComparison.OrdinalIgnoreCase) ||
+                                    extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                                    extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase)))
+            .Select(Path.GetFullPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
 
     private void DrawGrid(DrawingContext context)
     {

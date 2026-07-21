@@ -7,22 +7,44 @@ public sealed class ReanimCodecService
     private readonly RawReanimCodec _raw = new();
     private readonly CompiledReanimCodec _compiled = new();
 
-    public AnimationDocument Load(string path) => Select(path).Load(path);
+    public AnimationDocument Load(string path) => SelectForLoad(path).Load(path);
 
-    public void Save(AnimationDocument document, string path) => Select(path).Save(document, path);
-
-    public void Save(AnimationDocument document, string path, AnimationOutputFormat format)
+    public string Save(AnimationDocument document, string path)
     {
+        Select(path).Save(document, path);
+        return path;
+    }
+
+    public string Save(AnimationDocument document, string path, AnimationOutputFormat format)
+    {
+        string outputPath;
         if (format == AnimationOutputFormat.Compiled)
-            _compiled.Save(document, EnsureSuffix(path, ".reanim.compiled"));
+        {
+            outputPath = path.EndsWith(".compiled", StringComparison.OrdinalIgnoreCase)
+                ? path
+                : EnsureSuffix(path, ".reanim.compiled");
+            _compiled.Save(document, outputPath);
+        }
         else
-            _raw.Save(document, EnsureRawSuffix(path));
+        {
+            outputPath = EnsureRawSuffix(path);
+            _raw.Save(document, outputPath);
+        }
+        return outputPath;
     }
 
     public static bool IsCompiledPath(string path) =>
         path.EndsWith(".reanim.compiled", StringComparison.OrdinalIgnoreCase);
 
     private IReanimCodec Select(string path) => IsCompiledPath(path) ? _compiled : _raw;
+
+    private IReanimCodec SelectForLoad(string path)
+    {
+        using var stream = File.OpenRead(path);
+        Span<byte> cookie = stackalloc byte[4];
+        var read = stream.Read(cookie);
+        return read == 4 && BitConverter.ToUInt32(cookie) == 0xDEADFED4 ? _compiled : Select(path);
+    }
 
     private static string EnsureSuffix(string path, string suffix) =>
         path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) ? path : path + suffix;

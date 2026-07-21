@@ -13,26 +13,32 @@ namespace PvZAnimationStudio;
 public partial class MainWindow : Window
 {
     private readonly ReanimCodecService _codec = new();
-    private readonly ProjectFileService _projectFiles = new();
     private readonly ActionCatalogService _actionCatalog = new();
     private readonly OriginalResourceService _resources = new();
+    private readonly ProjectFileService _projectFiles;
     private readonly EntityPreviewProfileService _entityProfiles = new();
     private readonly ProjectPackageService _packages;
     private readonly EditorViewModel _viewModel;
     private readonly DispatcherTimer _playTimer;
+    private bool _changingWorkspaceSelection;
+    private string? _lastFileDirectory;
 
     public MainWindow()
     {
         InitializeComponent();
+        _projectFiles = new ProjectFileService(_resources);
         _packages = new ProjectPackageService(_codec, new JsoncArrayEditor());
         _viewModel = new EditorViewModel(_actionCatalog);
         DataContext = _viewModel;
-        PreviewControl.Bind(_viewModel, _resources);
-        TimelineControl.Bind(_viewModel);
-        KindCombo.ItemsSource = Enum.GetValues<EntityKind>();
-        OutputFormatCombo.ItemsSource = Enum.GetValues<AnimationOutputFormat>();
-        LoopCombo.ItemsSource = Enum.GetValues<AnimationLoopMode>();
-        ActionTemplateCombo.SelectedIndex = 0;
+        WorkspaceHost.Bind(_viewModel, _resources);
+        WorkspaceHost.ApplyLayout(_viewModel.Project.WorkspaceLayout);
+        WorkspaceHost.ImportImagesRequested += (_, _) => ImportImages();
+        WorkspaceHost.ChooseGameRootRequested += (_, _) => ChooseGameRoot();
+        WorkspaceHost.LayoutChanged += (_, _) =>
+        {
+            _viewModel.Project.WorkspaceLayout = WorkspaceHost.ExportLayout();
+            SelectWorkspacePreset(WorkspacePreset.Custom);
+        };
         _playTimer = new DispatcherTimer();
         _playTimer.Tick += (_, _) => _viewModel.StepPlayback();
         _viewModel.VisualStateChanged += (_, _) =>
@@ -54,7 +60,8 @@ public partial class MainWindow : Window
             var startupFile = startupArguments.FirstOrDefault(File.Exists);
             if (startupFile is not null) RunGuarded(() =>
             {
-                LoadAnimationFile(startupFile);
+                if (IsProjectFile(startupFile)) LoadProjectFile(startupFile);
+                else LoadAnimationFile(startupFile);
                 if (startupArguments.Length > 1)
                 {
                     if (string.Equals(startupArguments[1], "representative", StringComparison.OrdinalIgnoreCase))
@@ -68,9 +75,10 @@ public partial class MainWindow : Window
                     _viewModel.SelectedAction = _viewModel.Actions.FirstOrDefault(action =>
                         string.Equals(action.Track, startupArguments[2], StringComparison.OrdinalIgnoreCase) ||
                         string.Equals(action.Id, startupArguments[2], StringComparison.OrdinalIgnoreCase));
-                Dispatcher.BeginInvoke(PreviewControl.FrameAll, DispatcherPriority.Loaded);
+                Dispatcher.BeginInvoke(WorkspaceHost.FrameAllViews, DispatcherPriority.Loaded);
             });
         };
+        Closed += (_, _) => WorkspaceHost.Unbind();
     }
 
     private void UpdatePlaybackInterval()
@@ -79,15 +87,27 @@ public partial class MainWindow : Window
         _playTimer.Interval = TimeSpan.FromSeconds(1.0 / fps);
     }
 
-    private void NewPlant_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.NewProject(EntityKind.Plant);
-    private void NewZombie_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.NewProject(EntityKind.Zombie);
+    private void NewPlant_Click(object sender, RoutedEventArgs eventArgs) => NewProject(EntityKind.Plant);
+    private void NewZombie_Click(object sender, RoutedEventArgs eventArgs) => NewProject(EntityKind.Zombie);
+
+    private void NewProject(EntityKind kind)
+    {
+        _viewModel.NewProject(kind);
+        var layout = new WorkspaceLayoutPresetService().Create(WorkspacePreset.Animation);
+        _viewModel.Project.WorkspaceLayout = layout;
+        WorkspaceHost.ApplyLayout(layout);
+        SelectWorkspacePreset(WorkspacePreset.Animation);
+    }
 
     private void OpenAnimation_Click(object sender, RoutedEventArgs eventArgs)
     {
         var dialog = new OpenFileDialog
         {
             Title = "打开 Reanimation",
-            Filter = "Reanimation|*.reanim;*.reanim.compiled|Raw Reanimation|*.reanim|Compiled Reanimation|*.reanim.compiled|所有文件|*.*"
+            Filter = "全部支持的动画|*.reanim.compiled;*.compiled;*.reanim|Compiled Reanimation|*.reanim.compiled;*.compiled|Raw Reanimation|*.reanim|所有文件|*.*",
+            CheckFileExists = true,
+            RestoreDirectory = true,
+            InitialDirectory = Directory.Exists(_lastFileDirectory) ? _lastFileDirectory : null
         };
         if (dialog.ShowDialog(this) != true) return;
         RunGuarded(() => LoadAnimationFile(dialog.FileName));
@@ -95,6 +115,7 @@ public partial class MainWindow : Window
 
     public void LoadAnimationFile(string fileName)
     {
+        _lastFileDirectory = Path.GetDirectoryName(Path.GetFullPath(fileName));
         var document = _codec.Load(fileName);
         _viewModel.ReplaceAnimation(document, fileName);
         var gameRoot = FindGameRoot(Path.GetDirectoryName(Path.GetFullPath(fileName))!);
@@ -104,33 +125,48 @@ public partial class MainWindow : Window
             _resources.RebuildIndex(gameRoot);
         }
         _viewModel.Status = $"已读取 {Path.GetFileName(fileName)}：{document.Tracks.Count} 轨 / {document.FrameCount} 帧";
-        Dispatcher.BeginInvoke(PreviewControl.FrameAll, DispatcherPriority.Loaded);
+        Dispatcher.BeginInvoke(WorkspaceHost.FrameAllViews, DispatcherPriority.Loaded);
     }
 
     private void OpenProject_Click(object sender, RoutedEventArgs eventArgs)
     {
-        var dialog = new OpenFileDialog { Title = "打开动画工程", Filter = "PvZ 动画工程|*.pvza.json|JSON|*.json" };
-        if (dialog.ShowDialog(this) != true) return;
-        RunGuarded(() =>
+        var dialog = new OpenFileDialog
         {
-            var project = _projectFiles.Load(dialog.FileName);
-            _viewModel.ReplaceProject(project);
-            _resources.RebuildIndex(project.GameRoot);
-            _viewModel.Status = $"已打开工程：{project.DisplayName}";
-        });
+            Title = "打开动画工程",
+            Filter = "PvZ 便携动画工程|*.pvza;*.pvzanimproj|旧版工程 JSON|*.pvza.json;*.json|所有文件|*.*",
+            CheckFileExists = true,
+            RestoreDirectory = true,
+            InitialDirectory = Directory.Exists(_lastFileDirectory) ? _lastFileDirectory : null
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        RunGuarded(() => LoadProjectFile(dialog.FileName));
+    }
+
+    private void LoadProjectFile(string fileName)
+    {
+        _lastFileDirectory = Path.GetDirectoryName(Path.GetFullPath(fileName));
+        var project = _projectFiles.Load(fileName);
+        _viewModel.ReplaceProject(project);
+        _resources.RebuildIndex(project.GameRoot);
+        WorkspaceHost.ApplyLayout(project.WorkspaceLayout);
+        SelectWorkspacePreset(WorkspacePreset.Custom);
+        _viewModel.Status = $"已打开便携工程：{project.DisplayName}";
+        Dispatcher.BeginInvoke(WorkspaceHost.FrameAllViews, DispatcherPriority.Loaded);
     }
 
     private void SaveProject_Click(object sender, RoutedEventArgs eventArgs)
     {
-        if (string.IsNullOrWhiteSpace(_viewModel.Project.ProjectPath))
+        if (string.IsNullOrWhiteSpace(_viewModel.Project.ProjectPath) ||
+            _viewModel.Project.ProjectPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
         {
             SaveProjectAs_Click(sender, eventArgs);
             return;
         }
         RunGuarded(() =>
         {
+            _viewModel.Project.WorkspaceLayout = WorkspaceHost.ExportLayout();
             _projectFiles.Save(_viewModel.Project, _viewModel.Project.ProjectPath!);
-            _viewModel.Status = "工程已保存";
+            _viewModel.Status = "便携工程已保存（动画、属性和图片均已嵌入）";
         });
     }
 
@@ -139,15 +175,20 @@ public partial class MainWindow : Window
         var dialog = new SaveFileDialog
         {
             Title = "保存动画工程",
-            Filter = "PvZ 动画工程|*.pvza.json",
-            FileName = $"{_viewModel.Project.Id}.pvza.json",
-            AddExtension = true
+            Filter = "PvZ 便携动画工程|*.pvza",
+            DefaultExt = ".pvza",
+            FileName = $"{_viewModel.Project.Id}.pvza",
+            AddExtension = true,
+            RestoreDirectory = true,
+            InitialDirectory = Directory.Exists(_lastFileDirectory) ? _lastFileDirectory : null
         };
         if (dialog.ShowDialog(this) != true) return;
         RunGuarded(() =>
         {
+            _viewModel.Project.WorkspaceLayout = WorkspaceHost.ExportLayout();
             _projectFiles.Save(_viewModel.Project, dialog.FileName);
-            _viewModel.Status = $"工程已保存：{dialog.FileName}";
+            _lastFileDirectory = Path.GetDirectoryName(Path.GetFullPath(dialog.FileName));
+            _viewModel.Status = $"便携工程已保存：{dialog.FileName}";
         });
     }
 
@@ -161,14 +202,18 @@ public partial class MainWindow : Window
         {
             Title = compiled ? "导出 compiled Reanimation" : "导出 Raw Reanimation",
             Filter = compiled ? "Compiled Reanimation|*.reanim.compiled" : "Raw Reanimation|*.reanim",
+            DefaultExt = compiled ? ".reanim.compiled" : ".reanim",
             FileName = _viewModel.Project.Id + (compiled ? ".reanim.compiled" : ".reanim"),
-            AddExtension = true
+            AddExtension = true,
+            RestoreDirectory = true,
+            InitialDirectory = Directory.Exists(_lastFileDirectory) ? _lastFileDirectory : null
         };
         if (dialog.ShowDialog(this) != true) return;
         RunGuarded(() =>
         {
-            _codec.Save(_viewModel.Project.Animation, dialog.FileName);
-            _viewModel.Status = $"已导出：{dialog.FileName}";
+            var outputPath = _codec.Save(_viewModel.Project.Animation, dialog.FileName, format);
+            _lastFileDirectory = Path.GetDirectoryName(Path.GetFullPath(outputPath));
+            _viewModel.Status = $"已导出，可直接重新打开：{outputPath}";
         });
     }
 
@@ -224,16 +269,18 @@ public partial class MainWindow : Window
         _viewModel.ProjectGameRoot = dialog.FolderName;
         _resources.RebuildIndex(dialog.FolderName);
         _viewModel.Status = $"已索引原版资源：{dialog.FolderName}";
-        PreviewControl.InvalidateVisual();
+        WorkspaceHost.FrameAllViews();
         return true;
     }
 
-    private void ImportImages_Click(object sender, RoutedEventArgs eventArgs)
+    private void ImportImages_Click(object sender, RoutedEventArgs eventArgs) => ImportImages();
+
+    private void ImportImages()
     {
         var dialog = new OpenFileDialog
         {
-            Title = "导入透明 PNG 部件",
-            Filter = "PNG 图片|*.png",
+            Title = "导入 PNG / JPG 动画部件",
+            Filter = "支持的图片|*.png;*.jpg;*.jpeg|PNG 图片|*.png|JPEG 图片|*.jpg;*.jpeg",
             Multiselect = true
         };
         if (dialog.ShowDialog(this) != true) return;
@@ -252,24 +299,13 @@ public partial class MainWindow : Window
             {
                 _viewModel.EndEditTransaction();
             }
-            ImageBindingsList.Items.Refresh();
+            WorkspaceHost.RefreshImageBindings();
             _viewModel.Status = $"已导入 {dialog.FileNames.Length} 张图片";
         });
     }
 
-    private void ImageBindingsList_MouseDoubleClick(object sender, MouseButtonEventArgs eventArgs)
-    {
-        if (ImageBindingsList.SelectedItem is KeyValuePair<string, string> selected)
-            _viewModel.CurrentImage = selected.Key;
-    }
-
     private void AddTrack_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.AddTrack("新部件");
     private void RemoveTrack_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.RemoveSelectedTrack();
-
-    private void AddAction_Click(object sender, RoutedEventArgs eventArgs)
-    {
-        if (ActionTemplateCombo.SelectedItem is ActionTemplate template) _viewModel.AddAction(template);
-    }
 
     private void RemoveAction_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.RemoveSelectedAction();
     private void InferActions_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.InferActions();
@@ -290,8 +326,8 @@ public partial class MainWindow : Window
     private void PreviousFrame_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.CurrentFrame--;
     private void NextFrame_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.CurrentFrame++;
     private void LastFrame_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.CurrentFrame = _viewModel.TimelineFrameEnd;
-    private void ResetView_Click(object sender, RoutedEventArgs eventArgs) => PreviewControl.ResetView();
-    private void FrameAll_Click(object sender, RoutedEventArgs eventArgs) => PreviewControl.FrameAll();
+    private void ResetView_Click(object sender, RoutedEventArgs eventArgs) => WorkspaceHost.ResetAllViews();
+    private void FrameAll_Click(object sender, RoutedEventArgs eventArgs) => WorkspaceHost.FrameAllViews();
 
     private void Play_Click(object sender, RoutedEventArgs eventArgs)
     {
@@ -430,10 +466,67 @@ public partial class MainWindow : Window
             return frame.Frame >= 0 && frame.Alpha > 0 && !string.IsNullOrWhiteSpace(frame.Image);
         });
 
+    private void WorkspacePresetCombo_SelectionChanged(object sender, SelectionChangedEventArgs eventArgs)
+    {
+        if (_changingWorkspaceSelection || WorkspaceHost is null ||
+            WorkspacePresetCombo.SelectedItem is not ComboBoxItem item ||
+            !Enum.TryParse<WorkspacePreset>(item.Tag?.ToString(), out var preset) ||
+            preset == WorkspacePreset.Custom) return;
+        ApplyWorkspacePreset(preset);
+    }
+
+    private void ApplyWorkspacePreset(WorkspacePreset preset)
+    {
+        WorkspaceHost.ApplyPreset(preset);
+        _viewModel.Project.WorkspaceLayout = WorkspaceHost.ExportLayout();
+        SelectWorkspacePreset(preset);
+        Dispatcher.BeginInvoke(WorkspaceHost.FrameAllViews, DispatcherPriority.Loaded);
+    }
+
+    private void SelectWorkspacePreset(WorkspacePreset preset)
+    {
+        if (WorkspacePresetCombo is null) return;
+        _changingWorkspaceSelection = true;
+        try
+        {
+            WorkspacePresetCombo.SelectedItem = WorkspacePresetCombo.Items
+                .OfType<ComboBoxItem>()
+                .FirstOrDefault(item => string.Equals(item.Tag?.ToString(), preset.ToString(), StringComparison.Ordinal));
+        }
+        finally
+        {
+            _changingWorkspaceSelection = false;
+        }
+    }
+
+    private void AnimationWorkspace_Click(object sender, RoutedEventArgs eventArgs) => ApplyWorkspacePreset(WorkspacePreset.Animation);
+    private void DualViewWorkspace_Click(object sender, RoutedEventArgs eventArgs) => ApplyWorkspacePreset(WorkspacePreset.DualView);
+    private void DualTimelineWorkspace_Click(object sender, RoutedEventArgs eventArgs) => ApplyWorkspacePreset(WorkspacePreset.DualTimeline);
+    private void FocusWorkspace_Click(object sender, RoutedEventArgs eventArgs) => ApplyWorkspacePreset(WorkspacePreset.Focus);
+
+    private void Window_Drop(object sender, DragEventArgs eventArgs)
+    {
+        if (!eventArgs.Data.GetDataPresent(DataFormats.FileDrop) ||
+            eventArgs.Data.GetData(DataFormats.FileDrop) is not string[] files || files.Length == 0) return;
+        var file = files[0];
+        RunGuarded(() =>
+        {
+            if (IsProjectFile(file)) LoadProjectFile(file);
+            else LoadAnimationFile(file);
+        });
+        eventArgs.Handled = true;
+    }
+
+    private static bool IsProjectFile(string path) =>
+        path.EndsWith(".pvza", StringComparison.OrdinalIgnoreCase) ||
+        path.EndsWith(".pvzanimproj", StringComparison.OrdinalIgnoreCase) ||
+        path.EndsWith(".pvza.json", StringComparison.OrdinalIgnoreCase) ||
+        path.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
+
     private void Help_Click(object sender, RoutedEventArgs eventArgs)
     {
         MessageBox.Show(this,
-            "基本流程：\n1. 选择游戏目录。\n2. 打开原版 .reanim.compiled 或新建工程。\n3. 在动作页点击动作，时间轴会只显示该动作范围和发生变化的轨道。\n4. Q 选择，W 移动，E 旋转，R 缩放；拖动画布操纵器制作关键帧。\n5. K 设置关键帧，Shift+K 清除，逗号/句号换帧。\n6. 导出 Raw/compiled，或一键安装。\n\n撤销/重做：Ctrl+Z / Ctrl+Y。方向键微调部件，Shift+方向键加速。",
+            "基本流程：\n1. 选择游戏目录。\n2. 打开任意目录中的 .reanim.compiled，或新建工程。\n3. 拖动区域分隔线调整大小；右上角 ↔/↕ 或斜纹拖拽可拆分区域，↗ 可打开独立窗口。\n4. 每个区域左上角可切换动画视图、时间轴、资源或属性；窗口右上角可切换工作区。\n5. Q 选择，W 移动，E 旋转，R 缩放；K 设置关键帧。\n6. 保存为 .pvza 会把动画、动作、属性、工作区和所有图片嵌入同一个文件。\n\n撤销/重做：Ctrl+Z / Ctrl+Y。方向键微调部件，Shift+方向键加速。",
             "制作流程", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 

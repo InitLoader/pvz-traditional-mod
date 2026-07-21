@@ -65,6 +65,7 @@ public sealed class OriginalResourceService
         while (project.ImageBindings.ContainsKey(candidate))
             candidate = $"{symbol}_{suffix++}";
         project.ImageBindings[candidate] = Path.GetFullPath(file);
+        project.ImageLayouts[candidate] = new ImageLayoutDefinition();
         _imageCache.Remove(candidate);
         return candidate;
     }
@@ -96,7 +97,9 @@ public sealed class OriginalResourceService
             var image = LoadBitmap(path);
             image = ApplyLegacyAlphaMask(path, image);
             var normalized = NormalizeSymbol(symbol);
-            var layout = _resourceLayout.TryGetValue(normalized, out var value) ? value : (1, 1);
+            var layout = project.ImageLayouts.TryGetValue(symbol, out var embeddedLayout)
+                ? (Math.Max(1, embeddedLayout.Columns), Math.Max(1, embeddedLayout.Rows))
+                : _resourceLayout.TryGetValue(normalized, out var value) ? value : (1, 1);
             return _imageCache[symbol] = new ImageResourceInfo(image, layout.Item1, layout.Item2);
         }
         catch

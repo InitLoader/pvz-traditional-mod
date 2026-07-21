@@ -3,9 +3,19 @@ using System.IO.Compression;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using PvZAnimationStudio;
+using PvZAnimationStudio.Controls;
 using PvZAnimationStudio.Models;
 using PvZAnimationStudio.Services;
 using PvZAnimationStudio.ViewModels;
+
+if (args.Length > 1 && string.Equals(args[0], "--workspace-screenshot", StringComparison.OrdinalIgnoreCase))
+{
+    RenderWorkspaceScreenshot(args[1], args.Length > 2 ? args[2] : null,
+        args.Length > 3 && Enum.TryParse<WorkspacePreset>(args[3], true, out var preset) ? preset : null,
+        args.Length > 4 && string.Equals(args[4], "floating", StringComparison.OrdinalIgnoreCase));
+    return;
+}
 
 if (args.Length > 1 && string.Equals(args[0], "--audit", StringComparison.OrdinalIgnoreCase))
 {
@@ -35,6 +45,14 @@ try
     var compiledLoaded = compiled.Load(compiledPath);
     AssertDocument(source, compiledLoaded);
 
+    var misleadingCompiledPath = Path.Combine(root, "NEW_PLANT.animation-data");
+    compiled.Save(source, misleadingCompiledPath);
+    AssertDocument(source, new ReanimCodecService().Load(misleadingCompiledPath));
+    var normalizedCompiledPath = new ReanimCodecService().Save(
+        source, Path.Combine(root, "NEW_PLANT"), AnimationOutputFormat.Compiled);
+    Assert(normalizedCompiledPath.EndsWith(".reanim.compiled", StringComparison.OrdinalIgnoreCase) &&
+           File.Exists(normalizedCompiledPath), "compiled 导出没有生成可重新打开的完整后缀");
+
     if (args.Length > 0)
     {
         var sourcePath = Path.GetFullPath(args[0]);
@@ -59,6 +77,31 @@ try
             var rawOriginalPath = Path.Combine(root, $"original-raw-{Guid.NewGuid():N}.reanim");
             raw.Save(original, rawOriginalPath);
             AssertDocument(original, raw.Load(rawOriginalPath));
+        }
+        var originalGameRoot = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(originals[0])!, "..", ".."));
+        if (File.Exists(Path.Combine(originalGameRoot, "PlantsVsZombies.exe")))
+        {
+            var originalDocument = compiled.Load(originals[0]);
+            var originalResources = new OriginalResourceService();
+            originalResources.RebuildIndex(originalGameRoot);
+            var originalPortableProject = new EditorProject
+            {
+                Id = "ORIGINAL_PORTABLE_TEST",
+                GameRoot = originalGameRoot,
+                SourceAnimationPath = originals[0],
+                Animation = originalDocument,
+                Actions = new ObservableCollection<ActionDefinition>(
+                    new ActionCatalogService().InferActions(originalDocument, EntityKind.Plant))
+            };
+            var originalPortablePath = Path.Combine(root, "original-assets.pvza");
+            new ProjectFileService(originalResources).Save(originalPortableProject, originalPortablePath);
+            var loadedOriginalPortable = new ProjectFileService(new OriginalResourceService()).Load(originalPortablePath);
+            var usedSymbols = originalDocument.Tracks.SelectMany(track => track.Frames)
+                .Select(frame => frame.Image).Where(symbol => !string.IsNullOrWhiteSpace(symbol))
+                .Distinct(StringComparer.OrdinalIgnoreCase).Count();
+            Assert(loadedOriginalPortable.ImageBindings.Count == usedSymbols &&
+                   loadedOriginalPortable.ImageBindings.Values.All(File.Exists),
+                "原版 compiled 保存为便携工程时没有嵌入全部实际使用图片");
         }
         Console.WriteLine($"PASS: {originals.Length} 个原版 compiled 文件已全部完成读取、compiled 重打包、Raw 导出和二次读取。");
     }
@@ -112,6 +155,86 @@ try
     maskedImage!.Bitmap.CopyPixels(maskedPixels, 8, 0);
     Assert(maskedPixels[3] == 0 && maskedPixels[7] == 255,
         "原版 JPG 颜色图没有正确合并同名 _PNG 灰度透明遮罩");
+
+    var portableImagePath = Path.Combine(root, "portable-body.png");
+    var portableBitmap = BitmapSource.Create(4, 2, 96, 96, PixelFormats.Bgra32, null,
+        Enumerable.Repeat((byte)255, 4 * 4 * 2).ToArray(), 16);
+    SaveBitmap(portableBitmap, new PngBitmapEncoder(), portableImagePath);
+    var portableProject = new EditorProject
+    {
+        Id = "PORTABLE_PLANT",
+        DisplayName = "便携植物",
+        Description = "动画、属性、布局和图片都必须在同一个文件。",
+        Health = 987,
+        Damage = 66,
+        Animation = source,
+        Actions = new ObservableCollection<ActionDefinition>
+        {
+            new() { Id = "idle", DisplayName = "便携待机", Track = "anim_idle", Rate = 18 }
+        },
+        ImageBindings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["IMAGE_REANIM_TEST_BODY"] = portableImagePath
+        },
+        ImageLayouts = new Dictionary<string, ImageLayoutDefinition>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["IMAGE_REANIM_TEST_BODY"] = new() { Columns = 2, Rows = 1 }
+        },
+        WorkspaceLayout = new WorkspaceLayoutPresetService().Create(WorkspacePreset.DualView)
+    };
+    var portablePath = Path.Combine(root, "PORTABLE_PLANT.pvza");
+    var portableResources = new OriginalResourceService();
+    var portableFiles = new ProjectFileService(portableResources);
+    portableFiles.Save(portableProject, portablePath);
+    Assert(File.Exists(portablePath), "便携工程没有写入单个 .pvza 文件");
+    using (var archive = ZipFile.OpenRead(portablePath))
+    {
+        Assert(archive.GetEntry("project.json") is not null, "便携工程缺少 project.json");
+        Assert(archive.Entries.Count(entry => entry.FullName.StartsWith("assets/", StringComparison.Ordinal)) == 1,
+            "便携工程没有只嵌入一次实际使用图片");
+    }
+    File.Delete(portableImagePath);
+    var portableLoaded = portableFiles.Load(portablePath);
+    Assert(portableLoaded.DisplayName == "便携植物" && portableLoaded.Health == 987 && portableLoaded.Damage == 66,
+        "便携工程没有保留实体属性和信息");
+    AssertDocument(source, portableLoaded.Animation);
+    Assert(portableLoaded.Actions.Count == 1 && portableLoaded.Actions[0].DisplayName == "便携待机" &&
+           Math.Abs(portableLoaded.Actions[0].Rate - 18) < 0.0001,
+        "便携工程没有保留动作信息");
+    Assert(portableLoaded.ImageBindings.TryGetValue("IMAGE_REANIM_TEST_BODY", out var extractedImage) &&
+           File.Exists(extractedImage), "删除原图片后便携工程没有恢复嵌入图片");
+    var portableResolved = new OriginalResourceService().ResolveImage(portableLoaded, "IMAGE_REANIM_TEST_BODY");
+    Assert(portableResolved is not null && portableResolved.SafeColumns == 2 && portableResolved.SafeRows == 1,
+        "便携工程没有保留图片子帧行列信息");
+    Assert(CountWorkspaceEditors(portableLoaded.WorkspaceLayout.Root, WorkspaceEditorKind.AnimationView) == 2,
+        "便携工程没有保留双视图工作区布局");
+
+    var dualTimelineLayout = new WorkspaceLayoutPresetService().Create(WorkspacePreset.DualTimeline);
+    Assert(CountWorkspaceEditors(dualTimelineLayout.Root, WorkspaceEditorKind.Timeline) == 2 &&
+           CountWorkspaceEditors(dualTimelineLayout.Root, WorkspaceEditorKind.AnimationView) == 1,
+        "双时间轴工作区预设结构错误");
+
+    var droppedJpegPath = Path.Combine(root, "external-dropped-part.jpg");
+    SaveBitmap(BitmapSource.Create(8, 6, 96, 96, PixelFormats.Bgr24, null,
+        Enumerable.Repeat((byte)160, 8 * 6 * 3).ToArray(), 24),
+        new JpegBitmapEncoder(), droppedJpegPath);
+    var dropEditor = new EditorViewModel(new ActionCatalogService());
+    var dropResources = new OriginalResourceService();
+    var tracksBeforeDrop = dropEditor.Project.Animation.Tracks.Count;
+    dropEditor.BeginEditTransaction("拖入 JPG 到动画");
+    var droppedSymbol = dropResources.ImportImage(dropEditor.Project, droppedJpegPath);
+    var droppedTrack = dropEditor.AddImageTrack("external_dropped_part", droppedSymbol, 120, 80);
+    dropEditor.EndEditTransaction();
+    Assert(dropResources.ResolveImage(dropEditor.Project, droppedSymbol) is not null,
+        "外部拖入 JPG 没有被图片资源服务读取");
+    var droppedFrame = droppedTrack.Frames[dropEditor.CurrentFrame];
+    Assert(droppedFrame.Image == droppedSymbol && droppedFrame.X == 120 && droppedFrame.Y == 80 &&
+           ReferenceEquals(dropEditor.SelectedTrack, droppedTrack),
+        "拖入图片没有在落点创建并选中可动画轨道");
+    dropEditor.Undo();
+    Assert(dropEditor.Project.Animation.Tracks.Count == tracksBeforeDrop &&
+           !dropEditor.Project.ImageBindings.ContainsKey(droppedSymbol),
+        "拖入图片和新轨道没有作为同一个步骤撤销");
 
     var visualAnimTrack = new AnimationTrack { Name = "anim_face" };
     visualAnimTrack.EnsureFrameCount(2);
@@ -335,11 +458,68 @@ static void Assert(bool condition, string message)
     if (!condition) throw new InvalidOperationException(message);
 }
 
+static int CountWorkspaceEditors(WorkspaceLayoutNode node, WorkspaceEditorKind editor) =>
+    node.IsLeaf
+        ? node.Editor == editor ? 1 : 0
+        : CountWorkspaceEditors(node.First!, editor) + CountWorkspaceEditors(node.Second!, editor);
+
 static void SaveBitmap(BitmapSource bitmap, BitmapEncoder encoder, string path)
 {
     encoder.Frames.Add(BitmapFrame.Create(bitmap));
     using var stream = File.Create(path);
     encoder.Save(stream);
+}
+
+static void RenderWorkspaceScreenshot(string path, string? animationPath, WorkspacePreset? preset, bool openFloating)
+{
+    Exception? failure = null;
+    var thread = new Thread(() =>
+    {
+        try
+        {
+            var application = new App();
+            application.InitializeComponent();
+            var window = new MainWindow
+            {
+                Width = 1600,
+                Height = 900,
+                Left = -10000,
+                Top = -10000,
+                ShowActivated = false,
+                WindowStyle = WindowStyle.None
+            };
+            if (!string.IsNullOrWhiteSpace(animationPath))
+                window.LoadAnimationFile(Path.GetFullPath(animationPath));
+            var workspace = window.FindName("WorkspaceHost") as WorkspaceHostControl;
+            if (preset.HasValue) workspace?.ApplyPreset(preset.Value);
+            window.Show();
+            if (openFloating)
+                workspace?.OpenFloatingWindow(WorkspaceEditorKind.Inspector);
+            window.UpdateLayout();
+            System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(
+                () => window.UpdateLayout(),
+                System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            if (openFloating && Application.Current.Windows.Count < 2)
+                throw new InvalidOperationException("独立工作区窗口没有创建。 ");
+            var width = Math.Max(1, (int)Math.Ceiling(window.ActualWidth));
+            var height = Math.Max(1, (int)Math.Ceiling(window.ActualHeight));
+            var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+            bitmap.Render(window);
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+            SaveBitmap(bitmap, new PngBitmapEncoder(), Path.GetFullPath(path));
+            window.Close();
+            application.Shutdown();
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
+        }
+    });
+    thread.SetApartmentState(ApartmentState.STA);
+    thread.Start();
+    thread.Join();
+    if (failure is not null) throw failure;
+    Console.WriteLine($"PASS: 工作区窗口已渲染到 {Path.GetFullPath(path)}");
 }
 
 static AnimationDocument CreateCompositePreviewDocument()
