@@ -106,7 +106,7 @@ cmake --build H:\pvz\modding\build --config Release
 ctest --test-dir H:\pvz\modding\build -C Release --output-on-failure
 ```
 
-构建会下载固定版本的 nlohmann/json 3.11.3 和 MinHook 1.3.4。
+构建会下载固定版本的 nlohmann/json 3.11.3、MinHook 1.3.4、tinyxml2 10.0.0 和 zlib 1.3.1。
 
 ## 安装
 
@@ -348,6 +348,25 @@ Mod 存档放在 `pvzmod/saves`，日志放在 `pvzmod/logs`，两者都不能�
 ### 0.6.1 坚果头随机防具适配
 
 `visual: "wallnutHead"` 不能用普通僵尸身体上的静态轨道开关实现。0.6.1 在普通僵尸初始化前先完成确定性头盔选择；抽中时暂时调用原版坚果头僵尸 ID 27 的初始化分支，让游戏自己创建、播放并附着 `REANIM_WALLNUT`，初始化后立即恢复原来的僵尸 ID，再应用配置耐久、本体生命和攻击伤害。`Zombie::DropHead` 钩子只在该实例掉头期间临时恢复 ID 27 的清理语义，随后还原 ID 0，避免特殊头部动画残留或污染普通僵尸行为。
+
+## 精英僵尸与外部贴图（0.9.0）
+
+配置分为两个独立模块：
+
+- `pvzmod/config/resources/textures.jsonc` 注册通用图片 ID。植物、僵尸、卡片和 UI 后续都应调用同一个 `ResolveExternalTexture` 接口，禁止各模块各写一套图片加载器。
+- `pvzmod/config/elites/zombies.jsonc` 注册精英。默认 `RAGE` 仅匹配普通僵尸 ID `0`，以 20% 的确定性概率生成，并由 `BERSERK` 技能应用生命 `1.5`、速度 `1.35`、攻击 `2.0` 倍率。
+
+精英状态不写入未经确认的原版对象空隙。初始化事件取得僵尸指针后，运行时以 `Zombie* + instanceId` 建立侧挂记录；删除 Hook 和地址复用检查负责清理，避免后续对象继承旧精英编号。基础 `zombie_hook.cpp` 只发布初始化和攻击伤害事件，精英选择、倍率、技能和绘制均在独立模块中完成。
+
+外部图片路径必须位于 `pvzmod/images/`。下面的注册项会在首次绘制命中精英时尝试加载：
+
+```jsonc
+{ "id": "KILL", "path": "pvzmod/images/zi/kill.png" }
+```
+
+`ID` 支持英文、数字和下划线且区分大小写。加载失败只影响这张替换贴图，红色 tint、属性倍率、技能和原版绘制继续运行；失败 ID 在同一进程内只记录一次。当前已在 `1-10` 验证逐实例红色狂暴僵尸、缺图降级，以及 64×64 `KILL` PNG 成功解码并替换普通僵尸 `anim_head1` 头部轨道。图片沿用原轨道的移动、旋转、缩放和显隐；完整部位目录见 [ZOMBIE_TEXTURE_TRACKS.md](H:/pvz/modding/ZOMBIE_TEXTURE_TRACKS.md)。
+
+技能由注册表按事件分发：`Spawn`、`BeforeUpdate`、`AfterUpdate`、`BeforeAttack`、`BeforeDraw`、`AfterDraw`、`Remove`。JSON 只能引用 DLL 已注册的技能 ID，未知技能会禁用整份精英配置，不能从配置执行任意代码。完整接口和安全边界见 [ELITE_AND_TEXTURE_DESIGN.md](H:/pvz/modding/ELITE_AND_TEXTURE_DESIGN.md)。
 
 ## 恢复原版
 

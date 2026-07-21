@@ -4,6 +4,7 @@
 #include "logger.h"
 #include "zombie_armor_adapter.h"
 #include "zombie_config.h"
+#include "zombie_event_bus.h"
 
 #include <array>
 #include <algorithm>
@@ -38,6 +39,7 @@ extern "C" void ZombieLandFlyerDetour();
 extern "C" void __fastcall ZombieEatPlantDetour(void* zombie, void* unusedEdx, void* plant);
 extern "C" void __stdcall PrepareZombieConfigBeforeInitialize(void* zombie, int* zombieType);
 extern "C" void __stdcall ApplyZombieConfigAfterInitialize(void* zombie);
+extern "C" void __stdcall NotifyZombieInitializedExtensions(void* zombie);
 extern "C" void __stdcall PrepareWallnutDropHead(void* zombie);
 extern "C" void __stdcall FinishWallnutDropHead(void* zombie);
 extern "C" int __stdcall DropOverlayShield(void* zombie, unsigned int damageFlags);
@@ -598,10 +600,16 @@ extern "C" void __declspec(naked) ZombieInitializeDetour() {
         mov eax, [esp + 40]
         push eax
         call ApplyZombieConfigAfterInitialize
+        push dword ptr [esp + 40]
+        call NotifyZombieInitializedExtensions
         popad
         popfd
         ret 20
     }
+}
+
+extern "C" void __stdcall NotifyZombieInitializedExtensions(void* zombie) {
+    pvzmod::DispatchZombieInitialized(zombie);
 }
 
 extern "C" void __stdcall ApplyZombieConfigAfterInitialize(void* zombie) {
@@ -923,16 +931,19 @@ extern "C" void __fastcall ZombieEatPlantDetour(void* zombie, void*, void* plant
             const int zombieType = pvzmod::ResolveConfigZombieType(zombie, effectiveZombieType);
             const pvzmod::ZombieAttributeOverride* override = config->FindZombie(zombieType);
             if (override != nullptr && override->attackDamage.has_value()) {
-                configuredHealth = reinterpret_cast<int*>(
-                    static_cast<std::uint8_t*>(plant) + pvzmod::kPlantHealthOffset);
-                healthBefore = *configuredHealth;
                 configuredDamage = *override->attackDamage;
-                const long long adjusted = static_cast<long long>(healthBefore) + pvzmod::kOriginalEatDamage -
-                    configuredDamage;
-                fakeHealthBefore = static_cast<int>(std::clamp<long long>(
-                    adjusted, std::numeric_limits<int>::min(), std::numeric_limits<int>::max()));
-                *configuredHealth = fakeHealthBefore;
             }
+        }
+        configuredDamage = pvzmod::DispatchZombieAttackDamageModifiers(zombie, configuredDamage);
+        if (configuredDamage != pvzmod::kOriginalEatDamage) {
+            configuredHealth = reinterpret_cast<int*>(
+                static_cast<std::uint8_t*>(plant) + pvzmod::kPlantHealthOffset);
+            healthBefore = *configuredHealth;
+            const long long adjusted = static_cast<long long>(healthBefore) + pvzmod::kOriginalEatDamage -
+                configuredDamage;
+            fakeHealthBefore = static_cast<int>(std::clamp<long long>(
+                adjusted, std::numeric_limits<int>::min(), std::numeric_limits<int>::max()));
+            *configuredHealth = fakeHealthBefore;
         }
     } catch (const std::exception& exception) {
         pvzmod::LogError(std::string("Zombie attack damage lookup failed: ") + exception.what());

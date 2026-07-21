@@ -4,6 +4,49 @@
 
 ## Unreleased
 
+### Added in 0.10.1-dev
+
+- 增加原版 PC `.reanim.compiled` 直接读取：校验 `DEADFED4` 外层、zlib 解压、`B393B4C0` Schema 和 16/12/44 字节缓存结构。
+- 增加 Raw/compiled 自动格式分流，并允许只读引用 `compiled/reanim/*.reanim.compiled` 或加载 `pvzmod/animations/` 下的自制 compiled。
+- 增加 `PvZReanimValidator` 命令行工具和原版 `Blover.reanim.compiled` 配置示例。
+
+### Safety in 0.10.1-dev
+
+- compiled 解码器不使用缓存内旧进程指针，限制压缩/解压大小、轨道、帧、Transform 和字符串数量，并拒绝结构尺寸、Schema、长度或尾随数据不匹配的文件。
+
+### Added in 0.10.0-dev
+
+- 增加 `resources/animations.jsonc` 与 `pvzmod/animations/` 分类外部动作资源目录。
+- 增加 Raw `.reanim` 安全解析器，支持 FPS、轨道和 `x/y/kx/ky/sx/sy/f/a/i/font/text` Transform。
+- 增加动作循环、速率、混合帧、帧事件、定位轨道和外部贴图 ID 的启动时交叉校验。
+- 增加只读外部动画注册表和制作示例；当前阶段不安装 Reanimation ABI 注入 Hook。
+- 增加外部动作制作、独立植物/僵尸、存档和后续运行时注入技术文档。
+
+### Safety in 0.10.0-dev
+
+- 动画路径被限制在 `pvzmod/animations/`，拒绝目录穿越、DTD/实体、非有限浮点、重复字段、未知字段、轨道帧数不一致和超限文件。
+- 单个动画校验失败时只跳过该动画并写日志，不会把半初始化 Definition 交给原版游戏。
+
+### Added in 0.9.0
+
+- 增加精英僵尸数字编号、`Zombie* + instanceId` 侧挂状态和可注册技能事件接口。
+- 增加通用外部贴图注册表，ID 支持英文字母、数字和下划线；路径被限制在 `pvzmod/images` 内，并复用原版图片加载器和进程缓存。
+- 增加 `RAGE` 狂暴僵尸垂直切片：普通僵尸按确定性概率转为精英，`BERSERK` 可配置生命、速度和攻击倍率，并支持红色 tint 与 `KILL` 外部贴图引用。
+- 增加 `scope/target/track/textureId` 部位替换配置，通过原版 Reanimation 图片轨道替换头、身体、手脚、防具或高级自定义轨道；附带普通僵尸 30 个图片部位与特殊僵尸轨道目录。
+- 增加僵尸初始化和攻击伤害事件总线，基础僵尸 Hook 不再直接依赖精英模块。
+
+### Validation
+
+- Release Win32 构建和配置回归测试通过。
+- 在 `1-10` 实际关卡验证普通僵尸逐实例精英化和红色视觉效果；未命中的实例保持原版外观。
+- 未提供 `pvzmod/images/zi/kill.png` 时，运行时仅记录一次警告并继续绘制、更新和出怪。
+- 提供 64×64 `KILL` PNG 后，已验证原版加载器成功解码，并将普通僵尸 `anim_head1` 真正替换为该图片；图片随头部轨道移动、旋转和缩放。
+
+### Fixed in 0.9.0
+
+- 移除不能表达部位语义的固定坐标覆盖绘制，改为 `Reanimation::SetImageOverride` 轨道替换。
+- 修复初版轨道替换把优化后的内部函数误当作普通 `__thiscall` 而在 `0x00453CB8` 崩溃的问题；桥接器现按 1051 二进制实际使用的 `EAX/ECX`、`EBX+栈` 和 `ECX/EAX+栈` 约定传参。
+
 ### Documentation
 
 - 在仓库首页增加 `✅ / 🟡 / ⬜` 实现状态表，并为已实现、部分实现和尚未实现的功能分配稳定编号。

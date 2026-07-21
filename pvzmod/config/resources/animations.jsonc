@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+
+  // 自制动作只放在 pvzmod/animations/；游戏本体 compiled 可从 compiled/reanim/ 只读引用。
+  // 当前版本会完成解析、校验和注册，
+  // 但尚未把外部 Definition 注入原版 ReanimationHolder。
+  "animations": [
+    {
+      // 直接读取原版 PC compiled 缓存，不需要先转换成 Raw XML。
+      "id": "ORIGINAL_BLOVER_COMPILED",
+      "path": "compiled/reanim/Blover.reanim.compiled",
+      "carrierReanimation": "REANIM_BLOVER",
+      "actions": {
+        "idle": { "track": "anim_idle", "loop": "once_hold", "rate": 12 },
+        "blow": { "track": "anim_blow", "loop": "once", "rate": 12 },
+        "loop": { "track": "anim_loop", "loop": "loop", "rate": 12 }
+      }
+    },
+    {
+      "id": "PLANT_DEMO_EXTERNAL",
+      "path": "pvzmod/animations/plants/demo_external/demo_external.reanim",
+
+      // 只用于后续安全进入原版动画对象池，不提供实际图片或动作。
+      "carrierReanimation": "REANIM_PEASHOOTER",
+
+      // Raw .reanim 图片符号 -> resources/textures.jsonc 中的贴图 ID。
+      "images": {
+        "IMAGE_REANIM_PVZMOD_DEMO_BODY": "KILL"
+      },
+
+      "actions": {
+        "idle": {
+          "track": "anim_idle",
+          "loop": "loop",
+          "rate": 12,
+          "blendFrames": 4
+        },
+        "attack": {
+          "track": "anim_attack",
+          "loop": "once_hold",
+          "rate": 18,
+          "blendFrames": 3,
+          "events": [
+            {
+              "id": "FIRE_PROJECTILE",
+              "frame": 6,
+              "oncePerLoop": true
+            }
+          ]
+        }
+      },
+
+      "locators": {
+        "projectile": "locator_mouth"
+      }
+    }
+  ]
+}

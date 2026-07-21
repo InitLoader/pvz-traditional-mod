@@ -1,5 +1,21 @@
 # Plants vs. Zombies 1.0.0.1051 传统改版技术路线
 
+## 0.10.1-dev 原版 compiled Reanimation 读取
+
+外部动画入口现在同时接受 Raw `.reanim` 和原版 32 位 PC `.reanim.compiled`。compiled 解码器验证 `0xDEADFED4`、zlib 解压长度、`0xB393B4C0` Schema 以及 16/12/44 字节的 Definition/Track/Transform 缓存结构，忽略文件中的旧指针并重建安全的 DLL 侧动画定义。配置可以直接引用 `compiled/reanim/Blover.reanim.compiled`，自制 compiled 仍必须分类放入 `pvzmod/animations/`。
+
+## 0.10.0-dev 外部动作资源与独立实体基础
+
+新增 `pvzmod/config/resources/animations.jsonc` 和 `pvzmod/animations/` 分类目录。第一阶段已实现 Raw `.reanim` 的受限解析、动作轨道、循环、播放速度、混合帧、帧事件、定位轨道和外部贴图 ID 交叉校验，并在 DLL 启动时建立只读注册表；尚未安装 Reanimation Definition 注入 Hook，因此当前不会替换游戏内动画。
+
+真正新增植物和僵尸采用“原版 Plant/Zombie 对象池载体 + DLL 侧独立逻辑 ID、外部 Definition、行为控制器和 Mod 存档”的路线。载体只用于保持 Board 遍历、碰撞和回收安全，不再提供名称、属性、图片、动作或攻击逻辑；暂不扩大原版固定 SeedType、ZombieType 和 ReanimationType 数组。完整制作流程、JSONC 契约、安全限制和后续 ABI 注入方案见 `modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`。
+
+## 0.9.0 设计契约：精英僵尸、技能接口与外部贴图
+
+精英僵尸使用数字 `runtimeId` 和字符串 `id` 双重标识，生成后以 `Zombie* + instanceId` 保存在 DLL 侧挂表；寄存器只负责 Hook 边界的临时传递，不能长期保存精英编号。首个 `RAGE` 规则让普通僵尸按确定性概率成为红色狂暴怪，并通过 `BERSERK` 技能增加生命、速度和攻击。
+
+外部贴图统一登记在 `pvzmod/config/resources/textures.jsonc`。ID 支持英文字母、数字与下划线，例如 `KILL`；路径必须位于 `pvzmod/images/`，例如 `pvzmod/images/zi/kill.png`。资源模块通过原版图片加载器建立通用缓存，植物、僵尸、卡片、UI 和以后其他系统均使用同一查询接口。完整字段、安全边界和模块接口见 `modding/ELITE_AND_TEXTURE_DESIGN.md`。
+
 ## 0.8.3 已实现：真正的候选卡翻页
 
 自定义页不再采用“先画原版卡，再盖一层背景”的做法。运行时对原版 `SeedChooserScreen::Draw` 设置区域裁剪：只保留顶部已选卡槽和底部按钮，原版候选网格完全不进入该帧；随后从原版选卡背景资源合成干净网格，并绘制当前页的独立逻辑卡片。返回第 0 页时恢复原版卡坐标，并重新使用完整原版绘制和交互路径。

@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "seed": 1380275022,
+
+  "elites": [
+    {
+      "runtimeId": 1,
+      "id": "RAGE",
+      "name": "狂暴僵尸",
+      "enabled": true,
+      "priority": 100,
+
+      // 普通僵尸 ID 0 有 20% 概率成为该精英。
+      "eligibleZombieIds": [0],
+      "chance": 20,
+
+      "skills": [
+        {
+          "id": "BERSERK",
+          "parameters": {
+            "healthMultiplier": 1.5,
+            "speedMultiplier": 1.35,
+            "attackMultiplier": 2.0
+          }
+        }
+      ],
+
+      "visual": {
+        "tint": { "red": 255, "green": 48, "blue": 48, "alpha": 255 },
+        // 真正替换原版 Reanimation 轨道，而不是在僵尸坐标上额外画一层。
+        // target 为稳定语义部位；高级用法可改为 "track": "原版轨道名"。
+        "replacements": [
+          {
+            "scope": "body",
+            "target": "head",
+            "textureId": "KILL"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -11,6 +11,55 @@
 - 鼠标移到可选自定义卡、已选自定义卡或翻页按钮时显示原版手型；已经选走后留在网格中的灰色影子不可点击，也不显示手型。
 - 卡槽容量来自当前关卡的原版种子栏。槽位已满时仍需先撤下一张卡，配置未写 `slotCount` 时不会自动扩容。
 
+## 精英僵尸与外部贴图（0.9.0）
+
+- `resources/textures.jsonc` 只负责把字符串 ID 映射到图片路径。ID 区分大小写，必须匹配 `[A-Za-z0-9_]+`，长度为 1–64，例如 `KILL`、`RAGE_HEAD_01`。
+- 规范字段为小写 `id`、`path`；为兼容手写配置也接受 `ID`、`Path` 和用户示例中的 `Patch`。同一项不能同时写两个别名。
+- 图片只能放在游戏目录下的 `pvzmod/images/`，禁止绝对路径、UNC 路径和 `..`；当前接受 PNG、JPG/JPEG、BMP、GIF。
+- `elites/zombies.jsonc` 管理精英数字 `runtimeId`、字符串 ID、适用僵尸、生成概率、优先级、视觉和技能。未列出的僵尸继续执行原版行为。
+- 默认示例让普通僵尸 ID `0` 有 20% 概率成为 `RAGE`。`BERSERK` 在生成时应用生命、水平速度和啃食伤害倍率；红色 tint 不依赖外部图片。
+- `visual.replacements[]` 会查询贴图注册表并真正替换 Reanimation 图片轨道。`scope` 可为 `body` 或 `special`；普通僵尸优先使用 `target` 语义部位，高级配置可直接写 `track`。图片不存在、解码失败、附加动画不存在或轨道不匹配时只跳过该项，不取消精英属性和技能。
+- 两份配置都在 DLL 启动时读取；更改后需完全退出并重启游戏。图片首次使用时延迟加载，并在本次进程内缓存，不支持热替换。
+
+示例：
+
+```jsonc
+// pvzmod/config/resources/textures.jsonc
+{
+  "schemaVersion": 1,
+  "textures": [
+    { "id": "KILL", "path": "pvzmod/images/zi/kill.png" }
+  ]
+}
+```
+
+图片应放在 `pvzmod/images/zi/kill.png`。仓库不附带这张素材；未放入时日志中的一次缺失警告属于安全降级。
+
+## 外部动作资源（0.10.0-dev）
+
+- `resources/animations.jsonc` 注册外部动画 ID、Raw `.reanim` 或原版 PC `.reanim.compiled` 路径、图片符号映射、动作、事件和定位轨道。
+- 动画文件必须位于 `pvzmod/animations/`，图片继续位于 `pvzmod/images/`；配置不能引用绝对路径、盘符、UNC 或 `..`。
+- 游戏本体已有 compiled 可以只读引用 `compiled/reanim/*.reanim.compiled`，例如 `compiled/reanim/Blover.reanim.compiled`；其他格式或目录仍拒绝。
+- `images` 的值必须是 `resources/textures.jsonc` 已注册的贴图 ID。
+- `actions` 至少包含一个动作；每个动作通过 `track` 指向 Raw `.reanim` 的 `anim_*` 轨道。
+- 事件使用相对动作帧 `frame` 或 `normalizedTime`，二者必须且只能填写一个。
+- 当前阶段只完成解析、校验和注册，尚未注入原版 Reanimation 对象；完整制作与实施边界见 `modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`。
+
+精英视觉示例：
+
+```jsonc
+"visual": {
+  "tint": { "red": 255, "green": 48, "blue": 48, "alpha": 255 },
+  "replacements": [
+    { "scope": "body", "target": "head", "textureId": "KILL" },
+    // target 与 track 二选一；下面是高级原版轨道写法。
+    // { "scope": "body", "track": "Zombie_tie", "textureId": "RAGE_TIE" }
+  ]
+}
+```
+
+`target: "head"` 对应普通僵尸主动画的 `anim_head1`，图片会跟随头部轨道；它不是固定坐标贴图。完整语义 target、普通僵尸全部 30 个图片轨道和特殊僵尸轨道见 `modding/ZOMBIE_TEXTURE_TRACKS.md`。
+
 ## 选卡分页与自定义植物（0.8.1）
 
 - 自定义页由原版空白背景资源重新合成，原版候选卡不会提交到该页；翻页按钮完整显示在“摇滚”按钮右侧。
@@ -32,11 +81,14 @@ pvzmod/
 │  ├─ plants/       # 植物属性、技能和卡片参数
 │  ├─ zombies/      # 普通僵尸属性与行为参数
 │  ├─ elites/       # 精英编号、倍率、技能和生成规则
+│  ├─ resources/    # 通用外部贴图字符串 ID 注册表
 │  ├─ bosses/       # 各大关 Boss 阶段和技能
 │  ├─ ui/           # UI 布局、按钮、文本和界面开关
 │  ├─ settings/     # Mod 全局设置和难度配置
 │  └─ schemas/      # JSON Schema 和配置版本定义
 ├─ saves/           # Mod 独立存档，不放配置模板
+├─ images/          # 用户提供的外部图片；按用途继续分子目录
+├─ animations/      # Raw .reanim 外部动作；按植物、僵尸和 UI 分类
 └─ logs/            # 运行日志
 ```
 
@@ -53,6 +105,9 @@ pvzmod/
 - `levels/spawn.json`：关卡僵尸类型、权重和保底数量。
 - `levels/wave_multipliers.json`：全局、关卡和单波的僵尸数量倍率。
 - `settings/global.json`：全局经济和通用规则；当前包含普通、小型、大型阳光拾取价值。
+- `resources/textures.jsonc`：通用外部贴图 ID、受限相对路径和原版图片加载缓存。
+- `resources/animations.jsonc`：外部 Raw/compiled Reanimation、动作、事件、定位轨道和贴图符号映射。
+- `elites/zombies.jsonc`：精英编号、概率、视觉、贴图引用和技能绑定。
 - `plants/attacks.jsonc`：植物攻击伤害稀疏覆盖；文件内已列出所有数值攻击的原版默认值。
 - `zombies/attributes.jsonc`：完整原版防具生命目录、按僵尸 ID 稀疏覆盖本体生命/啃食伤害，以及带等级和概率的额外防具。
 
