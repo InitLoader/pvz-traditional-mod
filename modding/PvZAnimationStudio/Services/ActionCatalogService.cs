@@ -75,7 +75,11 @@ public sealed class ActionCatalogService
     public ObservableCollection<ActionDefinition> InferActions(AnimationDocument document, EntityKind kind)
     {
         var actions = new ObservableCollection<ActionDefinition>();
-        foreach (var track in document.Tracks.Where(track => track.IsActionTrack))
+        // SetFramesForLayer accepts any anim_* track. Some original files use a
+        // visible anim_* track as the clip marker itself (Lilypad is the simplest
+        // example), so action discovery must not be limited to marker-only tracks.
+        foreach (var track in document.Tracks.Where(track =>
+                     track.Name.StartsWith("anim_", StringComparison.OrdinalIgnoreCase)))
         {
             var id = track.Name[5..];
             var normalized = NormalizeActionId(id);

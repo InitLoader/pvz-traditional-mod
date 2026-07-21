@@ -2,7 +2,9 @@
 
 ## 动画制作器边界
 
-`PvZAnimationStudio` 是独立 WPF 工具，不链接或注入 `pvzmod.dll`。`Models` 保存可序列化工程；`RawReanimCodec`/`CompiledReanimCodec` 只做格式往返；`TweenService` 只烘焙数值补间；`ActionCatalogService` 动态识别全部 `anim_*`；`OriginalResourceService` 只索引图片；`ProjectPackageService` 只生成分类资源、配置片段和安装合并。UI、编解码、补间、资源索引与打包禁止并入一个类。
+`PvZAnimationStudio` 是独立 WPF 工具，不链接或注入 `pvzmod.dll`。`Models` 保存可序列化工程；`RawReanimCodec`/`CompiledReanimCodec` 只做格式往返；`ReanimationRenderMath` 复现原版矩阵、左上注册点和资源子帧语义；`ActionCatalogService` 与 `ActionViewService` 分别负责动作识别和动作局部视图；`EntityPreviewProfileService` 负责原版多 Reanimation 组合与普通僵尸可选装备过滤；`OriginalResourceService` 只索引图片并合成原版 JPG + 灰度透明蒙版；`EditHistoryService`/`ProjectCloneService` 保存会话级完整撤销与恢复；`TweenService` 只烘焙数值补间；`ProjectPackageService` 只生成分类资源、配置片段和安装合并。UI、渲染数学、编解码、历史、补间、资源索引与打包禁止并入一个类。
+
+预览必须区分“完整实体审计”和“单动作编辑”。完整视图可按配置叠加豌豆头、三线射手三头等原版附属动作，并隐藏普通僵尸骨架上未启用的路障、铁桶、铁门等可选装备；选中动作后只显示该动作影响的轨道与关键帧。所有会改变工程内容的入口——画布变换、K 帧、补间、帧/轨道/动作增删、动作参数、实体属性、FPS 和图片绑定——必须进入同一无步数截断的会话历史，`Ctrl+Z` 逐项撤销，`Ctrl+Y`/`Ctrl+Shift+Z` 按原顺序恢复；撤销后发生新编辑时丢弃旧恢复分支。
 
 编辑器输出必须经过独立运行时管线才能进入游戏。它不能绕过 `custom_reanim_definition`、`animation_instance_hook`、动作事件总线或自定义实体侧挂状态，也不能因 UI 中存在“新僵尸”表单就宣称游戏端已经支持新僵尸。
 

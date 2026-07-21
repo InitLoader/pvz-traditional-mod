@@ -3,10 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="clr-namespace:PvZAnimationStudio.Controls"
         Title="植物大战僵尸动画制作器" Width="1500" Height="900"
-        MinWidth="1100" MinHeight="700"
-        PreviewKeyDown="Window_PreviewKeyDown">
+        MinWidth="1100" MinHeight="700" PreviewKeyDown="Window_PreviewKeyDown">
   <DockPanel>
-    <Menu DockPanel.Dock="Top" Background="#252B34" Foreground="White">
+    <Menu DockPanel.Dock="Top">
       <MenuItem Header="文件(_F)">
         <MenuItem Header="新建植物工程" Click="NewPlant_Click" InputGestureText="Ctrl+N" />
         <MenuItem Header="新建僵尸工程" Click="NewZombie_Click" />
@@ -24,117 +23,116 @@
         <MenuItem Header="退出" Click="Exit_Click" />
       </MenuItem>
       <MenuItem Header="编辑(_E)">
-          <MenuItem Header="设置关键帧" Click="SetKey_Click" InputGestureText="K" />
-          <MenuItem Header="清除关键帧" Click="ClearKey_Click" InputGestureText="Shift+K" />
-          <Separator />
-          <MenuItem Header="生成线性补间" Click="LinearTween_Click" />
-          <MenuItem Header="生成平滑补间" Click="SmoothTween_Click" />
-          <MenuItem Header="插入空白帧" Click="InsertFrame_Click" />
+        <MenuItem Header="{Binding UndoLabel}" IsEnabled="{Binding CanUndo}" Click="Undo_Click" InputGestureText="Ctrl+Z" />
+        <MenuItem Header="{Binding RedoLabel}" IsEnabled="{Binding CanRedo}" Click="Redo_Click" InputGestureText="Ctrl+Y" />
+        <Separator />
+        <MenuItem Header="设置关键帧" Click="SetKey_Click" InputGestureText="K" />
+        <MenuItem Header="清除关键帧" Click="ClearKey_Click" InputGestureText="Shift+K" />
+        <MenuItem Header="生成线性补间" Click="LinearTween_Click" />
+        <MenuItem Header="生成平滑补间" Click="SmoothTween_Click" />
+        <MenuItem Header="插入空白帧" Click="InsertFrame_Click" />
         <MenuItem Header="删除当前帧" Click="DeleteFrame_Click" />
       </MenuItem>
       <MenuItem Header="资源(_R)">
         <MenuItem Header="选择游戏目录…" Click="ChooseGameRoot_Click" />
         <MenuItem Header="导入 PNG 图片…" Click="ImportImages_Click" />
-        <MenuItem Header="从 anim_* 轨道重新识别动作" Click="InferActions_Click" />
+        <MenuItem Header="重新识别动作标记" Click="InferActions_Click" />
       </MenuItem>
       <MenuItem Header="帮助(_H)">
         <MenuItem Header="快捷键与制作流程" Click="Help_Click" />
       </MenuItem>
     </Menu>
 
-    <ToolBarTray DockPanel.Dock="Top" Background="#1B2027">
-      <ToolBar Background="#252B34" Foreground="White">
-        <Button Content="新植物" Click="NewPlant_Click" />
-        <Button Content="新僵尸" Click="NewZombie_Click" />
-        <Separator />
-        <Button Content="打开动画" Click="OpenAnimation_Click" />
-        <Button Content="保存工程" Click="SaveProject_Click" />
-        <Button Content="导出 compiled" Click="ExportCompiled_Click" />
-        <Separator />
-        <Button x:Name="PlayButton" Content="▶ 播放" Click="Play_Click" />
-        <Button Content="■ 停止" Click="Stop_Click" />
-          <Button Content="◆ K帧" Click="SetKey_Click" />
-          <Button Content="清除K帧" Click="ClearKey_Click" />
-          <Button Content="⇢ 线性补间" Click="LinearTween_Click" ToolTip="从当前关键帧自动补到右侧下一个关键帧" />
-          <Button Content="∿ 平滑补间" Click="SmoothTween_Click" ToolTip="缓入缓出地补齐位置、旋转、缩放和透明度" />
-        <Button Content="重置视图" Click="ResetView_Click" />
-        <Separator />
-        <Button Content="一键安装" Background="#3B6D43" Click="Install_Click" />
-      </ToolBar>
-    </ToolBarTray>
+    <Border DockPanel.Dock="Top" Background="#1D242C" BorderBrush="#45515F" BorderThickness="0,0,0,1" Padding="3">
+      <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+        <StackPanel Orientation="Horizontal">
+          <Button Style="{StaticResource ToolButtonStyle}" Content="新建植物" Click="NewPlant_Click" />
+          <Button Style="{StaticResource ToolButtonStyle}" Content="新建僵尸" Click="NewZombie_Click" />
+          <Button Style="{StaticResource ToolButtonStyle}" Content="打开动画" Click="OpenAnimation_Click" />
+          <Button Style="{StaticResource ToolButtonStyle}" Content="保存工程" Click="SaveProject_Click" />
+          <Border Width="1" Margin="7,3" Background="#596675" />
+          <Button Content="{Binding UndoLabel, StringFormat=↶ {0}}" IsEnabled="{Binding CanUndo}" Click="Undo_Click" ToolTip="Ctrl+Z" />
+          <Button Content="{Binding RedoLabel, StringFormat=↷ {0}}" IsEnabled="{Binding CanRedo}" Click="Redo_Click" ToolTip="Ctrl+Y" />
+          <Border Width="1" Margin="7,3" Background="#596675" />
+          <Button x:Name="SelectToolButton" Content="Q 选择" Click="SelectTool_Click" ToolTip="选择部件，不修改动画" />
+          <Button x:Name="MoveToolButton" Content="W 移动" Click="MoveTool_Click" ToolTip="拖动中心或红/蓝轴，方向键微调" />
+          <Button x:Name="RotateToolButton" Content="E 旋转" Click="RotateTool_Click" ToolTip="拖动黄色圆环旋转" />
+          <Button x:Name="ScaleToolButton" Content="R 缩放" Click="ScaleTool_Click" ToolTip="红色 X、蓝色 Y、黄色等比缩放" />
+          <Border Width="1" Margin="7,3" Background="#596675" />
+          <Button x:Name="PlayButton" Content="▶ 播放" Click="Play_Click" />
+          <Button Content="■ 停止" Click="Stop_Click" />
+          <Button Content="◆ 设置 K 帧" Click="SetKey_Click" />
+          <Button Content="清除 K 帧" Click="ClearKey_Click" />
+          <Button Content="线性补间" Click="LinearTween_Click" />
+          <Button Content="平滑补间" Click="SmoothTween_Click" />
+          <Button Content="适配全部" Click="FrameAll_Click" />
+          <Button Content="重置视图" Click="ResetView_Click" />
+          <Button Style="{StaticResource PrimaryButtonStyle}" Content="一键安装" Click="Install_Click" />
+        </StackPanel>
+      </ScrollViewer>
+    </Border>
 
-    <StatusBar DockPanel.Dock="Bottom" Background="#20252D" Foreground="#DDE4EA">
+    <StatusBar DockPanel.Dock="Bottom" Background="#202832" Foreground="#FFFFFF">
       <StatusBarItem Content="{Binding Status}" />
       <Separator />
       <StatusBarItem Content="{Binding FrameLabel}" />
       <Separator />
-      <StatusBarItem>
-        <TextBlock Text="双击时间轴格子切换关键帧；左键拖动画布部件移动" />
-      </StatusBarItem>
+      <StatusBarItem><TextBlock Text="左键选择/操纵 · 中键平移 · 滚轮缩放 · Ctrl+滚轮缩放部件" /></StatusBarItem>
     </StatusBar>
 
     <Grid>
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="270" />
+        <ColumnDefinition Width="280" />
         <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="330" />
+        <ColumnDefinition Width="345" />
       </Grid.ColumnDefinitions>
       <Grid.RowDefinitions>
         <RowDefinition Height="*" />
-        <RowDefinition Height="245" />
+        <RowDefinition Height="255" />
       </Grid.RowDefinitions>
 
-      <Border Grid.Column="0" Grid.Row="0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="0,0,1,0">
-        <TabControl Background="{StaticResource PanelBrush}" Foreground="White">
+      <Border Grid.Column="0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="0,0,1,0">
+        <TabControl>
           <TabItem Header="轨道">
-            <DockPanel Margin="4">
+            <DockPanel Margin="5">
               <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal">
-                <Button Content="＋轨道" Click="AddTrack_Click" />
-                <Button Content="－轨道" Click="RemoveTrack_Click" />
+                <Button Content="＋ 轨道" Click="AddTrack_Click" />
+                <Button Content="－ 轨道" Click="RemoveTrack_Click" />
               </StackPanel>
-              <ListBox ItemsSource="{Binding Tracks}" SelectedItem="{Binding SelectedTrack, Mode=TwoWay}"
-                       DisplayMemberPath="Name" Background="#161A20" Foreground="White" BorderThickness="0" />
+              <ListBox ItemsSource="{Binding Tracks}" SelectedItem="{Binding SelectedTrack, Mode=TwoWay}" DisplayMemberPath="Name" />
             </DockPanel>
           </TabItem>
           <TabItem Header="动作">
-            <DockPanel Margin="4">
+            <DockPanel Margin="5">
               <StackPanel DockPanel.Dock="Bottom">
+                <Button Content="显示完整时间轴" Click="FullTimeline_Click" ToolTip="退出动作局部视图" />
                 <ComboBox x:Name="ActionTemplateCombo" ItemsSource="{Binding ActionTemplates}" DisplayMemberPath="ChineseName" />
                 <StackPanel Orientation="Horizontal">
                   <Button Content="添加模板" Click="AddAction_Click" />
                   <Button Content="删除动作" Click="RemoveAction_Click" />
                 </StackPanel>
-                <Button Content="自动识别全部 anim_*" Click="InferActions_Click" />
+                <Button Content="重新识别全部 anim_* 动作" Click="InferActions_Click" />
               </StackPanel>
-              <ListBox ItemsSource="{Binding Actions}" SelectedItem="{Binding SelectedAction, Mode=TwoWay}"
-                       DisplayMemberPath="Summary" Background="#161A20" Foreground="White" BorderThickness="0" />
+              <ListBox ItemsSource="{Binding Actions}" SelectedItem="{Binding SelectedAction, Mode=TwoWay}" DisplayMemberPath="Summary" />
             </DockPanel>
           </TabItem>
           <TabItem Header="图片资源">
-            <DockPanel Margin="4">
+            <DockPanel Margin="5">
               <Button DockPanel.Dock="Bottom" Content="导入 PNG" Click="ImportImages_Click" />
-              <ListBox x:Name="ImageBindingsList" ItemsSource="{Binding Project.ImageBindings}"
-                       DisplayMemberPath="Key" Background="#161A20" Foreground="White"
+              <ListBox x:Name="ImageBindingsList" ItemsSource="{Binding Project.ImageBindings}" DisplayMemberPath="Key"
                        MouseDoubleClick="ImageBindingsList_MouseDoubleClick" />
             </DockPanel>
           </TabItem>
           <TabItem Header="工程">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
-              <StackPanel Margin="6">
-                <TextBlock Text="实体类型" />
-                <ComboBox x:Name="KindCombo" SelectedItem="{Binding Project.Kind, Mode=TwoWay}" />
-                <TextBlock Text="字符串 ID" />
-                <TextBox Text="{Binding Project.Id, UpdateSourceTrigger=PropertyChanged}" />
-                <TextBlock Text="中文名称" />
-                <TextBox Text="{Binding Project.DisplayName, UpdateSourceTrigger=PropertyChanged}" />
-                <TextBlock Text="介绍" />
-                <TextBox Text="{Binding Project.Description, UpdateSourceTrigger=PropertyChanged}" Height="65" AcceptsReturn="True" TextWrapping="Wrap" />
-                <TextBlock Text="载体 Reanimation" />
-                <TextBox Text="{Binding Project.CarrierReanimation, UpdateSourceTrigger=PropertyChanged}" />
-                <TextBlock Text="默认导出格式" />
-                <ComboBox x:Name="OutputFormatCombo" SelectedItem="{Binding Project.OutputFormat, Mode=TwoWay}" />
-                <TextBlock Text="游戏根目录" />
-                <TextBox Text="{Binding Project.GameRoot, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" />
+              <StackPanel Margin="7">
+                <TextBlock Text="实体类型" /><ComboBox x:Name="KindCombo" SelectedItem="{Binding ProjectKind, Mode=TwoWay}" />
+                <TextBlock Text="字符串 ID" /><TextBox Text="{Binding ProjectId, UpdateSourceTrigger=LostFocus}" />
+                <TextBlock Text="中文名称" /><TextBox Text="{Binding ProjectDisplayName, UpdateSourceTrigger=LostFocus}" />
+                <TextBlock Text="介绍" /><TextBox Text="{Binding ProjectDescription, UpdateSourceTrigger=LostFocus}" Height="70" AcceptsReturn="True" TextWrapping="Wrap" />
+                <TextBlock Text="载体 Reanimation" /><TextBox Text="{Binding ProjectCarrierReanimation, UpdateSourceTrigger=LostFocus}" />
+                <TextBlock Text="默认导出格式" /><ComboBox x:Name="OutputFormatCombo" SelectedItem="{Binding ProjectOutputFormat, Mode=TwoWay}" />
+                <TextBlock Text="游戏根目录" /><TextBox Text="{Binding ProjectGameRoot, UpdateSourceTrigger=LostFocus}" TextWrapping="Wrap" />
                 <Button Content="选择游戏目录" Click="ChooseGameRoot_Click" />
               </StackPanel>
             </ScrollViewer>
@@ -142,108 +140,72 @@
         </TabControl>
       </Border>
 
-      <Border Grid.Column="1" Grid.Row="0" Background="#15191F">
-        <controls:AnimationPreviewControl x:Name="PreviewControl" />
-      </Border>
+      <Border Grid.Column="1" Background="#15191F"><controls:AnimationPreviewControl x:Name="PreviewControl" /></Border>
 
-      <Border Grid.Column="2" Grid.Row="0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1,0,0,0">
+      <Border Grid.Column="2" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1,0,0,0">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="5">
             <GroupBox Header="当前关键帧属性">
               <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="95" />
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="95" />
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="X 位移" VerticalAlignment="Center" />
-                <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding CurrentX, UpdateSourceTrigger=LostFocus}" />
-                <TextBlock Grid.Row="0" Grid.Column="2" Text="Y 位移" VerticalAlignment="Center" />
-                <TextBox Grid.Row="0" Grid.Column="3" Text="{Binding CurrentY, UpdateSourceTrigger=LostFocus}" />
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="X 旋转/斜切" VerticalAlignment="Center" />
-                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding CurrentSkewX, UpdateSourceTrigger=LostFocus}" />
-                <TextBlock Grid.Row="1" Grid.Column="2" Text="Y 旋转/斜切" VerticalAlignment="Center" />
-                <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding CurrentSkewY, UpdateSourceTrigger=LostFocus}" />
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="X 缩放" VerticalAlignment="Center" />
-                <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding CurrentScaleX, UpdateSourceTrigger=LostFocus}" />
-                <TextBlock Grid.Row="2" Grid.Column="2" Text="Y 缩放" VerticalAlignment="Center" />
-                <TextBox Grid.Row="2" Grid.Column="3" Text="{Binding CurrentScaleY, UpdateSourceTrigger=LostFocus}" />
-                <TextBlock Grid.Row="3" Grid.Column="0" Text="显示帧 f" VerticalAlignment="Center" />
-                <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding CurrentVisibilityFrame, UpdateSourceTrigger=LostFocus}" />
-                <TextBlock Grid.Row="3" Grid.Column="2" Text="透明度" VerticalAlignment="Center" />
-                <TextBox Grid.Row="3" Grid.Column="3" Text="{Binding CurrentAlpha, UpdateSourceTrigger=LostFocus}" />
-                <TextBlock Grid.Row="4" Grid.Column="0" Text="图片符号" VerticalAlignment="Center" />
-                <TextBox Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding CurrentImage, UpdateSourceTrigger=LostFocus}" />
-                <TextBlock Grid.Row="5" Grid.Column="0" Text="文字" VerticalAlignment="Center" />
-                <TextBox Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding CurrentText, UpdateSourceTrigger=LostFocus}" />
+                <Grid.ColumnDefinitions><ColumnDefinition Width="90" /><ColumnDefinition Width="*" /><ColumnDefinition Width="90" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" Text="X 位移"/><TextBox Grid.Row="0" Grid.Column="1" Text="{Binding CurrentX, UpdateSourceTrigger=LostFocus}"/>
+                <TextBlock Grid.Row="0" Grid.Column="2" Text="Y 位移"/><TextBox Grid.Row="0" Grid.Column="3" Text="{Binding CurrentY, UpdateSourceTrigger=LostFocus}"/>
+                <TextBlock Grid.Row="1" Text="X 旋转轴"/><TextBox Grid.Row="1" Grid.Column="1" Text="{Binding CurrentSkewX, UpdateSourceTrigger=LostFocus}"/>
+                <TextBlock Grid.Row="1" Grid.Column="2" Text="Y 旋转轴"/><TextBox Grid.Row="1" Grid.Column="3" Text="{Binding CurrentSkewY, UpdateSourceTrigger=LostFocus}"/>
+                <TextBlock Grid.Row="2" Text="X 缩放"/><TextBox Grid.Row="2" Grid.Column="1" Text="{Binding CurrentScaleX, UpdateSourceTrigger=LostFocus}"/>
+                <TextBlock Grid.Row="2" Grid.Column="2" Text="Y 缩放"/><TextBox Grid.Row="2" Grid.Column="3" Text="{Binding CurrentScaleY, UpdateSourceTrigger=LostFocus}"/>
+                <TextBlock Grid.Row="3" Text="图片子帧 f"/><TextBox Grid.Row="3" Grid.Column="1" Text="{Binding CurrentVisibilityFrame, UpdateSourceTrigger=LostFocus}"/>
+                <TextBlock Grid.Row="3" Grid.Column="2" Text="透明度"/><TextBox Grid.Row="3" Grid.Column="3" Text="{Binding CurrentAlpha, UpdateSourceTrigger=LostFocus}"/>
+                <TextBlock Grid.Row="4" Text="图片符号"/><TextBox Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding CurrentImage, UpdateSourceTrigger=LostFocus}"/>
+                <TextBlock Grid.Row="5" Text="文字"/><TextBox Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding CurrentText, UpdateSourceTrigger=LostFocus}"/>
               </Grid>
             </GroupBox>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-              <Button Content="◆ 设置K帧" Click="SetKey_Click" />
-              <Button Content="清除K帧" Click="ClearKey_Click" />
+              <Button Content="◆ 设置 K 帧" Click="SetKey_Click"/><Button Content="清除 K 帧" Click="ClearKey_Click"/>
             </StackPanel>
 
             <GroupBox Header="选中动作">
               <Grid>
-                <Grid.ColumnDefinitions><ColumnDefinition Width="80" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0" Text="动作 ID" VerticalAlignment="Center" />
-                <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding SelectedAction.Id, UpdateSourceTrigger=PropertyChanged}" />
-                <TextBlock Grid.Row="1" Text="中文名" VerticalAlignment="Center" />
-                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding SelectedAction.DisplayName, UpdateSourceTrigger=PropertyChanged}" />
-                <TextBlock Grid.Row="2" Text="轨道" VerticalAlignment="Center" />
-                <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding SelectedAction.Track, UpdateSourceTrigger=PropertyChanged}" />
-                <TextBlock Grid.Row="3" Text="循环" VerticalAlignment="Center" />
-                <ComboBox x:Name="LoopCombo" Grid.Row="3" Grid.Column="1" SelectedItem="{Binding SelectedAction.Loop, Mode=TwoWay}" />
-                <TextBlock Grid.Row="4" Text="速度 / 混合" VerticalAlignment="Center" />
-                <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal">
-                  <TextBox Width="75" Text="{Binding SelectedAction.Rate, UpdateSourceTrigger=LostFocus}" />
-                  <TextBox Width="75" Text="{Binding SelectedAction.BlendFrames, UpdateSourceTrigger=LostFocus}" />
-                </StackPanel>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="80"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" Text="动作 ID"/><TextBox Grid.Row="0" Grid.Column="1" Text="{Binding SelectedActionId, UpdateSourceTrigger=LostFocus}"/>
+                <TextBlock Grid.Row="1" Text="中文名"/><TextBox Grid.Row="1" Grid.Column="1" Text="{Binding SelectedActionDisplayName, UpdateSourceTrigger=LostFocus}"/>
+                <TextBlock Grid.Row="2" Text="标记轨道"/><TextBox Grid.Row="2" Grid.Column="1" Text="{Binding SelectedActionTrack, UpdateSourceTrigger=LostFocus}"/>
+                <TextBlock Grid.Row="3" Text="循环"/><ComboBox x:Name="LoopCombo" Grid.Row="3" Grid.Column="1" SelectedItem="{Binding SelectedActionLoop, Mode=TwoWay}"/>
+                <TextBlock Grid.Row="4" Text="速度 / 混合"/>
+                <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal"><TextBox Width="75" Text="{Binding SelectedActionRate}"/><TextBox Width="75" Text="{Binding SelectedActionBlendFrames}"/></StackPanel>
               </Grid>
             </GroupBox>
 
             <GroupBox Header="植物 / 僵尸配置">
               <UniformGrid Columns="2">
-                <TextBlock Text="数字 ID" VerticalAlignment="Center" /><TextBox Text="{Binding Project.NumericEntityId}" />
-                <TextBlock Text="模板 ID" VerticalAlignment="Center" /><TextBox Text="{Binding Project.TemplateEntityId}" />
-                <TextBlock Text="阳光" VerticalAlignment="Center" /><TextBox Text="{Binding Project.Cost}" />
-                <TextBlock Text="冷却" VerticalAlignment="Center" /><TextBox Text="{Binding Project.RechargeTime}" />
-                <TextBlock Text="生命" VerticalAlignment="Center" /><TextBox Text="{Binding Project.Health}" />
-                <TextBlock Text="攻击间隔" VerticalAlignment="Center" /><TextBox Text="{Binding Project.LaunchRate}" />
-                <TextBlock Text="子弹类型" VerticalAlignment="Center" /><TextBox Text="{Binding Project.ProjectileType}" />
-                <TextBlock Text="伤害" VerticalAlignment="Center" /><TextBox Text="{Binding Project.Damage}" />
-                <TextBlock Text="每次发射" VerticalAlignment="Center" /><TextBox Text="{Binding Project.ShotsPerAttack}" />
+                <TextBlock Text="数字 ID"/><TextBox Text="{Binding ProjectNumericEntityId}"/>
+                <TextBlock Text="模板 ID"/><TextBox Text="{Binding ProjectTemplateEntityId}"/>
+                <TextBlock Text="阳光"/><TextBox Text="{Binding ProjectCost}"/>
+                <TextBlock Text="冷却"/><TextBox Text="{Binding ProjectRechargeTime}"/>
+                <TextBlock Text="生命"/><TextBox Text="{Binding ProjectHealth}"/>
+                <TextBlock Text="攻击间隔"/><TextBox Text="{Binding ProjectLaunchRate}"/>
+                <TextBlock Text="子弹类型"/><TextBox Text="{Binding ProjectProjectileType}"/>
+                <TextBlock Text="伤害"/><TextBox Text="{Binding ProjectDamage}"/>
+                <TextBlock Text="每次发射"/><TextBox Text="{Binding ProjectShotsPerAttack}"/>
               </UniformGrid>
             </GroupBox>
           </StackPanel>
         </ScrollViewer>
       </Border>
 
-      <Border Grid.Column="0" Grid.ColumnSpan="3" Grid.Row="1" Background="#181C22" BorderBrush="#3A424E" BorderThickness="0,1,0,0">
+      <Border Grid.Column="0" Grid.ColumnSpan="3" Grid.Row="1" Background="#181D24" BorderBrush="#45515F" BorderThickness="0,1,0,0">
         <DockPanel>
           <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="4">
-            <Button Content="|◀" Click="FirstFrame_Click" />
-            <Button Content="◀" Click="PreviousFrame_Click" />
-            <Button Content="▶" Click="NextFrame_Click" />
-            <Button Content="▶|" Click="LastFrame_Click" />
-            <TextBlock Text="{Binding FrameLabel}" Margin="12,7" Foreground="White" />
-            <Button Content="插入帧" Click="InsertFrame_Click" />
-            <Button Content="删除帧" Click="DeleteFrame_Click" />
-            <TextBlock Text="FPS" Margin="12,7,2,7" />
-            <TextBox Width="65" Text="{Binding Project.Animation.Fps, UpdateSourceTrigger=LostFocus}" />
+            <Button Content="|◀" Click="FirstFrame_Click"/><Button Content="◀" Click="PreviousFrame_Click"/>
+            <Button Content="▶" Click="NextFrame_Click"/><Button Content="▶|" Click="LastFrame_Click"/>
+            <TextBlock Text="{Binding FrameLabel}" Margin="12,7"/>
+            <Button Content="插入帧" Click="InsertFrame_Click"/><Button Content="删除帧" Click="DeleteFrame_Click"/>
+            <Button Content="显示完整时间轴" Click="FullTimeline_Click"/>
+            <TextBlock Text="FPS" Margin="12,7,2,7"/><TextBox Width="65" Text="{Binding AnimationFps, UpdateSourceTrigger=LostFocus}"/>
           </StackPanel>
-          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-            <controls:TimelineControl x:Name="TimelineControl" />
-          </ScrollViewer>
+          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"><controls:TimelineControl x:Name="TimelineControl"/></ScrollViewer>
         </DockPanel>
       </Border>
     </Grid>

@@ -11,11 +11,15 @@
 - 支持 Raw `.reanim` 和原版 PC `.reanim.compiled` 读取、编辑、导出与重新打包，以及 PNG 资源绑定。
 - 增加 Mod ZIP、贴图/动画/实体 JSONC 片段生成和带 `.pvzstudio.bak` 的一键配置安装。
 - 增加无第三方测试项目，覆盖格式往返、关键帧补间、JSONC 注释保留和 ZIP 内容。
+- 增加完整会话级编辑历史：`Ctrl+Z` 可连续撤销本次打开工程后的所有编辑，`Ctrl+Y`/`Ctrl+Shift+Z` 可按原顺序恢复；画布变换、K 帧、补间、帧/轨道/动作、工程属性、FPS 和图片导入共用同一历史。
+- 增加原版精确预览数学、动作局部时间轴和完整实体组合预览，覆盖 GatlingPea、SplitPea、ThreePeater 与普通僵尸可选装备等特殊结构。
+- 增加 JPG + 灰度 PNG 透明蒙版读取，兼容原版 Boss、Crazy Dave 等资源配对方式。
 
 ### Validation in animation-studio-dev
 
 - WPF Release 构建零警告通过。
 - 本地 `compiled/reanim` 的 143 个原版 compiled 文件全部通过“读取 → compiled 重打包 → Raw 导出 → 两种格式再读取”回归，包括原版合法同名轨道；C++ 运行时校验器也全部接受。
+- 全量审计 48 个独立植物动画和 38 个僵尸/僵尸效果动画，图片解析缺失为 0；逐项结果、特殊组合和预期空动画记录在 `ORIGINAL_ASSET_AUDIT.md`。
 
 ### Added in 0.10.1-dev
 

@@ -1,5 +1,7 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using PvZAnimationStudio.Models;
@@ -14,6 +16,7 @@ public partial class MainWindow : Window
     private readonly ProjectFileService _projectFiles = new();
     private readonly ActionCatalogService _actionCatalog = new();
     private readonly OriginalResourceService _resources = new();
+    private readonly EntityPreviewProfileService _entityProfiles = new();
     private readonly ProjectPackageService _packages;
     private readonly EditorViewModel _viewModel;
     private readonly DispatcherTimer _playTimer;
@@ -32,8 +35,42 @@ public partial class MainWindow : Window
         ActionTemplateCombo.SelectedIndex = 0;
         _playTimer = new DispatcherTimer();
         _playTimer.Tick += (_, _) => _viewModel.StepPlayback();
-        _viewModel.VisualStateChanged += (_, _) => UpdatePlaybackInterval();
+        _viewModel.VisualStateChanged += (_, _) =>
+        {
+            UpdatePlaybackInterval();
+            UpdateToolButtons();
+        };
+        var localGameRoot = FindGameRoot(Environment.CurrentDirectory);
+        if (localGameRoot is not null)
+        {
+            _viewModel.Project.GameRoot = localGameRoot;
+            _resources.RebuildIndex(localGameRoot);
+        }
         UpdatePlaybackInterval();
+        UpdateToolButtons();
+        Loaded += (_, _) =>
+        {
+            var startupArguments = Environment.GetCommandLineArgs().Skip(1).ToArray();
+            var startupFile = startupArguments.FirstOrDefault(File.Exists);
+            if (startupFile is not null) RunGuarded(() =>
+            {
+                LoadAnimationFile(startupFile);
+                if (startupArguments.Length > 1)
+                {
+                    if (string.Equals(startupArguments[1], "representative", StringComparison.OrdinalIgnoreCase))
+                        _viewModel.CurrentFrame = FindRepresentativeActionFrame();
+                    else if (string.Equals(startupArguments[1], "auto", StringComparison.OrdinalIgnoreCase))
+                        _viewModel.CurrentFrame = FindRepresentativeFrame(_viewModel.Project.Animation);
+                    else if (int.TryParse(startupArguments[1], out var startupFrame))
+                        _viewModel.CurrentFrame = Math.Clamp(startupFrame, 0, Math.Max(0, _viewModel.Project.Animation.FrameCount - 1));
+                }
+                if (startupArguments.Length > 2)
+                    _viewModel.SelectedAction = _viewModel.Actions.FirstOrDefault(action =>
+                        string.Equals(action.Track, startupArguments[2], StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(action.Id, startupArguments[2], StringComparison.OrdinalIgnoreCase));
+                Dispatcher.BeginInvoke(PreviewControl.FrameAll, DispatcherPriority.Loaded);
+            });
+        };
     }
 
     private void UpdatePlaybackInterval()
@@ -53,12 +90,21 @@ public partial class MainWindow : Window
             Filter = "Reanimation|*.reanim;*.reanim.compiled|Raw Reanimation|*.reanim|Compiled Reanimation|*.reanim.compiled|所有文件|*.*"
         };
         if (dialog.ShowDialog(this) != true) return;
-        RunGuarded(() =>
+        RunGuarded(() => LoadAnimationFile(dialog.FileName));
+    }
+
+    public void LoadAnimationFile(string fileName)
+    {
+        var document = _codec.Load(fileName);
+        _viewModel.ReplaceAnimation(document, fileName);
+        var gameRoot = FindGameRoot(Path.GetDirectoryName(Path.GetFullPath(fileName))!);
+        if (gameRoot is not null)
         {
-            var document = _codec.Load(dialog.FileName);
-            _viewModel.ReplaceAnimation(document, dialog.FileName);
-            _viewModel.Status = $"已读取 {Path.GetFileName(dialog.FileName)}：{document.Tracks.Count} 轨 / {document.FrameCount} 帧";
-        });
+            _viewModel.Project.GameRoot = gameRoot;
+            _resources.RebuildIndex(gameRoot);
+        }
+        _viewModel.Status = $"已读取 {Path.GetFileName(fileName)}：{document.Tracks.Count} 轨 / {document.FrameCount} 帧";
+        Dispatcher.BeginInvoke(PreviewControl.FrameAll, DispatcherPriority.Loaded);
     }
 
     private void OpenProject_Click(object sender, RoutedEventArgs eventArgs)
@@ -175,7 +221,7 @@ public partial class MainWindow : Window
             MessageBox.Show(this, "此目录没有 PlantsVsZombies.exe。", "目录无效", MessageBoxButton.OK, MessageBoxImage.Warning);
             return false;
         }
-        _viewModel.Project.GameRoot = dialog.FolderName;
+        _viewModel.ProjectGameRoot = dialog.FolderName;
         _resources.RebuildIndex(dialog.FolderName);
         _viewModel.Status = $"已索引原版资源：{dialog.FolderName}";
         PreviewControl.InvalidateVisual();
@@ -193,11 +239,19 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog(this) != true) return;
         RunGuarded(() =>
         {
+            _viewModel.BeginEditTransaction("导入图片资源");
             string? first = null;
-            foreach (var file in dialog.FileNames)
-                first ??= _resources.ImportImage(_viewModel.Project, file);
-            if (first is not null && string.IsNullOrWhiteSpace(_viewModel.CurrentImage))
-                _viewModel.CurrentImage = first;
+            try
+            {
+                foreach (var file in dialog.FileNames)
+                    first ??= _resources.ImportImage(_viewModel.Project, file);
+                if (first is not null && string.IsNullOrWhiteSpace(_viewModel.CurrentImage))
+                    _viewModel.CurrentImage = first;
+            }
+            finally
+            {
+                _viewModel.EndEditTransaction();
+            }
             ImageBindingsList.Items.Refresh();
             _viewModel.Status = $"已导入 {dialog.FileNames.Length} 张图片";
         });
@@ -219,17 +273,25 @@ public partial class MainWindow : Window
 
     private void RemoveAction_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.RemoveSelectedAction();
     private void InferActions_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.InferActions();
+    private void FullTimeline_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.ClearActionView();
+    private void Undo_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.Undo();
+    private void Redo_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.Redo();
+    private void SelectTool_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.ActiveTool = EditorTool.Select;
+    private void MoveTool_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.ActiveTool = EditorTool.Move;
+    private void RotateTool_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.ActiveTool = EditorTool.Rotate;
+    private void ScaleTool_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.ActiveTool = EditorTool.Scale;
     private void SetKey_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.SetKeyframe();
     private void ClearKey_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.ClearKeyframe();
     private void LinearTween_Click(object sender, RoutedEventArgs eventArgs) => RunGuarded(() => _viewModel.CreateTween(TweenCurve.Linear));
     private void SmoothTween_Click(object sender, RoutedEventArgs eventArgs) => RunGuarded(() => _viewModel.CreateTween(TweenCurve.SmoothStep));
     private void InsertFrame_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.InsertFrame();
     private void DeleteFrame_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.DeleteFrame();
-    private void FirstFrame_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.CurrentFrame = 0;
+    private void FirstFrame_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.CurrentFrame = _viewModel.TimelineFrameStart;
     private void PreviousFrame_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.CurrentFrame--;
     private void NextFrame_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.CurrentFrame++;
-    private void LastFrame_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.CurrentFrame = _viewModel.Project.Animation.FrameCount - 1;
+    private void LastFrame_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.CurrentFrame = _viewModel.TimelineFrameEnd;
     private void ResetView_Click(object sender, RoutedEventArgs eventArgs) => PreviewControl.ResetView();
+    private void FrameAll_Click(object sender, RoutedEventArgs eventArgs) => PreviewControl.FrameAll();
 
     private void Play_Click(object sender, RoutedEventArgs eventArgs)
     {
@@ -242,25 +304,136 @@ public partial class MainWindow : Window
     {
         _playTimer.Stop();
         _viewModel.IsPlaying = false;
-        _viewModel.CurrentFrame = 0;
+        _viewModel.CurrentFrame = _viewModel.TimelineFrameStart;
         PlayButton.Content = "▶ 播放";
     }
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs eventArgs)
     {
-        if (eventArgs.Key == Key.Space) { Play_Click(sender, new RoutedEventArgs()); eventArgs.Handled = true; }
-        else if (eventArgs.Key == Key.K && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) { _viewModel.ClearKeyframe(); eventArgs.Handled = true; }
-        else if (eventArgs.Key == Key.K) { _viewModel.SetKeyframe(); eventArgs.Handled = true; }
-        else if (eventArgs.Key == Key.Left) { _viewModel.CurrentFrame--; eventArgs.Handled = true; }
-        else if (eventArgs.Key == Key.Right) { _viewModel.CurrentFrame++; eventArgs.Handled = true; }
-        else if (eventArgs.Key == Key.S && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) { SaveProject_Click(sender, new RoutedEventArgs()); eventArgs.Handled = true; }
-        else if (eventArgs.Key == Key.O && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) { OpenAnimation_Click(sender, new RoutedEventArgs()); eventArgs.Handled = true; }
+        var modifiers = Keyboard.Modifiers;
+        var isTextEditing = eventArgs.OriginalSource is TextBox or ComboBox;
+        if (isTextEditing && !modifiers.HasFlag(ModifierKeys.Control)) return;
+
+        if (eventArgs.Key == Key.Z && modifiers.HasFlag(ModifierKeys.Control) && modifiers.HasFlag(ModifierKeys.Shift))
+        { _viewModel.Redo(); eventArgs.Handled = true; }
+        else if (eventArgs.Key == Key.Z && modifiers.HasFlag(ModifierKeys.Control))
+        { _viewModel.Undo(); eventArgs.Handled = true; }
+        else if (eventArgs.Key == Key.Y && modifiers.HasFlag(ModifierKeys.Control))
+        { _viewModel.Redo(); eventArgs.Handled = true; }
+        else if (eventArgs.Key == Key.S && modifiers.HasFlag(ModifierKeys.Control))
+        { SaveProject_Click(sender, new RoutedEventArgs()); eventArgs.Handled = true; }
+        else if (eventArgs.Key == Key.O && modifiers.HasFlag(ModifierKeys.Control))
+        { OpenAnimation_Click(sender, new RoutedEventArgs()); eventArgs.Handled = true; }
+        else if (eventArgs.Key == Key.Space)
+        { Play_Click(sender, new RoutedEventArgs()); eventArgs.Handled = true; }
+        else if (eventArgs.Key == Key.K && modifiers.HasFlag(ModifierKeys.Shift))
+        { _viewModel.ClearKeyframe(); eventArgs.Handled = true; }
+        else if (eventArgs.Key == Key.K)
+        { _viewModel.SetKeyframe(); eventArgs.Handled = true; }
+        else if (eventArgs.Key == Key.Q)
+        { _viewModel.ActiveTool = EditorTool.Select; eventArgs.Handled = true; }
+        else if (eventArgs.Key is Key.W or Key.G)
+        { _viewModel.ActiveTool = EditorTool.Move; eventArgs.Handled = true; }
+        else if (eventArgs.Key == Key.E)
+        { _viewModel.ActiveTool = EditorTool.Rotate; eventArgs.Handled = true; }
+        else if (eventArgs.Key is Key.R or Key.S)
+        { _viewModel.ActiveTool = EditorTool.Scale; eventArgs.Handled = true; }
+        else if (eventArgs.Key is Key.Left or Key.Right or Key.Up or Key.Down)
+        {
+            var amount = modifiers.HasFlag(ModifierKeys.Shift) ? 10f : 1f;
+            _viewModel.BeginEditTransaction("方向键移动部件");
+            if (eventArgs.Key == Key.Left) _viewModel.MoveSelected(-amount, 0);
+            if (eventArgs.Key == Key.Right) _viewModel.MoveSelected(amount, 0);
+            if (eventArgs.Key == Key.Up) _viewModel.MoveSelected(0, -amount);
+            if (eventArgs.Key == Key.Down) _viewModel.MoveSelected(0, amount);
+            _viewModel.EndEditTransaction();
+            eventArgs.Handled = true;
+        }
+        else if (eventArgs.Key == Key.OemComma)
+        { _viewModel.CurrentFrame--; eventArgs.Handled = true; }
+        else if (eventArgs.Key == Key.OemPeriod)
+        { _viewModel.CurrentFrame++; eventArgs.Handled = true; }
     }
+
+    private void UpdateToolButtons()
+    {
+        var normal = new SolidColorBrush(Color.FromRgb(52, 64, 76));
+        var active = new SolidColorBrush(Color.FromRgb(47, 111, 67));
+        SelectToolButton.Background = _viewModel.ActiveTool == EditorTool.Select ? active : normal;
+        MoveToolButton.Background = _viewModel.ActiveTool == EditorTool.Move ? active : normal;
+        RotateToolButton.Background = _viewModel.ActiveTool == EditorTool.Rotate ? active : normal;
+        ScaleToolButton.Background = _viewModel.ActiveTool == EditorTool.Scale ? active : normal;
+    }
+
+    private static string? FindGameRoot(string startDirectory)
+    {
+        var directory = new DirectoryInfo(startDirectory);
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "PlantsVsZombies.exe"))) return directory.FullName;
+            directory = directory.Parent;
+        }
+        return null;
+    }
+
+    private static int FindRepresentativeFrame(AnimationDocument document)
+    {
+        if (document.FrameCount <= 0) return 0;
+        var visiblePartsByFrame = new int[document.FrameCount];
+        foreach (var track in document.Tracks.Where(track => !track.IsActionTrack && track.HasRenderableContent))
+        {
+            var imageFrame = 0f;
+            var alpha = 1f;
+            string? image = null;
+            for (var frameIndex = 0; frameIndex < Math.Min(document.FrameCount, track.Frames.Count); frameIndex++)
+            {
+                var frame = track.Frames[frameIndex];
+                if (frame.Frame.HasValue) imageFrame = frame.Frame.Value;
+                if (frame.Alpha.HasValue) alpha = frame.Alpha.Value;
+                if (frame.Image is not null) image = frame.Image.Length == 0 ? null : frame.Image;
+                if (imageFrame >= 0 && alpha > 0 && !string.IsNullOrWhiteSpace(image))
+                    visiblePartsByFrame[frameIndex]++;
+            }
+        }
+        var maximum = visiblePartsByFrame.Max();
+        var candidates = Enumerable.Range(0, visiblePartsByFrame.Length)
+            .Where(index => visiblePartsByFrame[index] == maximum).ToArray();
+        return candidates.Length == 0 ? 0 : candidates[candidates.Length / 2];
+    }
+
+    private int FindRepresentativeActionFrame()
+    {
+        var entityFrame = _entityProfiles.GetRepresentativeFrame(_viewModel.Project);
+        if (entityFrame.HasValue) return entityFrame.Value;
+        var preferred = _viewModel.Actions.FirstOrDefault(action =>
+                            action.Id.Contains("full_idle", StringComparison.OrdinalIgnoreCase))
+                        ?? _viewModel.Actions.FirstOrDefault(action =>
+                            string.Equals(action.Id, "idle", StringComparison.OrdinalIgnoreCase))
+                        ?? _viewModel.Actions.FirstOrDefault(action =>
+                            action.Id.Contains("idle", StringComparison.OrdinalIgnoreCase))
+                        ?? _viewModel.Actions.FirstOrDefault(action =>
+                            action.Id.Contains("walk", StringComparison.OrdinalIgnoreCase))
+                        ?? _viewModel.Actions.FirstOrDefault();
+        if (preferred is null) return FindRepresentativeFrame(_viewModel.Project.Animation);
+        var range = new ActionViewService().GetRange(_viewModel.Project.Animation, preferred);
+        var candidate = range.Start + (range.Count - 1) / 2;
+        return CountVisibleParts(_viewModel.Project.Animation, candidate) > 0
+            ? candidate
+            : FindRepresentativeFrame(_viewModel.Project.Animation);
+    }
+
+    private static int CountVisibleParts(AnimationDocument document, int frameIndex) =>
+        document.Tracks.Count(track =>
+        {
+            if (track.IsActionTrack || !track.HasRenderableContent) return false;
+            var frame = track.ResolveFrame(frameIndex);
+            return frame.Frame >= 0 && frame.Alpha > 0 && !string.IsNullOrWhiteSpace(frame.Image);
+        });
 
     private void Help_Click(object sender, RoutedEventArgs eventArgs)
     {
         MessageBox.Show(this,
-            "基本流程：\n1. 选择游戏目录。\n2. 打开原版 .reanim.compiled 或新建工程。\n3. 导入 PNG，双击资源绑定到轨道。\n4. 在时间轴双击设置 K 帧，画布拖动位置，右侧修改缩放/旋转/透明度。\n5. 自动识别 anim_* 动作，补充攻击事件。\n6. 导出 Raw/compiled，或一键安装 JSON、图片和动画。\n\n快捷键：空格播放，K 设置关键帧，Shift+K 清除，左右键换帧。",
+            "基本流程：\n1. 选择游戏目录。\n2. 打开原版 .reanim.compiled 或新建工程。\n3. 在动作页点击动作，时间轴会只显示该动作范围和发生变化的轨道。\n4. Q 选择，W 移动，E 旋转，R 缩放；拖动画布操纵器制作关键帧。\n5. K 设置关键帧，Shift+K 清除，逗号/句号换帧。\n6. 导出 Raw/compiled，或一键安装。\n\n撤销/重做：Ctrl+Z / Ctrl+Y。方向键微调部件，Shift+方向键加速。",
             "制作流程", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 

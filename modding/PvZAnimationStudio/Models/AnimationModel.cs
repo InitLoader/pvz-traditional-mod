@@ -24,6 +24,14 @@ public enum AnimationLoopMode
     OnceHold
 }
 
+public enum EditorTool
+{
+    Select,
+    Move,
+    Rotate,
+    Scale
+}
+
 public sealed class AnimationFrame
 {
     public float? X { get; set; }
@@ -109,7 +117,12 @@ public sealed class AnimationTrack : ObservableObject
     public ObservableCollection<AnimationFrame> Frames { get; set; } = [];
 
     [JsonIgnore]
-    public bool IsActionTrack => Name.StartsWith("anim_", StringComparison.OrdinalIgnoreCase);
+    public bool HasRenderableContent => Frames.Any(frame =>
+        !string.IsNullOrEmpty(frame.Image) || !string.IsNullOrEmpty(frame.Font) || !string.IsNullOrEmpty(frame.Text));
+
+    [JsonIgnore]
+    public bool IsActionTrack =>
+        Name.StartsWith("anim_", StringComparison.OrdinalIgnoreCase) && !HasRenderableContent;
 
     public void EnsureFrameCount(int count)
     {
@@ -196,10 +209,35 @@ public sealed class ActionDefinition : ObservableObject
     private double _rate = 12;
     private int _blendFrames;
 
-    public string Id { get => _id; set => SetField(ref _id, value); }
-    public string DisplayName { get => _displayName; set => SetField(ref _displayName, value); }
+    public string Id
+    {
+        get => _id;
+        set
+        {
+            if (SetField(ref _id, value))
+                RaisePropertyChanged(nameof(Summary));
+        }
+    }
+
+    public string DisplayName
+    {
+        get => _displayName;
+        set
+        {
+            if (SetField(ref _displayName, value))
+                RaisePropertyChanged(nameof(Summary));
+        }
+    }
     public string Category { get => _category; set => SetField(ref _category, value); }
-    public string Track { get => _track; set => SetField(ref _track, value); }
+    public string Track
+    {
+        get => _track;
+        set
+        {
+            if (SetField(ref _track, value))
+                RaisePropertyChanged(nameof(Summary));
+        }
+    }
     public AnimationLoopMode Loop { get => _loop; set => SetField(ref _loop, value); }
     public double Rate { get => _rate; set => SetField(ref _rate, value); }
     public int BlendFrames { get => _blendFrames; set => SetField(ref _blendFrames, value); }

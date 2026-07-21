@@ -24,6 +24,7 @@
 /modding/dist/
 /modding/PvZAnimationStudio/bin/
 /modding/PvZAnimationStudio/obj/
+/modding/PvZAnimationStudio/artifacts/
 /modding/PvZAnimationStudio.Tests/bin/
 /modding/PvZAnimationStudio.Tests/obj/
 /modding/.vs/

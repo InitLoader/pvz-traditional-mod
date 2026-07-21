@@ -1,5 +1,13 @@
 # Plants vs. Zombies 1.0.0.1051 传统改版技术路线
 
+## animation-studio-dev 原版动画全量审计与完整编辑历史
+
+动画制作器的预览已按原版 Reanimation 语义拆分为独立模块：`ReanimationRenderMath` 负责矩阵、左上注册点、图片子帧和透明度，`ActionViewService` 负责只显示选中动作实际影响的轨道/关键帧，`EntityPreviewProfileService` 负责原版实体的附属动作组合和可选装备过滤。原版 JPG 与同名 `_.png` 灰度蒙版由资源服务合成透明图片，避免 Boss 等大图被错误显示成不透明色块。
+
+编辑历史由 `EditHistoryService` 和工程深拷贝服务维护，不再只记一步，也不设 50 步之类的静默截断。画布移动/旋转/缩放、K 帧、补间、插入/删除帧、轨道/动作增删、实体属性、动作参数、FPS 和图片导入全部进入同一会话历史；`Ctrl+Z` 连续撤销，`Ctrl+Y` 或 `Ctrl+Shift+Z` 按原顺序连续恢复，撤销后新编辑会建立新分支。
+
+当前已逐项审计 `compiled/reanim` 中 48 个独立植物动画和 38 个僵尸/僵尸效果动画，全部引用图片均可解析；143 个原版 compiled 文件通过读取、重打包、Raw 导出和再次读取回归。完整清单、特殊组合及 `LawnMoweredZombie` 等预期空资源见 `modding/PvZAnimationStudio/ORIGINAL_ASSET_AUDIT.md`。
+
 ## 0.10.1-dev 原版 compiled Reanimation 读取
 
 外部动画入口现在同时接受 Raw `.reanim` 和原版 32 位 PC `.reanim.compiled`。compiled 解码器验证 `0xDEADFED4`、zlib 解压长度、`0xB393B4C0` Schema 以及 16/12/44 字节的 Definition/Track/Transform 缓存结构，忽略文件中的旧指针并重建安全的 DLL 侧动画定义。配置可以直接引用 `compiled/reanim/Blover.reanim.compiled`，自制 compiled 仍必须分类放入 `pvzmod/animations/`。
