@@ -12,8 +12,20 @@ public sealed class TimelineControl : FrameworkElement
     private const double CellWidth = 14;
     private const double RowHeight = 26;
     private EditorViewModel? _viewModel;
+    private bool _pendingKeyDrag;
+    private bool _keyDragActive;
+    private int _dragFrame;
+    private Point _dragOrigin;
 
-    public TimelineControl() => MouseDown += OnMouseDown;
+    public TimelineControl()
+    {
+        Focusable = true;
+        Cursor = Cursors.Arrow;
+        MouseDown += OnMouseDown;
+        MouseMove += OnMouseMove;
+        MouseUp += OnMouseUp;
+        KeyDown += OnKeyDown;
+    }
 
     public void Bind(EditorViewModel viewModel)
     {
@@ -103,6 +115,7 @@ public sealed class TimelineControl : FrameworkElement
     private void OnMouseDown(object sender, MouseButtonEventArgs eventArgs)
     {
         if (_viewModel is null) return;
+        Focus();
         var tracks = _viewModel.TimelineTracks;
         var point = eventArgs.GetPosition(this);
         var row = (int)(point.Y / RowHeight);
@@ -113,9 +126,60 @@ public sealed class TimelineControl : FrameworkElement
             var localFrame = (int)((point.X - HeaderWidth) / CellWidth);
             _viewModel.CurrentFrame = Math.Clamp(_viewModel.TimelineFrameStart + localFrame,
                 _viewModel.TimelineFrameStart, _viewModel.TimelineFrameEnd);
-            if (eventArgs.ClickCount >= 2) _viewModel.ToggleKeyframe();
+            if (eventArgs.ClickCount >= 2)
+            {
+                _viewModel.ToggleKeyframe();
+            }
+            else if (_viewModel.IsMeaningfulKey(_viewModel.SelectedTrack, _viewModel.CurrentFrame))
+            {
+                _pendingKeyDrag = true;
+                _keyDragActive = false;
+                _dragFrame = _viewModel.CurrentFrame;
+                _dragOrigin = point;
+                CaptureMouse();
+            }
         }
         InvalidateVisual();
+    }
+
+    private void OnMouseMove(object sender, MouseEventArgs eventArgs)
+    {
+        if (_viewModel is null || !_pendingKeyDrag || eventArgs.LeftButton != MouseButtonState.Pressed) return;
+        var point = eventArgs.GetPosition(this);
+        var target = Math.Clamp(_viewModel.TimelineFrameStart +
+                                (int)Math.Floor((point.X - HeaderWidth) / CellWidth),
+            _viewModel.TimelineFrameStart, _viewModel.TimelineFrameEnd);
+        if (!_keyDragActive && Math.Abs(point.X - _dragOrigin.X) >= 4)
+        {
+            _viewModel.BeginEditTransaction("拖动轨道关键帧");
+            _keyDragActive = true;
+        }
+        if (!_keyDragActive || target == _dragFrame) return;
+        if (_viewModel.MoveCurrentKeyframe(target)) _dragFrame = target;
+    }
+
+    private void OnMouseUp(object sender, MouseButtonEventArgs eventArgs)
+    {
+        if (!_pendingKeyDrag) return;
+        if (_keyDragActive) _viewModel?.EndEditTransaction();
+        _pendingKeyDrag = false;
+        _keyDragActive = false;
+        ReleaseMouseCapture();
+    }
+
+    private void OnKeyDown(object sender, KeyEventArgs eventArgs)
+    {
+        if (_viewModel is null) return;
+        if (eventArgs.Key is Key.Delete or Key.Back)
+        {
+            _viewModel.DeleteCurrentKeyframe();
+            eventArgs.Handled = true;
+        }
+        else if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) && eventArgs.Key is Key.Left or Key.Right)
+        {
+            _viewModel.NudgeCurrentKeyframe(eventArgs.Key == Key.Left ? -1 : 1);
+            eventArgs.Handled = true;
+        }
     }
 
     private void UpdateExtent()

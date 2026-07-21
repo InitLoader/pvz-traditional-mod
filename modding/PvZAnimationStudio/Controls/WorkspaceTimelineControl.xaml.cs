@@ -30,5 +30,8 @@ public partial class WorkspaceTimelineControl : UserControl
     private void LastFrame_Click(object sender, RoutedEventArgs eventArgs) { if (_viewModel is not null) _viewModel.CurrentFrame = _viewModel.TimelineFrameEnd; }
     private void InsertFrame_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.InsertFrame();
     private void DeleteFrame_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.DeleteFrame();
+    private void MoveKeyLeft_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.NudgeCurrentKeyframe(-1);
+    private void MoveKeyRight_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.NudgeCurrentKeyframe(1);
+    private void DeleteKey_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.DeleteCurrentKeyframe();
     private void FullTimeline_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.ClearActionView();
 }

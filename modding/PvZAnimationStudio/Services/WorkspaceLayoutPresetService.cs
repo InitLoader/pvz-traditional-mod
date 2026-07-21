@@ -18,6 +18,9 @@ public sealed class WorkspaceLayoutPresetService
             WorkspacePreset.DualTimeline => SplitVertical(
                 Leaf(WorkspaceEditorKind.AnimationView),
                 SplitHorizontal(Leaf(WorkspaceEditorKind.Timeline), Leaf(WorkspaceEditorKind.Timeline), 0.5), 0.58),
+            WorkspacePreset.GraphEditing => SplitVertical(
+                Leaf(WorkspaceEditorKind.AnimationView),
+                SplitHorizontal(Leaf(WorkspaceEditorKind.Timeline), Leaf(WorkspaceEditorKind.GraphEditor), 0.34), 0.52),
             WorkspacePreset.Focus => SplitHorizontal(
                 Leaf(WorkspaceEditorKind.AnimationView), Leaf(WorkspaceEditorKind.Inspector), 0.78),
             _ => WorkspaceLayoutState.CreateDefault().Root

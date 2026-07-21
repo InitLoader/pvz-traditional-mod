@@ -11,7 +11,7 @@ using PvZAnimationStudio.ViewModels;
 
 if (args.Length > 1 && string.Equals(args[0], "--workspace-screenshot", StringComparison.OrdinalIgnoreCase))
 {
-    RenderWorkspaceScreenshot(args[1], args.Length > 2 ? args[2] : null,
+    RenderWorkspaceScreenshot(args[1], args.Length > 2 && args[2] != "-" ? args[2] : null,
         args.Length > 3 && Enum.TryParse<WorkspacePreset>(args[3], true, out var preset) ? preset : null,
         args.Length > 4 && string.Equals(args[4], "floating", StringComparison.OrdinalIgnoreCase));
     return;
@@ -182,6 +182,16 @@ try
         },
         WorkspaceLayout = new WorkspaceLayoutPresetService().Create(WorkspacePreset.DualView)
     };
+    portableProject.Curves.Add(new AnimationCurveDefinition
+    {
+        TrackId = source.Tracks[0].EditorId,
+        Channel = CurveChannel.X,
+        Interpolation = CurveInterpolationMode.Bezier,
+        Keys = new ObservableCollection<CurveKeyDefinition>
+        {
+            new() { Frame = 0, Value = 4, HandleMode = CurveHandleMode.Aligned, RightFrameOffset = 2, RightValueOffset = 6 }
+        }
+    });
     var portablePath = Path.Combine(root, "PORTABLE_PLANT.pvza");
     var portableResources = new OriginalResourceService();
     var portableFiles = new ProjectFileService(portableResources);
@@ -208,11 +218,20 @@ try
         "便携工程没有保留图片子帧行列信息");
     Assert(CountWorkspaceEditors(portableLoaded.WorkspaceLayout.Root, WorkspaceEditorKind.AnimationView) == 2,
         "便携工程没有保留双视图工作区布局");
+    Assert(portableLoaded.Curves.Count == 1 && portableLoaded.Curves[0].Keys.Count == 1 &&
+           portableLoaded.Curves[0].Keys[0].HandleMode == CurveHandleMode.Aligned &&
+           Math.Abs(portableLoaded.Curves[0].Keys[0].RightValueOffset - 6) < 0.0001f,
+        "便携工程没有保留曲线、关键点和 Bezier 手柄");
 
     var dualTimelineLayout = new WorkspaceLayoutPresetService().Create(WorkspacePreset.DualTimeline);
     Assert(CountWorkspaceEditors(dualTimelineLayout.Root, WorkspaceEditorKind.Timeline) == 2 &&
            CountWorkspaceEditors(dualTimelineLayout.Root, WorkspaceEditorKind.AnimationView) == 1,
         "双时间轴工作区预设结构错误");
+    var graphLayout = new WorkspaceLayoutPresetService().Create(WorkspacePreset.GraphEditing);
+    Assert(CountWorkspaceEditors(graphLayout.Root, WorkspaceEditorKind.GraphEditor) == 1 &&
+           CountWorkspaceEditors(graphLayout.Root, WorkspaceEditorKind.Timeline) == 1 &&
+           CountWorkspaceEditors(graphLayout.Root, WorkspaceEditorKind.AnimationView) == 1,
+        "曲线动画工作区没有同时包含动画视图、时间轴和曲线编辑器");
 
     var droppedJpegPath = Path.Combine(root, "external-dropped-part.jpg");
     SaveBitmap(BitmapSource.Create(8, 6, 96, 96, PixelFormats.Bgr24, null,
@@ -277,6 +296,48 @@ try
     AssertNear(editor.CurrentResolvedFrame?.X, originalX, "Ctrl+Z 历史恢复错误");
     editor.Redo();
     AssertNear(editor.CurrentResolvedFrame?.X, originalX + 12, "Ctrl+Y 历史恢复错误");
+
+    var timelineKeyEditor = new EditorViewModel(new ActionCatalogService());
+    timelineKeyEditor.CurrentFrame = 10;
+    timelineKeyEditor.CurrentX = 40;
+    Assert(timelineKeyEditor.CurrentHasKey, "属性编辑没有创建轨道关键帧");
+    Assert(timelineKeyEditor.NudgeCurrentKeyframe(1) && timelineKeyEditor.CurrentFrame == 11 &&
+           timelineKeyEditor.CurrentHasKey,
+        "轨道关键帧没有向右移动一帧");
+    timelineKeyEditor.Undo();
+    Assert(timelineKeyEditor.CurrentFrame == 10 && timelineKeyEditor.CurrentHasKey,
+        "轨道关键帧移动没有完整撤销");
+    timelineKeyEditor.Redo();
+    Assert(timelineKeyEditor.CurrentFrame == 11 && timelineKeyEditor.CurrentHasKey,
+        "轨道关键帧移动没有完整恢复");
+    timelineKeyEditor.DeleteCurrentKeyframe();
+    Assert(!timelineKeyEditor.CurrentHasKey, "删除关键帧仍保留了轨道关键点");
+    timelineKeyEditor.Undo();
+    Assert(timelineKeyEditor.CurrentHasKey, "删除关键帧没有进入撤销历史");
+
+    var curveEditor = new EditorViewModel(new ActionCatalogService());
+    curveEditor.CurrentFrame = 0;
+    curveEditor.CurrentX = 0;
+    curveEditor.CurrentFrame = 10;
+    curveEditor.CurrentX = 100;
+    curveEditor.SetCurveInterpolation(CurveChannel.X, CurveInterpolationMode.Linear);
+    AssertNear(curveEditor.SelectedTrack!.Frames[5].X, 50, "线性 F-Curve 没有烘焙到中间帧");
+    curveEditor.SetCurveInterpolation(CurveChannel.X, CurveInterpolationMode.Bezier);
+    curveEditor.SetCurveHandle(CurveChannel.X, 0, false, 3, 100);
+    curveEditor.SetCurveHandle(CurveChannel.X, 10, true, 7, 100);
+    Assert((curveEditor.SelectedTrack.Frames[5].X ?? 0) > 70,
+        "拖动 Bezier 手柄没有改变曲线和烘焙后的动画值");
+    curveEditor.SetCurveHandleMode(CurveChannel.X, 0, CurveHandleMode.Aligned);
+    Assert(curveEditor.GetCurve(CurveChannel.X)?.Keys.First(key => key.Frame == 0).HandleMode == CurveHandleMode.Aligned,
+        "曲线关键点没有切换为对齐手柄");
+    curveEditor.MoveCurveKey(CurveChannel.X, 10, 12, 100);
+    Assert(curveEditor.GetCurveKeyFrames(CurveChannel.X).Contains(12) &&
+           !curveEditor.GetCurveKeyFrames(CurveChannel.X).Contains(10),
+        "曲线关键点没有沿时间轴移动");
+    curveEditor.DeleteCurveKey(CurveChannel.X, 12);
+    Assert(!curveEditor.GetCurveKeyFrames(CurveChannel.X).Contains(12), "曲线关键点删除失败");
+    curveEditor.Undo();
+    Assert(curveEditor.GetCurveKeyFrames(CurveChannel.X).Contains(12), "曲线关键点删除没有进入撤销历史");
 
     var longHistoryEditor = new EditorViewModel(new ActionCatalogService());
     var longHistoryStart = longHistoryEditor.CurrentResolvedFrame?.X ?? 0;
@@ -490,6 +551,8 @@ static void RenderWorkspaceScreenshot(string path, string? animationPath, Worksp
             };
             if (!string.IsNullOrWhiteSpace(animationPath))
                 window.LoadAnimationFile(Path.GetFullPath(animationPath));
+            if (window.DataContext is not EditorViewModel screenshotViewModel || screenshotViewModel.SelectedTrack is null)
+                throw new InvalidOperationException("加载动画后没有自动选择第一个可编辑轨道。");
             var workspace = window.FindName("WorkspaceHost") as WorkspaceHostControl;
             if (preset.HasValue) workspace?.ApplyPreset(preset.Value);
             window.Show();

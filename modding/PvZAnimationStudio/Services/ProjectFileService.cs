@@ -62,7 +62,7 @@ public sealed class ProjectFileService
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var temporaryPath = path + $".{Guid.NewGuid():N}.tmp";
         var portable = _clone.Clone(project);
-        portable.SchemaVersion = Math.Max(2, portable.SchemaVersion);
+        portable.SchemaVersion = Math.Max(3, portable.SchemaVersion);
         portable.ProjectPath = null;
         portable.ImageBindings.Clear();
         portable.ImageLayouts.Clear();
@@ -170,6 +170,12 @@ public sealed class ProjectFileService
         project.ProjectPath = path;
         project.ImageBindings = new Dictionary<string, string>(project.ImageBindings ?? [], StringComparer.OrdinalIgnoreCase);
         project.ImageLayouts = new Dictionary<string, ImageLayoutDefinition>(project.ImageLayouts ?? [], StringComparer.OrdinalIgnoreCase);
+        project.Curves ??= [];
+        foreach (var track in project.Animation.Tracks)
+        {
+            if (string.IsNullOrWhiteSpace(track.EditorId)) track.EditorId = Guid.NewGuid().ToString("N");
+        }
+        foreach (var curve in project.Curves) curve.Keys ??= [];
         project.WorkspaceLayout ??= new WorkspaceLayoutPresetService().Create(WorkspacePreset.Animation);
     }
 

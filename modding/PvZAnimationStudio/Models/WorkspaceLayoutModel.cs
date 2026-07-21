@@ -4,6 +4,7 @@ public enum WorkspaceEditorKind
 {
     AnimationView,
     Timeline,
+    GraphEditor,
     Browser,
     Inspector
 }
@@ -20,6 +21,7 @@ public enum WorkspacePreset
     Animation,
     DualView,
     DualTimeline,
+    GraphEditing,
     Focus
 }
 

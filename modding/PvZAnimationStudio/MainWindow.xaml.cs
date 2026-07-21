@@ -4,6 +4,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
+using PvZAnimationStudio.Controls;
 using PvZAnimationStudio.Models;
 using PvZAnimationStudio.Services;
 using PvZAnimationStudio.ViewModels;
@@ -362,6 +363,10 @@ public partial class MainWindow : Window
         { OpenAnimation_Click(sender, new RoutedEventArgs()); eventArgs.Handled = true; }
         else if (eventArgs.Key == Key.Space)
         { Play_Click(sender, new RoutedEventArgs()); eventArgs.Handled = true; }
+        else if ((eventArgs.OriginalSource is TimelineControl or GraphEditorControl) &&
+                 (eventArgs.Key is Key.Delete or Key.Back or Key.Home ||
+                  modifiers.HasFlag(ModifierKeys.Shift) && eventArgs.Key is Key.Left or Key.Right))
+        { return; }
         else if (eventArgs.Key == Key.K && modifiers.HasFlag(ModifierKeys.Shift))
         { _viewModel.ClearKeyframe(); eventArgs.Handled = true; }
         else if (eventArgs.Key == Key.K)
@@ -502,6 +507,7 @@ public partial class MainWindow : Window
     private void AnimationWorkspace_Click(object sender, RoutedEventArgs eventArgs) => ApplyWorkspacePreset(WorkspacePreset.Animation);
     private void DualViewWorkspace_Click(object sender, RoutedEventArgs eventArgs) => ApplyWorkspacePreset(WorkspacePreset.DualView);
     private void DualTimelineWorkspace_Click(object sender, RoutedEventArgs eventArgs) => ApplyWorkspacePreset(WorkspacePreset.DualTimeline);
+    private void GraphWorkspace_Click(object sender, RoutedEventArgs eventArgs) => ApplyWorkspacePreset(WorkspacePreset.GraphEditing);
     private void FocusWorkspace_Click(object sender, RoutedEventArgs eventArgs) => ApplyWorkspacePreset(WorkspacePreset.Focus);
 
     private void Window_Drop(object sender, DragEventArgs eventArgs)
@@ -526,7 +532,7 @@ public partial class MainWindow : Window
     private void Help_Click(object sender, RoutedEventArgs eventArgs)
     {
         MessageBox.Show(this,
-            "基本流程：\n1. 选择游戏目录。\n2. 打开任意目录中的 .reanim.compiled，或新建工程。\n3. 拖动区域分隔线调整大小；右上角 ↔/↕ 或斜纹拖拽可拆分区域，↗ 可打开独立窗口。\n4. 每个区域左上角可切换动画视图、时间轴、资源或属性；窗口右上角可切换工作区。\n5. Q 选择，W 移动，E 旋转，R 缩放；K 设置关键帧。\n6. 保存为 .pvza 会把动画、动作、属性、工作区和所有图片嵌入同一个文件。\n\n撤销/重做：Ctrl+Z / Ctrl+Y。方向键微调部件，Shift+方向键加速。",
+            "基本流程：\n1. 选择游戏目录。\n2. 打开任意目录中的 .reanim.compiled，或新建工程。\n3. 拖动区域分隔线调整大小；右上角 ↔/↕ 或斜纹拖拽可拆分区域，↗ 可打开独立窗口。\n4. 每个区域可切换动画视图、时间轴、曲线编辑器、资源或属性；右上角可选曲线动画工作区。\n5. 时间轴菱形可左右拖动；Shift+←/→ 微移，Delete 删除当前轨道关键帧。\n6. 曲线区拖关键点改变帧/值，拖圆形手柄改变 Bezier；滚轮缩放时间，Ctrl+滚轮缩放数值，中键平移。\n7. Q 选择，W 移动，E 旋转，R 缩放；K 设置关键帧。\n8. 保存为 .pvza 会把动画、曲线手柄、动作、属性、工作区和所有图片嵌入同一个文件。\n\n撤销/重做：Ctrl+Z / Ctrl+Y。方向键微调部件，Shift+方向键加速。",
             "制作流程", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 

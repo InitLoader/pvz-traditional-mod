@@ -29,6 +29,7 @@ public sealed class ProjectCloneService
             Damage = source.Damage,
             ShotsPerAttack = source.ShotsPerAttack,
             Animation = CloneAnimation(source.Animation),
+            Curves = new ObservableCollection<AnimationCurveDefinition>(source.Curves.Select(curve => curve.Clone())),
             ImageBindings = new Dictionary<string, string>(source.ImageBindings, StringComparer.OrdinalIgnoreCase),
             ImageLayouts = source.ImageLayouts.ToDictionary(
                 item => item.Key,
@@ -45,7 +46,7 @@ public sealed class ProjectCloneService
         var result = new AnimationDocument { Fps = source.Fps, DoScale = source.DoScale };
         foreach (var sourceTrack in source.Tracks)
         {
-            var track = new AnimationTrack { Name = sourceTrack.Name };
+            var track = new AnimationTrack { Name = sourceTrack.Name, EditorId = sourceTrack.EditorId };
             foreach (var frame in sourceTrack.Frames) track.Frames.Add(frame.Clone());
             result.Tracks.Add(track);
         }

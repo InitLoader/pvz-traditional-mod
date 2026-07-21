@@ -14,6 +14,7 @@ public sealed class WorkspaceHostControl : Grid
     private readonly WorkspaceLayoutPresetService _presets = new();
     private readonly List<AnimationPreviewControl> _previews = [];
     private readonly List<WorkspaceTimelineControl> _timelines = [];
+    private readonly List<WorkspaceGraphControl> _graphs = [];
     private readonly List<WorkspaceBrowserControl> _browsers = [];
     private readonly List<Window> _floatingWindows = [];
     private EditorViewModel? _viewModel;
@@ -60,9 +61,11 @@ public sealed class WorkspaceHostControl : Grid
     {
         foreach (var preview in _previews) preview.Unbind();
         foreach (var timeline in _timelines) timeline.Unbind();
+        foreach (var graph in _graphs) graph.Unbind();
         foreach (var window in _floatingWindows.ToArray()) window.Close();
         _previews.Clear();
         _timelines.Clear();
+        _graphs.Clear();
         _browsers.Clear();
         _viewModel = null;
         _resources = null;
@@ -73,11 +76,13 @@ public sealed class WorkspaceHostControl : Grid
     {
         foreach (var preview in _previews) preview.Unbind();
         foreach (var timeline in _timelines) timeline.Unbind();
+        foreach (var graph in _graphs) graph.Unbind();
         Children.Clear();
         RowDefinitions.Clear();
         ColumnDefinitions.Clear();
         _previews.Clear();
         _timelines.Clear();
+        _graphs.Clear();
         _browsers.Clear();
         if (_viewModel is null || _resources is null) return;
         Children.Add(BuildNode(_layout.Root));
@@ -166,6 +171,11 @@ public sealed class WorkspaceHostControl : Grid
                 timeline.Bind(_viewModel);
                 _timelines.Add(timeline);
                 return timeline;
+            case WorkspaceEditorKind.GraphEditor:
+                var graph = new WorkspaceGraphControl();
+                graph.Bind(_viewModel);
+                _graphs.Add(graph);
+                return graph;
             case WorkspaceEditorKind.Browser:
                 var browser = new WorkspaceBrowserControl();
                 browser.Bind(_viewModel);
@@ -301,6 +311,7 @@ public sealed class WorkspaceHostControl : Grid
     private static string EditorName(WorkspaceEditorKind editor) => editor switch
     {
         WorkspaceEditorKind.Timeline => "轨道时间轴",
+        WorkspaceEditorKind.GraphEditor => "曲线编辑器",
         WorkspaceEditorKind.Browser => "资源与工程",
         WorkspaceEditorKind.Inspector => "属性检查器",
         _ => "动画视图"

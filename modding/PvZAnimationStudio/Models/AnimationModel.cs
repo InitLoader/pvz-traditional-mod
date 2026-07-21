@@ -32,6 +32,71 @@ public enum EditorTool
     Scale
 }
 
+public enum CurveChannel
+{
+    X,
+    Y,
+    SkewX,
+    SkewY,
+    ScaleX,
+    ScaleY,
+    Frame,
+    Alpha
+}
+
+public enum CurveInterpolationMode
+{
+    Bezier,
+    Linear,
+    Constant
+}
+
+public enum CurveHandleMode
+{
+    Auto,
+    Aligned,
+    Free,
+    Vector
+}
+
+public sealed class CurveKeyDefinition
+{
+    public int Frame { get; set; }
+    public float Value { get; set; }
+    public CurveHandleMode HandleMode { get; set; } = CurveHandleMode.Auto;
+    public float LeftFrameOffset { get; set; } = -1;
+    public float LeftValueOffset { get; set; }
+    public float RightFrameOffset { get; set; } = 1;
+    public float RightValueOffset { get; set; }
+
+    public CurveKeyDefinition Clone() => new()
+    {
+        Frame = Frame,
+        Value = Value,
+        HandleMode = HandleMode,
+        LeftFrameOffset = LeftFrameOffset,
+        LeftValueOffset = LeftValueOffset,
+        RightFrameOffset = RightFrameOffset,
+        RightValueOffset = RightValueOffset
+    };
+}
+
+public sealed class AnimationCurveDefinition
+{
+    public string TrackId { get; set; } = string.Empty;
+    public CurveChannel Channel { get; set; }
+    public CurveInterpolationMode Interpolation { get; set; } = CurveInterpolationMode.Bezier;
+    public ObservableCollection<CurveKeyDefinition> Keys { get; set; } = [];
+
+    public AnimationCurveDefinition Clone() => new()
+    {
+        TrackId = TrackId,
+        Channel = Channel,
+        Interpolation = Interpolation,
+        Keys = new ObservableCollection<CurveKeyDefinition>(Keys.Select(key => key.Clone()))
+    };
+}
+
 public sealed class AnimationFrame
 {
     public float? X { get; set; }
@@ -107,6 +172,8 @@ public sealed class ResolvedAnimationFrame
 public sealed class AnimationTrack : ObservableObject
 {
     private string _name = "track";
+
+    public string EditorId { get; set; } = Guid.NewGuid().ToString("N");
 
     public string Name
     {
@@ -259,7 +326,7 @@ public sealed class EditorProject : ObservableObject
     private string? _projectPath;
     private string? _sourceAnimationPath;
 
-    public int SchemaVersion { get; set; } = 2;
+    public int SchemaVersion { get; set; } = 3;
     public string Id { get => _id; set => SetField(ref _id, value); }
     public string DisplayName { get => _displayName; set => SetField(ref _displayName, value); }
     public string Description { get => _description; set => SetField(ref _description, value); }
@@ -282,6 +349,7 @@ public sealed class EditorProject : ObservableObject
 
     public AnimationDocument Animation { get; set; } = new();
     public ObservableCollection<ActionDefinition> Actions { get; set; } = [];
+    public ObservableCollection<AnimationCurveDefinition> Curves { get; set; } = [];
     public Dictionary<string, string> ImageBindings { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, ImageLayoutDefinition> ImageLayouts { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public WorkspaceLayoutState WorkspaceLayout { get; set; } = WorkspaceLayoutState.CreateDefault();

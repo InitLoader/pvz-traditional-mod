@@ -18,6 +18,7 @@ public sealed class WorkspacePaneControl : Border
     [
         new(WorkspaceEditorKind.AnimationView, "动画视图"),
         new(WorkspaceEditorKind.Timeline, "轨道时间轴"),
+        new(WorkspaceEditorKind.GraphEditor, "曲线编辑器"),
         new(WorkspaceEditorKind.Browser, "资源与工程"),
         new(WorkspaceEditorKind.Inspector, "属性检查器")
     ];

@@ -28,11 +28,11 @@
         <MenuItem Header="{Binding RedoLabel}" IsEnabled="{Binding CanRedo}" Click="Redo_Click" InputGestureText="Ctrl+Y" />
         <Separator />
         <MenuItem Header="设置关键帧" Click="SetKey_Click" InputGestureText="K" />
-        <MenuItem Header="清除关键帧" Click="ClearKey_Click" InputGestureText="Shift+K" />
+        <MenuItem Header="删除当前轨道关键帧" Click="ClearKey_Click" InputGestureText="Shift+K / Delete" />
         <MenuItem Header="生成线性补间" Click="LinearTween_Click" />
         <MenuItem Header="生成平滑补间" Click="SmoothTween_Click" />
-        <MenuItem Header="插入空白帧" Click="InsertFrame_Click" />
-        <MenuItem Header="删除当前帧" Click="DeleteFrame_Click" />
+        <MenuItem Header="插入空白整帧" Click="InsertFrame_Click" />
+        <MenuItem Header="删除当前整帧" Click="DeleteFrame_Click" />
       </MenuItem>
       <MenuItem Header="资源(_R)">
         <MenuItem Header="选择游戏目录…" Click="ChooseGameRoot_Click" />
@@ -43,6 +43,7 @@
         <MenuItem Header="动画制作工作区" Click="AnimationWorkspace_Click" />
         <MenuItem Header="双动画视图工作区" Click="DualViewWorkspace_Click" />
         <MenuItem Header="双时间轴工作区" Click="DualTimelineWorkspace_Click" />
+        <MenuItem Header="曲线动画工作区" Click="GraphWorkspace_Click" />
         <MenuItem Header="专注动画工作区" Click="FocusWorkspace_Click" />
       </MenuItem>
       <MenuItem Header="帮助(_H)">
@@ -59,6 +60,7 @@
             <ComboBoxItem Tag="Animation" IsSelected="True"><TextBlock Text="动画制作" Foreground="#EEF3F6" /></ComboBoxItem>
             <ComboBoxItem Tag="DualView"><TextBlock Text="双动画视图" Foreground="#EEF3F6" /></ComboBoxItem>
             <ComboBoxItem Tag="DualTimeline"><TextBlock Text="双时间轴" Foreground="#EEF3F6" /></ComboBoxItem>
+            <ComboBoxItem Tag="GraphEditing"><TextBlock Text="曲线动画" Foreground="#EEF3F6" /></ComboBoxItem>
             <ComboBoxItem Tag="Focus"><TextBlock Text="专注动画" Foreground="#EEF3F6" /></ComboBoxItem>
           </ComboBox>
         </StackPanel>

@@ -11,6 +11,7 @@ public sealed class EditorViewModel : ObservableObject
     private readonly ActionViewService _actionView = new();
     private readonly ProjectCloneService _cloneService = new();
     private readonly EditHistoryService _history = new();
+    private readonly AnimationCurveService _curveService = new();
     private EditorProject _project;
     private AnimationTrack? _selectedTrack;
     private ActionDefinition? _selectedAction;
@@ -157,18 +158,19 @@ public sealed class EditorViewModel : ObservableObject
     public string FrameLabel => IsActionView
         ? $"动作帧 {CurrentFrame - ActiveRange.Start + 1} / {ActiveRange.Count}（原始 {CurrentFrame + 1}）"
         : $"帧 {CurrentFrame + 1} / {Math.Max(1, Project.Animation.FrameCount)}";
-    public bool CurrentHasKey => CurrentExplicitFrame?.HasKey ?? false;
+    public bool CurrentHasKey => SelectedTrack is not null &&
+                                 _curveService.HasTimelineKey(Project, SelectedTrack, CurrentFrame);
 
-    public float? CurrentX { get => CurrentExplicitFrame?.X; set => SetFrameValue("修改 X 位移", frame => frame.X = value); }
-    public float? CurrentY { get => CurrentExplicitFrame?.Y; set => SetFrameValue("修改 Y 位移", frame => frame.Y = value); }
-    public float? CurrentSkewX { get => CurrentExplicitFrame?.SkewX; set => SetFrameValue("修改 X 旋转", frame => frame.SkewX = value); }
-    public float? CurrentSkewY { get => CurrentExplicitFrame?.SkewY; set => SetFrameValue("修改 Y 旋转", frame => frame.SkewY = value); }
-    public float? CurrentScaleX { get => CurrentExplicitFrame?.ScaleX; set => SetFrameValue("修改 X 缩放", frame => frame.ScaleX = value); }
-    public float? CurrentScaleY { get => CurrentExplicitFrame?.ScaleY; set => SetFrameValue("修改 Y 缩放", frame => frame.ScaleY = value); }
-    public float? CurrentVisibilityFrame { get => CurrentExplicitFrame?.Frame; set => SetFrameValue("修改图片子帧", frame => frame.Frame = value); }
-    public float? CurrentAlpha { get => CurrentExplicitFrame?.Alpha; set => SetFrameValue("修改透明度", frame => frame.Alpha = value); }
-    public string? CurrentImage { get => CurrentExplicitFrame?.Image; set => SetFrameValue("修改图片符号", frame => frame.Image = value); }
-    public string? CurrentText { get => CurrentExplicitFrame?.Text; set => SetFrameValue("修改文字", frame => frame.Text = value); }
+    public float? CurrentX { get => CurrentExplicitFrame?.X; set => SetFrameValue("修改 X 位移", CurveChannel.X, frame => frame.X = value); }
+    public float? CurrentY { get => CurrentExplicitFrame?.Y; set => SetFrameValue("修改 Y 位移", CurveChannel.Y, frame => frame.Y = value); }
+    public float? CurrentSkewX { get => CurrentExplicitFrame?.SkewX; set => SetFrameValue("修改 X 旋转", CurveChannel.SkewX, frame => frame.SkewX = value); }
+    public float? CurrentSkewY { get => CurrentExplicitFrame?.SkewY; set => SetFrameValue("修改 Y 旋转", CurveChannel.SkewY, frame => frame.SkewY = value); }
+    public float? CurrentScaleX { get => CurrentExplicitFrame?.ScaleX; set => SetFrameValue("修改 X 缩放", CurveChannel.ScaleX, frame => frame.ScaleX = value); }
+    public float? CurrentScaleY { get => CurrentExplicitFrame?.ScaleY; set => SetFrameValue("修改 Y 缩放", CurveChannel.ScaleY, frame => frame.ScaleY = value); }
+    public float? CurrentVisibilityFrame { get => CurrentExplicitFrame?.Frame; set => SetFrameValue("修改图片子帧", CurveChannel.Frame, frame => frame.Frame = value); }
+    public float? CurrentAlpha { get => CurrentExplicitFrame?.Alpha; set => SetFrameValue("修改透明度", CurveChannel.Alpha, frame => frame.Alpha = value); }
+    public string? CurrentImage { get => CurrentExplicitFrame?.Image; set => SetFrameValue("修改图片符号", null, frame => frame.Image = value); }
+    public string? CurrentText { get => CurrentExplicitFrame?.Text; set => SetFrameValue("修改文字", null, frame => frame.Text = value); }
 
     public ResolvedAnimationFrame? CurrentResolvedFrame => SelectedTrack?.ResolveFrame(CurrentFrame);
 
@@ -197,6 +199,7 @@ public sealed class EditorViewModel : ObservableObject
     public void ReplaceAnimation(AnimationDocument document, string sourcePath)
     {
         Project.Animation = document;
+        Project.Curves.Clear();
         Project.SourceAnimationPath = sourcePath;
         Project.Actions = _actionCatalog.InferActions(document, Project.Kind);
         _selectedTrack = document.Tracks.FirstOrDefault(track => !track.IsActionTrack)
@@ -204,6 +207,9 @@ public sealed class EditorViewModel : ObservableObject
         _selectedAction = null;
         _currentFrame = 0;
         _history.Clear();
+        RaisePropertyChanged(nameof(SelectedTrack));
+        RaisePropertyChanged(nameof(SelectedAction));
+        RaisePropertyChanged(nameof(CurrentFrame));
         RaiseAll();
         NotifyVisualChanged();
     }
@@ -296,6 +302,8 @@ public sealed class EditorViewModel : ObservableObject
         if (SelectedTrack is null || Project.Animation.Tracks.Count <= 1) return;
         RecordUndo("删除轨道");
         var index = Project.Animation.Tracks.IndexOf(SelectedTrack);
+        foreach (var curve in Project.Curves.Where(curve => curve.TrackId == SelectedTrack.EditorId).ToArray())
+            Project.Curves.Remove(curve);
         Project.Animation.Tracks.Remove(SelectedTrack);
         SelectedTrack = Project.Animation.Tracks[Math.Clamp(index, 0, Project.Animation.Tracks.Count - 1)];
         RaisePropertyChanged(nameof(Tracks));
@@ -309,17 +317,18 @@ public sealed class EditorViewModel : ObservableObject
         RecordUndo("设置关键帧");
         var resolved = SelectedTrack.ResolveFrame(CurrentFrame);
         SelectedTrack.Frames[CurrentFrame] = resolved.ToExplicitFrame();
+        foreach (var channel in Enum.GetValues<CurveChannel>())
+        {
+            var key = _curveService.EnsureKey(Project, SelectedTrack, channel, CurrentFrame);
+            key.Value = _curveService.GetValue(SelectedTrack, channel, CurrentFrame);
+        }
         RaiseFrameProperties();
         NotifyVisualChanged();
     }
 
     public void ClearKeyframe()
     {
-        if (CurrentExplicitFrame is null) return;
-        RecordUndo("清除关键帧");
-        CurrentExplicitFrame.Clear();
-        RaiseFrameProperties();
-        NotifyVisualChanged();
+        DeleteCurrentKeyframe();
     }
 
     public void ToggleKeyframe()
@@ -344,6 +353,7 @@ public sealed class EditorViewModel : ObservableObject
         RecordUndo("插入帧");
         foreach (var track in Project.Animation.Tracks)
             track.Frames.Insert(Math.Min(CurrentFrame, track.Frames.Count), new AnimationFrame());
+        _curveService.ShiftForInsertedFrame(Project, CurrentFrame);
         RaiseAll();
         NotifyVisualChanged();
     }
@@ -354,8 +364,114 @@ public sealed class EditorViewModel : ObservableObject
         RecordUndo("删除帧");
         foreach (var track in Project.Animation.Tracks)
             track.Frames.RemoveAt(Math.Clamp(CurrentFrame, 0, track.Frames.Count - 1));
+        _curveService.ShiftForDeletedFrame(Project, CurrentFrame);
         _currentFrame = Math.Min(CurrentFrame, Project.Animation.FrameCount - 1);
         RaiseAll();
+        NotifyVisualChanged();
+    }
+
+    public bool MoveCurrentKeyframe(int targetFrame)
+    {
+        if (SelectedTrack is null || !CurrentHasKey) return false;
+        var sourceFrame = CurrentFrame;
+        targetFrame = Math.Clamp(targetFrame, TimelineFrameStart, TimelineFrameEnd);
+        if (sourceFrame == targetFrame) return false;
+        RecordUndo("移动轨道关键帧");
+        var source = SelectedTrack.Frames[sourceFrame].Clone();
+        MergeExplicitFrame(SelectedTrack.Frames[targetFrame], source);
+        SelectedTrack.Frames[sourceFrame].Clear();
+        _curveService.MoveFrameKeys(Project, SelectedTrack, sourceFrame, targetFrame);
+        _currentFrame = targetFrame;
+        RaisePropertyChanged(nameof(CurrentFrame));
+        RaiseFrameProperties();
+        Status = $"已将 {SelectedTrack.Name} 的关键帧移动到第 {targetFrame + 1} 帧";
+        NotifyVisualChanged();
+        return true;
+    }
+
+    public bool NudgeCurrentKeyframe(int offset) => MoveCurrentKeyframe(CurrentFrame + offset);
+
+    public void DeleteCurrentKeyframe()
+    {
+        if (SelectedTrack is null || !CurrentHasKey) return;
+        RecordUndo("删除轨道关键帧");
+        SelectedTrack.Frames[CurrentFrame].Clear();
+        _curveService.DeleteFrameKeys(Project, SelectedTrack, CurrentFrame);
+        Status = $"已删除 {SelectedTrack.Name} 第 {CurrentFrame + 1} 帧的关键帧";
+        RaiseFrameProperties();
+        NotifyVisualChanged();
+    }
+
+    public IReadOnlyList<CurveChannel> GetCurveChannels() => SelectedTrack is null
+        ? []
+        : _curveService.GetAvailableChannels(Project, SelectedTrack);
+
+    public AnimationCurveDefinition? GetCurve(CurveChannel channel, bool create = false) => SelectedTrack is null
+        ? null
+        : create ? _curveService.EnsureCurve(Project, SelectedTrack, channel)
+                 : _curveService.FindCurve(Project, SelectedTrack, channel);
+
+    public AnimationCurveDefinition? GetCurveForDisplay(CurveChannel channel) => SelectedTrack is null
+        ? null
+        : _curveService.GetCurveForDisplay(Project, SelectedTrack, channel);
+
+    public IReadOnlyList<int> GetCurveKeyFrames(CurveChannel channel) => SelectedTrack is null
+        ? []
+        : _curveService.GetKeyFrames(Project, SelectedTrack, channel);
+
+    public float GetCurveValue(CurveChannel channel, int frame) => SelectedTrack is null
+        ? 0
+        : _curveService.GetValue(SelectedTrack, channel, frame);
+
+    public CurveHandlePair GetCurveHandles(CurveChannel channel, AnimationCurveDefinition curve, CurveKeyDefinition key)
+    {
+        if (SelectedTrack is null) return default;
+        return _curveService.GetHandles(Project, SelectedTrack, curve, key);
+    }
+
+    public void MoveCurveKey(CurveChannel channel, int sourceFrame, int targetFrame, float value)
+    {
+        if (SelectedTrack is null) return;
+        RecordUndo("移动曲线关键点");
+        _curveService.MoveKey(Project, SelectedTrack, channel, sourceFrame, targetFrame, value);
+        _currentFrame = targetFrame;
+        RaisePropertyChanged(nameof(CurrentFrame));
+        RaiseFrameProperties();
+        NotifyVisualChanged();
+    }
+
+    public void DeleteCurveKey(CurveChannel channel, int frame)
+    {
+        if (SelectedTrack is null) return;
+        RecordUndo("删除曲线关键点");
+        _curveService.DeleteKey(Project, SelectedTrack, channel, frame);
+        RaiseFrameProperties();
+        NotifyVisualChanged();
+    }
+
+    public void SetCurveHandle(CurveChannel channel, int frame, bool left, float handleFrame, float handleValue)
+    {
+        if (SelectedTrack is null) return;
+        RecordUndo("调整 Bezier 曲线手柄");
+        _curveService.SetHandle(Project, SelectedTrack, channel, frame, left, handleFrame, handleValue);
+        RaiseFrameProperties();
+        NotifyVisualChanged();
+    }
+
+    public void SetCurveHandleMode(CurveChannel channel, int frame, CurveHandleMode mode)
+    {
+        if (SelectedTrack is null) return;
+        RecordUndo("修改曲线手柄类型");
+        _curveService.SetHandleMode(Project, SelectedTrack, channel, frame, mode);
+        NotifyVisualChanged();
+    }
+
+    public void SetCurveInterpolation(CurveChannel channel, CurveInterpolationMode mode)
+    {
+        if (SelectedTrack is null) return;
+        RecordUndo("修改曲线插值");
+        _curveService.SetInterpolation(Project, SelectedTrack, channel, mode);
+        RaiseFrameProperties();
         NotifyVisualChanged();
     }
 
@@ -376,6 +492,8 @@ public sealed class EditorViewModel : ObservableObject
         var frame = EnsureCurrentFrame();
         frame.X = resolved.X + deltaX;
         frame.Y = resolved.Y + deltaY;
+        SyncCurveKey(CurveChannel.X);
+        SyncCurveKey(CurveChannel.Y);
         RaiseFrameProperties();
         NotifyVisualChanged();
     }
@@ -388,6 +506,8 @@ public sealed class EditorViewModel : ObservableObject
         var frame = EnsureCurrentFrame();
         frame.ScaleX = Math.Clamp(resolved.ScaleX * factorX, -20f, 20f);
         frame.ScaleY = Math.Clamp(resolved.ScaleY * factorY, -20f, 20f);
+        SyncCurveKey(CurveChannel.ScaleX);
+        SyncCurveKey(CurveChannel.ScaleY);
         RaiseFrameProperties();
         NotifyVisualChanged();
     }
@@ -400,6 +520,8 @@ public sealed class EditorViewModel : ObservableObject
         var frame = EnsureCurrentFrame();
         frame.SkewX = resolved.SkewX + deltaDegrees;
         frame.SkewY = resolved.SkewY + deltaDegrees;
+        SyncCurveKey(CurveChannel.SkewX);
+        SyncCurveKey(CurveChannel.SkewY);
         RaiseFrameProperties();
         NotifyVisualChanged();
     }
@@ -428,7 +550,7 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     public bool IsMeaningfulKey(AnimationTrack track, int frameIndex) =>
-        _actionView.HasMeaningfulChange(track, frameIndex, ActiveRange.Start);
+        _curveService.HasTimelineKey(Project, track, frameIndex);
 
     private AnimationFrame? CurrentExplicitFrame =>
         SelectedTrack is null || SelectedTrack.Frames.Count == 0
@@ -442,13 +564,49 @@ public sealed class EditorViewModel : ObservableObject
         return SelectedTrack.Frames[Math.Clamp(CurrentFrame, 0, SelectedTrack.Frames.Count - 1)];
     }
 
-    private void SetFrameValue(string historyName, Action<AnimationFrame> setter)
+    private void SetFrameValue(string historyName, CurveChannel? channel, Action<AnimationFrame> setter)
     {
         if (SelectedTrack is null) return;
         RecordUndo(historyName);
-        setter(EnsureCurrentFrame());
+        var frame = EnsureCurrentFrame();
+        setter(frame);
+        if (channel.HasValue && AnimationCurveService.GetExplicitValue(frame, channel.Value).HasValue)
+        {
+            var key = _curveService.EnsureKey(Project, SelectedTrack, channel.Value, CurrentFrame);
+            key.Value = AnimationCurveService.GetExplicitValue(frame, channel.Value)!.Value;
+            var curve = _curveService.FindCurve(Project, SelectedTrack, channel.Value);
+            if (curve is not null) _curveService.BakeCurve(Project, SelectedTrack, curve);
+        }
+        else if (channel.HasValue)
+        {
+            _curveService.DeleteKey(Project, SelectedTrack, channel.Value, CurrentFrame);
+        }
         RaiseFrameProperties();
         NotifyVisualChanged();
+    }
+
+    private void SyncCurveKey(CurveChannel channel)
+    {
+        if (SelectedTrack is null) return;
+        var key = _curveService.EnsureKey(Project, SelectedTrack, channel, CurrentFrame);
+        key.Value = _curveService.GetValue(SelectedTrack, channel, CurrentFrame);
+        var curve = _curveService.FindCurve(Project, SelectedTrack, channel);
+        if (curve is not null) _curveService.BakeCurve(Project, SelectedTrack, curve);
+    }
+
+    private static void MergeExplicitFrame(AnimationFrame target, AnimationFrame source)
+    {
+        if (source.X.HasValue) target.X = source.X;
+        if (source.Y.HasValue) target.Y = source.Y;
+        if (source.SkewX.HasValue) target.SkewX = source.SkewX;
+        if (source.SkewY.HasValue) target.SkewY = source.SkewY;
+        if (source.ScaleX.HasValue) target.ScaleX = source.ScaleX;
+        if (source.ScaleY.HasValue) target.ScaleY = source.ScaleY;
+        if (source.Frame.HasValue) target.Frame = source.Frame;
+        if (source.Alpha.HasValue) target.Alpha = source.Alpha;
+        if (source.Image is not null) target.Image = source.Image;
+        if (source.Font is not null) target.Font = source.Font;
+        if (source.Text is not null) target.Text = source.Text;
     }
 
     private void SetProjectValue<T>(string historyName, T current, T value, Action<T> setter)

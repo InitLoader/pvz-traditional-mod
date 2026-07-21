@@ -1,0 +1,32 @@
+<UserControl x:Class="PvZAnimationStudio.Controls.WorkspaceGraphControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:PvZAnimationStudio.Controls">
+  <DockPanel Background="#14191F">
+    <ScrollViewer DockPanel.Dock="Top" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+      <StackPanel Orientation="Horizontal" Margin="4">
+        <Button Content="◀ 关键点" ToolTip="当前属性关键点左移一帧（Shift+←）" Click="MoveLeft_Click"/>
+        <Button Content="关键点 ▶" ToolTip="当前属性关键点右移一帧（Shift+→）" Click="MoveRight_Click"/>
+        <Button Content="删除关键点" ToolTip="删除当前颜色通道的关键点（Delete）" Click="Delete_Click"/>
+        <Separator Margin="6,0"/>
+        <TextBlock Text="插值" Margin="5,7,3,7"/>
+        <ComboBox x:Name="InterpolationCombo" Width="105" SelectionChanged="InterpolationCombo_SelectionChanged">
+          <ComboBoxItem Tag="Bezier"><TextBlock Text="Bezier" Foreground="#EEF3F6"/></ComboBoxItem>
+          <ComboBoxItem Tag="Linear"><TextBlock Text="线性" Foreground="#EEF3F6"/></ComboBoxItem>
+          <ComboBoxItem Tag="Constant"><TextBlock Text="常量/阶梯" Foreground="#EEF3F6"/></ComboBoxItem>
+        </ComboBox>
+        <TextBlock Text="手柄" Margin="10,7,3,7"/>
+        <ComboBox x:Name="HandleCombo" Width="105" SelectionChanged="HandleCombo_SelectionChanged">
+          <ComboBoxItem Tag="Auto"><TextBlock Text="自动" Foreground="#EEF3F6"/></ComboBoxItem>
+          <ComboBoxItem Tag="Aligned"><TextBlock Text="对齐" Foreground="#EEF3F6"/></ComboBoxItem>
+          <ComboBoxItem Tag="Free"><TextBlock Text="自由" Foreground="#EEF3F6"/></ComboBoxItem>
+          <ComboBoxItem Tag="Vector"><TextBlock Text="矢量" Foreground="#EEF3F6"/></ComboBoxItem>
+        </ComboBox>
+        <Button Content="适配全部" ToolTip="Home；鼠标滚轮缩放时间，Ctrl+滚轮缩放数值，中键平移" Click="FitAll_Click"/>
+        <TextBlock Text="拖关键点=改帧/数值　拖圆形手柄=拉曲线　右键=移动播放头"
+                   Foreground="#AEB8C3" Margin="12,7"/>
+      </StackPanel>
+    </ScrollViewer>
+    <controls:GraphEditorControl x:Name="Graph"/>
+  </DockPanel>
+</UserControl>
