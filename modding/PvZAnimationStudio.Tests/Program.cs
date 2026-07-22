@@ -73,8 +73,15 @@ try
     {
         Assert(templateDocument.Contains($"| {definition.Id} | `{definition.SeedConstant}` |", StringComparison.Ordinal),
             $"植物模板文档缺少 ID {definition.Id} / {definition.SeedConstant}");
-        var compiledAsset = Path.Combine(repositoryRoot!, "compiled", "reanim", definition.CompiledFileName);
-        Assert(File.Exists(compiledAsset), $"植物模板目录引用了不存在的原版资源：{definition.CompiledFileName}");
+    }
+    var originalReanimRoot = Path.Combine(repositoryRoot!, "compiled", "reanim");
+    if (Directory.Exists(originalReanimRoot))
+    {
+        foreach (var definition in plantCatalog)
+        {
+            var compiledAsset = Path.Combine(originalReanimRoot, definition.CompiledFileName);
+            Assert(File.Exists(compiledAsset), $"植物模板目录引用了不存在的原版资源：{definition.CompiledFileName}");
+        }
     }
 
     var rejectedSpecialPlant = new EditorProject
@@ -852,7 +859,7 @@ static string? FindRepositoryRoot()
     for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
     {
         if (File.Exists(Path.Combine(directory.FullName, "PVZ传统改版技术路线.md")) &&
-            Directory.Exists(Path.Combine(directory.FullName, "compiled", "reanim")))
+            Directory.Exists(Path.Combine(directory.FullName, "modding", "PvZAnimationStudio")))
             return directory.FullName;
     }
 
