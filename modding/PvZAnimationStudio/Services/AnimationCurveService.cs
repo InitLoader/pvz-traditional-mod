@@ -270,6 +270,36 @@ public sealed class AnimationCurveService
         }
     }
 
+    public void RemoveFrameKeysWithoutBake(
+        EditorProject project, AnimationTrack track, IReadOnlyCollection<int> frames)
+    {
+        var frameSet = frames.ToHashSet();
+        foreach (var curve in project.Curves.Where(item => item.TrackId == track.EditorId))
+        foreach (var key in curve.Keys.Where(key => frameSet.Contains(key.Frame)).ToArray())
+            curve.Keys.Remove(key);
+    }
+
+    public void PutCopiedKey(EditorProject project, AnimationTrack track, CurveChannel channel,
+        int frame, CurveKeyDefinition source, CurveInterpolationMode interpolation)
+    {
+        var curve = EnsureCurve(project, track, channel);
+        curve.Interpolation = channel == CurveChannel.Frame && track.IsActionTrack
+            ? CurveInterpolationMode.Constant
+            : interpolation;
+        foreach (var occupied in curve.Keys.Where(key => key.Frame == frame).ToArray())
+            curve.Keys.Remove(occupied);
+        var copy = source.Clone();
+        copy.Frame = frame;
+        curve.Keys.Add(copy);
+        SortKeys(curve);
+    }
+
+    public void BakeTrackCurves(EditorProject project, AnimationTrack track)
+    {
+        foreach (var curve in project.Curves.Where(item => item.TrackId == track.EditorId).ToArray())
+            BakeCurve(project, track, curve);
+    }
+
     public void ShiftForInsertedFrame(EditorProject project, int frame)
     {
         foreach (var key in project.Curves.SelectMany(curve => curve.Keys).Where(key => key.Frame >= frame)) key.Frame++;

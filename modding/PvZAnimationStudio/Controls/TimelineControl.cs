@@ -46,6 +46,26 @@ public sealed class TimelineControl : FrameworkElement
         _viewModel = null;
     }
 
+    public void CopySelectedKeyframes()
+    {
+        _viewModel?.CopyTimelineKeys(_selectedKeys);
+    }
+
+    public void CopyCurrentTrackKeyframes()
+    {
+        _viewModel?.CopyCurrentTrackKeyframes();
+    }
+
+    public void PasteCopiedKeyframes()
+    {
+        if (_viewModel is null) return;
+        var pasted = _viewModel.PasteTimelineKeys();
+        if (pasted.Count == 0) return;
+        _selectedKeys.Clear();
+        foreach (var key in pasted) _selectedKeys.Add(key);
+        InvalidateVisual();
+    }
+
     protected override void OnRender(DrawingContext context)
     {
         base.OnRender(context);
@@ -224,7 +244,17 @@ public sealed class TimelineControl : FrameworkElement
     private void OnKeyDown(object sender, KeyEventArgs eventArgs)
     {
         if (_viewModel is null) return;
-        if (eventArgs.Key is Key.Delete or Key.Back)
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control) && eventArgs.Key == Key.C)
+        {
+            CopySelectedKeyframes();
+            eventArgs.Handled = true;
+        }
+        else if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control) && eventArgs.Key == Key.V)
+        {
+            PasteCopiedKeyframes();
+            eventArgs.Handled = true;
+        }
+        else if (eventArgs.Key is Key.Delete or Key.Back)
         {
             if (_selectedKeys.Count > 0)
             {

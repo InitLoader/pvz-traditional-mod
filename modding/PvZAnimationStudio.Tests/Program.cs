@@ -461,6 +461,55 @@ try
     AssertNearAnimation(batchDeleteTrack.Frames[9].X, 90,
         "框选删除中间关键帧后仍在结束前冻结");
 
+    var copyPasteEditor = new EditorViewModel(new ActionCatalogService());
+    copyPasteEditor.CurrentFrame = 2;
+    copyPasteEditor.CurrentX = 10;
+    copyPasteEditor.CurrentScaleX = 1;
+    copyPasteEditor.CurrentFrame = 6;
+    copyPasteEditor.CurrentX = 50;
+    copyPasteEditor.CurrentScaleX = 2;
+    copyPasteEditor.CurrentImage = "IMAGE_REANIM_COPY_TEST";
+    copyPasteEditor.SetCurveInterpolation(CurveChannel.X, CurveInterpolationMode.Bezier);
+    copyPasteEditor.SetCurveHandle(CurveChannel.X, 2, false, 3, 20);
+    var copySourceTrack = copyPasteEditor.SelectedTrack!;
+    var sourceXKey = copyPasteEditor.GetCurve(CurveChannel.X)!.Keys.Single(key => key.Frame == 2);
+    var copiedKeyCount = copyPasteEditor.CopyTimelineKeys(
+    [
+        new TimelineKeySelection(copySourceTrack.EditorId, 2),
+        new TimelineKeySelection(copySourceTrack.EditorId, 6)
+    ]);
+    Assert(copiedKeyCount == 2, "同一轨道框选关键帧没有复制到内部剪贴板");
+    copyPasteEditor.AddTrack("复制目标");
+    var copyTargetTrack = copyPasteEditor.SelectedTrack!;
+    copyPasteEditor.CurrentFrame = 12;
+    var pastedTimelineKeys = copyPasteEditor.PasteTimelineKeys();
+    Assert(pastedTimelineKeys.Select(key => key.Frame).OrderBy(frame => frame).SequenceEqual([12, 16]),
+        "粘贴关键帧没有保留源关键帧的相对间距");
+    var pastedXCurve = copyPasteEditor.GetCurve(CurveChannel.X)!;
+    var pastedStartX = pastedXCurve.Keys.Single(key => key.Frame == 12);
+    var pastedEndX = pastedXCurve.Keys.Single(key => key.Frame == 16);
+    AssertNear(pastedStartX.Value, 10, "粘贴起点的曲线数值错误");
+    AssertNear(pastedEndX.Value, 50, "粘贴终点的曲线数值错误");
+    Assert(pastedXCurve.Interpolation == CurveInterpolationMode.Bezier &&
+           pastedStartX.HandleMode == sourceXKey.HandleMode,
+        "粘贴没有保留曲线类型或 Bezier 手柄模式");
+    AssertNear(pastedStartX.RightFrameOffset, sourceXKey.RightFrameOffset,
+        "粘贴没有保留 Bezier 手柄帧偏移");
+    AssertNear(pastedStartX.RightValueOffset, sourceXKey.RightValueOffset,
+        "粘贴没有保留 Bezier 手柄数值偏移");
+    Assert(copyTargetTrack.Frames[16].Image == "IMAGE_REANIM_COPY_TEST",
+        "粘贴关键帧丢失了离散图片符号");
+    copyPasteEditor.Undo();
+    copyTargetTrack = copyPasteEditor.Project.Animation.FindTrack("复制目标")!;
+    Assert(!copyPasteEditor.IsMeaningfulKey(copyTargetTrack, 12) &&
+           !copyPasteEditor.IsMeaningfulKey(copyTargetTrack, 16),
+        "粘贴多个关键帧没有作为一次操作撤销");
+    copyPasteEditor.Redo();
+    copyTargetTrack = copyPasteEditor.Project.Animation.FindTrack("复制目标")!;
+    Assert(copyPasteEditor.IsMeaningfulKey(copyTargetTrack, 12) &&
+           copyPasteEditor.IsMeaningfulKey(copyTargetTrack, 16),
+        "粘贴关键帧没有作为一次操作恢复");
+
     var crossingTimelineEditor = new EditorViewModel(new ActionCatalogService());
     crossingTimelineEditor.CurrentFrame = 5;
     crossingTimelineEditor.CurrentX = 10;

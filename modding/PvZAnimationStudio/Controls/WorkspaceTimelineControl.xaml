@@ -13,6 +13,9 @@
         <Button Content="◀ 关键帧" ToolTip="将当前轨道关键帧左移一帧（Shift+←）" Click="MoveKeyLeft_Click"/>
         <Button Content="关键帧 ▶" ToolTip="将当前轨道关键帧右移一帧（Shift+→）" Click="MoveKeyRight_Click"/>
         <Button Content="删除关键帧" ToolTip="只删除当前轨道当前时刻的关键帧（Delete）" Click="DeleteKey_Click"/>
+        <Button Content="复制关键帧" ToolTip="复制框选关键帧；未框选时复制当前关键帧（Ctrl+C）" Click="CopyKeys_Click"/>
+        <Button Content="复制轨道" ToolTip="复制当前动作范围内本轨道的全部关键帧" Click="CopyTrackKeys_Click"/>
+        <Button Content="粘贴关键帧" ToolTip="以当前帧为起点粘贴到当前轨道（Ctrl+V）" Click="PasteKeys_Click"/>
         <Button Content="显示完整时间轴" Click="FullTimeline_Click"/>
         <TextBlock Text="FPS" Margin="12,7,2,7"/><TextBox Width="90" Text="{Binding AnimationFps, UpdateSourceTrigger=LostFocus}"/>
       </StackPanel>

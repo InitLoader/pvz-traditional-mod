@@ -9,6 +9,15 @@ public readonly record struct CurveKeySelection(CurveChannel Channel, int Frame)
 
 public sealed class EditorViewModel : ObservableObject
 {
+    private sealed record CopiedCurveKey(
+        CurveChannel Channel, CurveInterpolationMode Interpolation, CurveKeyDefinition Key);
+
+    private sealed record CopiedTimelineKey(
+        int Offset, string? Image, string? Font, string? Text, IReadOnlyList<CopiedCurveKey> CurveKeys);
+
+    private sealed record TimelineKeyClipboard(
+        bool IsActionTrack, IReadOnlyList<CopiedTimelineKey> Keys);
+
     private readonly ActionCatalogService _actionCatalog;
     private readonly TweenService _tweenService = new();
     private readonly ActionViewService _actionView = new();
@@ -23,6 +32,7 @@ public sealed class EditorViewModel : ObservableObject
     private string _status = "就绪";
     private EditorTool _activeTool = EditorTool.Move;
     private bool _editTransactionActive;
+    private TimelineKeyClipboard? _timelineKeyClipboard;
 
     public EditorViewModel(ActionCatalogService actionCatalog)
     {
@@ -480,6 +490,140 @@ public sealed class EditorViewModel : ObservableObject
         Status = $"已删除 {SelectedTrack.Name} 第 {CurrentFrame + 1} 帧的关键帧";
         RaiseFrameProperties();
         NotifyVisualChanged();
+    }
+
+    public int CopyTimelineKeys(IReadOnlyCollection<TimelineKeySelection> selection)
+    {
+        if (SelectedTrack is null) return 0;
+        var requested = selection.Count > 0
+            ? selection.ToArray()
+            : [new TimelineKeySelection(SelectedTrack.EditorId, CurrentFrame)];
+        var trackIds = requested.Select(item => item.TrackId).Distinct().ToArray();
+        if (trackIds.Length != 1)
+        {
+            Status = "一次只能复制一个轨道的关键帧；请只框选同一轨道。";
+            return 0;
+        }
+
+        var sourceTrack = Project.Animation.Tracks.FirstOrDefault(track => track.EditorId == trackIds[0]);
+        if (sourceTrack is null) return 0;
+        var frames = requested.Select(item => item.Frame).Distinct().OrderBy(frame => frame)
+            .Where(frame => frame >= 0 && frame < sourceTrack.Frames.Count &&
+                            IsMeaningfulKey(sourceTrack, frame))
+            .ToArray();
+        if (frames.Length == 0)
+        {
+            Status = "当前轨道和帧没有可复制的关键帧。";
+            return 0;
+        }
+
+        var origin = frames[0];
+        var copied = new List<CopiedTimelineKey>(frames.Length);
+        foreach (var frame in frames)
+        {
+            var explicitFrame = sourceTrack.Frames[frame];
+            var curveKeys = new List<CopiedCurveKey>();
+            foreach (var channel in Enum.GetValues<CurveChannel>())
+            {
+                var curve = _curveService.FindCurve(Project, sourceTrack, channel);
+                var existing = curve?.Keys.FirstOrDefault(key => key.Frame == frame);
+                if (existing is not null)
+                {
+                    curveKeys.Add(new CopiedCurveKey(channel, curve!.Interpolation, existing.Clone()));
+                    continue;
+                }
+
+                // With no editor curve metadata, an explicit Reanimation value
+                // is an authored key. Once a curve exists, its baked samples are
+                // deliberately not copied as additional keyframes.
+                if (curve is not null) continue;
+                var value = AnimationCurveService.GetExplicitValue(explicitFrame, channel);
+                if (!value.HasValue) continue;
+                curveKeys.Add(new CopiedCurveKey(channel,
+                    channel == CurveChannel.Frame
+                        ? CurveInterpolationMode.Constant
+                        : CurveInterpolationMode.Bezier,
+                    new CurveKeyDefinition { Frame = frame, Value = value.Value }));
+            }
+            copied.Add(new CopiedTimelineKey(frame - origin, explicitFrame.Image,
+                explicitFrame.Font, explicitFrame.Text, curveKeys));
+        }
+
+        _timelineKeyClipboard = new TimelineKeyClipboard(sourceTrack.IsActionTrack, copied);
+        Status = $"已复制轨道 {sourceTrack.Name} 的 {copied.Count} 个关键帧；在目标轨道按 Ctrl+V 粘贴。";
+        return copied.Count;
+    }
+
+    public int CopyCurrentTrackKeyframes()
+    {
+        if (SelectedTrack is null) return 0;
+        var selection = Enumerable.Range(TimelineFrameStart, TimelineFrameCount)
+            .Where(frame => IsMeaningfulKey(SelectedTrack, frame))
+            .Select(frame => new TimelineKeySelection(SelectedTrack.EditorId, frame))
+            .ToArray();
+        return CopyTimelineKeys(selection);
+    }
+
+    public IReadOnlyCollection<TimelineKeySelection> PasteTimelineKeys()
+    {
+        if (SelectedTrack is null || _timelineKeyClipboard is null)
+        {
+            Status = "还没有复制关键帧。";
+            return [];
+        }
+        if (SelectedTrack.IsActionTrack != _timelineKeyClipboard.IsActionTrack)
+        {
+            Status = "动作标记轨道与普通视觉轨道不能互相粘贴关键帧。";
+            return [];
+        }
+
+        var destinationStart = CurrentFrame;
+        var destinationEnd = destinationStart + _timelineKeyClipboard.Keys.Max(key => key.Offset);
+        if (destinationEnd >= 20000)
+        {
+            Status = "粘贴结果超过 20000 帧限制。";
+            return [];
+        }
+        if (SelectedAction is not null && destinationEnd > TimelineFrameEnd)
+        {
+            Status = "目标动作剩余帧数不足；请先插入空帧，或切换到完整时间轴后粘贴。";
+            return [];
+        }
+
+        RecordUndo("粘贴轨道关键帧");
+        if (destinationEnd >= Project.Animation.FrameCount)
+            Project.Animation.EnsureUniformFrameCount(destinationEnd + 1);
+        var targetTrack = SelectedTrack;
+        var targetFrames = _timelineKeyClipboard.Keys
+            .Select(key => destinationStart + key.Offset).Distinct().ToArray();
+        _curveService.RemoveFrameKeysWithoutBake(Project, targetTrack, targetFrames);
+        foreach (var frame in targetFrames) targetTrack.Frames[frame].Clear();
+
+        foreach (var copied in _timelineKeyClipboard.Keys)
+        {
+            var targetFrame = destinationStart + copied.Offset;
+            foreach (var curveKey in copied.CurveKeys)
+                _curveService.PutCopiedKey(Project, targetTrack, curveKey.Channel,
+                    targetFrame, curveKey.Key, curveKey.Interpolation);
+        }
+        _curveService.BakeTrackCurves(Project, targetTrack);
+
+        // Strings are discrete and are restored after numeric curve baking.
+        foreach (var copied in _timelineKeyClipboard.Keys)
+        {
+            var frame = targetTrack.Frames[destinationStart + copied.Offset];
+            if (copied.Image is not null) frame.Image = copied.Image;
+            if (copied.Font is not null) frame.Font = copied.Font;
+            if (copied.Text is not null) frame.Text = copied.Text;
+        }
+        _curveService.NormalizeActionMarkerFrames(Project);
+
+        _currentFrame = destinationStart;
+        RaisePropertyChanged(nameof(CurrentFrame));
+        RaiseAll();
+        Status = $"已将 {_timelineKeyClipboard.Keys.Count} 个关键帧粘贴到轨道 {targetTrack.Name}，起始帧 {destinationStart + 1}。";
+        NotifyVisualChanged();
+        return targetFrames.Select(frame => new TimelineKeySelection(targetTrack.EditorId, frame)).ToArray();
     }
 
     public IReadOnlyList<CurveChannel> GetCurveChannels() => SelectedTrack is null

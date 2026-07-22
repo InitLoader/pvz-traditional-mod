@@ -319,6 +319,9 @@ public partial class MainWindow : Window
     private void ScaleTool_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.ActiveTool = EditorTool.Scale;
     private void SetKey_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.SetKeyframe();
     private void ClearKey_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.ClearKeyframe();
+    private void CopyCurrentKey_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.CopyTimelineKeys([]);
+    private void CopyTrackKeys_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.CopyCurrentTrackKeyframes();
+    private void PasteKeys_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.PasteTimelineKeys();
     private void LinearTween_Click(object sender, RoutedEventArgs eventArgs) => RunGuarded(() => _viewModel.CreateTween(TweenCurve.Linear));
     private void SmoothTween_Click(object sender, RoutedEventArgs eventArgs) => RunGuarded(() => _viewModel.CreateTween(TweenCurve.SmoothStep));
     private void InsertFrame_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.InsertFrame();
@@ -363,9 +366,13 @@ public partial class MainWindow : Window
         { OpenAnimation_Click(sender, new RoutedEventArgs()); eventArgs.Handled = true; }
         else if (eventArgs.Key == Key.Space)
         { Play_Click(sender, new RoutedEventArgs()); eventArgs.Handled = true; }
-        else if ((eventArgs.OriginalSource is TimelineControl or GraphEditorControl) &&
-                 (eventArgs.Key is Key.Delete or Key.Back or Key.Home ||
-                  modifiers.HasFlag(ModifierKeys.Shift) && eventArgs.Key is Key.Left or Key.Right))
+        else if ((eventArgs.OriginalSource is TimelineControl &&
+                  (eventArgs.Key is Key.Delete or Key.Back or Key.Home ||
+                   modifiers.HasFlag(ModifierKeys.Control) && eventArgs.Key is Key.C or Key.V ||
+                   modifiers.HasFlag(ModifierKeys.Shift) && eventArgs.Key is Key.Left or Key.Right)) ||
+                 (eventArgs.OriginalSource is GraphEditorControl &&
+                  (eventArgs.Key is Key.Delete or Key.Back or Key.Home ||
+                   modifiers.HasFlag(ModifierKeys.Shift) && eventArgs.Key is Key.Left or Key.Right)))
         { return; }
         else if (eventArgs.Key == Key.K && modifiers.HasFlag(ModifierKeys.Shift))
         { _viewModel.ClearKeyframe(); eventArgs.Handled = true; }
@@ -536,7 +543,7 @@ public partial class MainWindow : Window
     private void Help_Click(object sender, RoutedEventArgs eventArgs)
     {
         MessageBox.Show(this,
-            "基本流程：\n1. 选择游戏目录。\n2. 打开任意目录中的 .reanim.compiled，或新建工程。\n3. 拖动区域分隔线调整大小；右上角 ↔/↕ 或斜纹拖拽可拆分区域，↗ 可打开独立窗口。\n4. 每个区域可切换动画视图、时间轴、曲线编辑器、资源或属性；右上角可选曲线动画工作区。\n5. 时间轴或曲线区的空白位置随时按住左键拖动即可框选，Ctrl/Shift 追加；可批量拖动，Delete/Backspace 批量删除。跨过已有关键帧会交换顺序，不会合并吞帧。\n6. 两个关键帧之间插入空帧，或删除两端之间的中间关键帧，都会自动重算连续位移、旋转、缩放和透明度；动作标记的 f=0/-1 始终使用阶梯值，动作范围会和补间终点一起延长，播放不会提前结束或末帧瞬移。曲线区可拖关键点与 Bezier 手柄。\n7. Q 选择，W/E 切换移动/旋转操纵器；G/R/S 进入鼠标移动/中心旋转/缩放，左键确认，右键或 Esc 取消；K 设置关键帧。\n8. 保存为 .pvza 会把动画、曲线手柄、动作、属性、工作区和所有图片嵌入同一个文件。\n\n撤销/重做：Ctrl+Z / Ctrl+Y，最多保留最近 100 步。方向键微调部件，Shift+方向键加速。",
+            "基本流程：\n1. 选择游戏目录。\n2. 打开任意目录中的 .reanim.compiled，或新建工程。\n3. 拖动区域分隔线调整大小；右上角 ↔/↕ 或斜纹拖拽可拆分区域，↗ 可打开独立窗口。\n4. 每个区域可切换动画视图、时间轴、曲线编辑器、资源或属性；右上角可选曲线动画工作区。\n5. 时间轴或曲线区的空白位置随时按住左键拖动即可框选，Ctrl/Shift 追加；可批量拖动，Delete/Backspace 批量删除。时间轴中 Ctrl+C 复制框选或当前关键帧，Ctrl+V 以当前帧为起点粘贴到当前轨道；“复制轨道”可复制当前动作范围内的整轨关键帧。跨过已有关键帧会交换顺序，不会合并吞帧。\n6. 两个关键帧之间插入空帧，或删除两端之间的中间关键帧，都会自动重算连续位移、旋转、缩放和透明度；动作标记的 f=0/-1 始终使用阶梯值，动作范围会和补间终点一起延长，播放不会提前结束或末帧瞬移。曲线区可拖关键点与 Bezier 手柄。\n7. Q 选择，W/E 切换移动/旋转操纵器；G/R/S 进入鼠标移动/中心旋转/缩放，左键确认，右键或 Esc 取消；K 设置关键帧。\n8. 保存为 .pvza 会把动画、曲线手柄、动作、属性、工作区和所有图片嵌入同一个文件。\n\n撤销/重做：Ctrl+Z / Ctrl+Y，最多保留最近 100 步。方向键微调部件，Shift+方向键加速。",
             "制作流程", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 

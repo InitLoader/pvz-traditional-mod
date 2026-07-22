@@ -27,6 +27,10 @@
         <MenuItem Header="{Binding UndoLabel}" IsEnabled="{Binding CanUndo}" Click="Undo_Click" InputGestureText="Ctrl+Z" />
         <MenuItem Header="{Binding RedoLabel}" IsEnabled="{Binding CanRedo}" Click="Redo_Click" InputGestureText="Ctrl+Y" />
         <Separator />
+        <MenuItem Header="复制当前关键帧" Click="CopyCurrentKey_Click" InputGestureText="Ctrl+C" />
+        <MenuItem Header="复制当前轨道全部关键帧" Click="CopyTrackKeys_Click" />
+        <MenuItem Header="粘贴到当前轨道" Click="PasteKeys_Click" InputGestureText="Ctrl+V" />
+        <Separator />
         <MenuItem Header="设置关键帧" Click="SetKey_Click" InputGestureText="K" />
         <MenuItem Header="删除当前轨道关键帧" Click="ClearKey_Click" InputGestureText="Shift+K / Delete" />
         <MenuItem Header="生成线性补间" Click="LinearTween_Click" />

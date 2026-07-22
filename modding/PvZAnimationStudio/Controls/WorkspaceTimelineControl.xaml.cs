@@ -33,5 +33,8 @@ public partial class WorkspaceTimelineControl : UserControl
     private void MoveKeyLeft_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.NudgeCurrentKeyframe(-1);
     private void MoveKeyRight_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.NudgeCurrentKeyframe(1);
     private void DeleteKey_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.DeleteCurrentKeyframe();
+    private void CopyKeys_Click(object sender, RoutedEventArgs eventArgs) => Timeline.CopySelectedKeyframes();
+    private void CopyTrackKeys_Click(object sender, RoutedEventArgs eventArgs) => Timeline.CopyCurrentTrackKeyframes();
+    private void PasteKeys_Click(object sender, RoutedEventArgs eventArgs) => Timeline.PasteCopiedKeyframes();
     private void FullTimeline_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.ClearActionView();
 }
