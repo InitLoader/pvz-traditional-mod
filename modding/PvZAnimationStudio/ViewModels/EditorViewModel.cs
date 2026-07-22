@@ -370,6 +370,7 @@ public sealed class EditorViewModel : ObservableObject
     {
         if (Project.Animation.FrameCount <= 1) return;
         RecordUndo("删除帧");
+        _curveService.CaptureExplicitMotionCurves(Project);
         foreach (var track in Project.Animation.Tracks)
             track.Frames.RemoveAt(Math.Clamp(CurrentFrame, 0, track.Frames.Count - 1));
         _curveService.ShiftForDeletedFrame(Project, CurrentFrame);
@@ -386,6 +387,7 @@ public sealed class EditorViewModel : ObservableObject
         targetFrame = Math.Clamp(targetFrame, TimelineFrameStart, TimelineFrameEnd);
         if (sourceFrame == targetFrame) return false;
         RecordUndo("移动轨道关键帧");
+        _curveService.CaptureExplicitMotionCurves(Project, SelectedTrack);
         SwapTimelineFrames(SelectedTrack, sourceFrame, targetFrame);
         _curveService.MoveFrameKeys(Project, SelectedTrack, sourceFrame, targetFrame);
         _currentFrame = targetFrame;
@@ -401,6 +403,11 @@ public sealed class EditorViewModel : ObservableObject
     {
         if (selection.Count == 0 || offset == 0) return selection;
         RecordUndo("批量移动轨道关键帧");
+        foreach (var trackId in selection.Select(item => item.TrackId).Distinct())
+        {
+            var selectedTrack = Project.Animation.Tracks.FirstOrDefault(item => item.EditorId == trackId);
+            if (selectedTrack is not null) _curveService.CaptureExplicitMotionCurves(Project, selectedTrack);
+        }
         var result = selection.ToHashSet();
         var direction = Math.Sign(offset);
         for (var step = 0; step < Math.Abs(offset); step++)
@@ -440,10 +447,14 @@ public sealed class EditorViewModel : ObservableObject
     {
         if (selection.Count == 0) return;
         RecordUndo("批量删除轨道关键帧");
+        // A compiled animation or an older project can contain explicit motion
+        // keys without .pvza curve metadata. Capture those keys before clearing
+        // any selected frame so the surviving neighbours can be re-tweened.
         foreach (var group in selection.GroupBy(item => item.TrackId))
         {
             var track = Project.Animation.Tracks.FirstOrDefault(item => item.EditorId == group.Key);
             if (track is null) continue;
+            _curveService.CaptureExplicitMotionCurves(Project, track);
             foreach (var frame in group.Select(item => item.Frame).Distinct())
             {
                 if (frame < 0 || frame >= track.Frames.Count) continue;
@@ -461,6 +472,7 @@ public sealed class EditorViewModel : ObservableObject
     {
         if (SelectedTrack is null || !CurrentHasKey) return;
         RecordUndo("删除轨道关键帧");
+        _curveService.CaptureExplicitMotionCurves(Project, SelectedTrack);
         SelectedTrack.Frames[CurrentFrame].Clear();
         _curveService.DeleteFrameKeys(Project, SelectedTrack, CurrentFrame);
         Status = $"已删除 {SelectedTrack.Name} 第 {CurrentFrame + 1} 帧的关键帧";

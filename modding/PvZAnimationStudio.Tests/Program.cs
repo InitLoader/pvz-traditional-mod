@@ -359,6 +359,57 @@ try
     timelineKeyEditor.Undo();
     Assert(timelineKeyEditor.CurrentHasKey, "删除关键帧没有进入撤销历史");
 
+    var deletedTweenEditor = new EditorViewModel(new ActionCatalogService());
+    deletedTweenEditor.CurrentFrame = 0;
+    deletedTweenEditor.CurrentX = 0;
+    deletedTweenEditor.CurrentFrame = 5;
+    deletedTweenEditor.CurrentX = 50;
+    deletedTweenEditor.CurrentFrame = 10;
+    deletedTweenEditor.CurrentX = 100;
+    deletedTweenEditor.CurrentFrame = 5;
+    deletedTweenEditor.DeleteCurrentKeyframe();
+    AssertNearAnimation(deletedTweenEditor.SelectedTrack!.Frames[1].X, 10,
+        "删除中间关键帧后起点附近没有重新补间");
+    AssertNearAnimation(deletedTweenEditor.SelectedTrack.Frames[5].X, 50,
+        "删除中间关键帧后原位置发生冻结或瞬移");
+    AssertNearAnimation(deletedTweenEditor.SelectedTrack.Frames[9].X, 90,
+        "删除中间关键帧后终点附近没有重新补间");
+
+    var legacyDeleteEditor = new EditorViewModel(new ActionCatalogService());
+    var legacyDeleteTrack = legacyDeleteEditor.SelectedTrack!;
+    foreach (var frame in legacyDeleteTrack.Frames) frame.Clear();
+    legacyDeleteEditor.Project.Curves.Clear();
+    legacyDeleteTrack.Frames[0].X = 0;
+    legacyDeleteTrack.Frames[5].X = 50;
+    legacyDeleteTrack.Frames[10].X = 100;
+    legacyDeleteEditor.CurrentFrame = 5;
+    legacyDeleteEditor.DeleteCurrentKeyframe();
+    var legacyDeleteCurve = legacyDeleteEditor.GetCurve(CurveChannel.X)!;
+    Assert(legacyDeleteCurve.Keys.Select(key => key.Frame).SequenceEqual([0, 10]),
+        "旧 compiled 删除中间关键帧前没有重建剩余端点曲线");
+    AssertNearAnimation(legacyDeleteTrack.Frames[1].X, 10,
+        "旧 compiled 删除中间关键帧后起点仍然保持不动");
+    AssertNearAnimation(legacyDeleteTrack.Frames[5].X, 50,
+        "旧 compiled 删除中间关键帧后没有穿过原来的中间位置");
+    AssertNearAnimation(legacyDeleteTrack.Frames[9].X, 90,
+        "旧 compiled 删除中间关键帧后仍在终点前瞬移");
+
+    var batchDeleteEditor = new EditorViewModel(new ActionCatalogService());
+    var batchDeleteTrack = batchDeleteEditor.SelectedTrack!;
+    foreach (var frame in batchDeleteTrack.Frames) frame.Clear();
+    batchDeleteEditor.Project.Curves.Clear();
+    batchDeleteTrack.Frames[0].X = 0;
+    batchDeleteTrack.Frames[5].X = 50;
+    batchDeleteTrack.Frames[10].X = 100;
+    batchDeleteEditor.DeleteTimelineKeys(
+        [new TimelineKeySelection(batchDeleteTrack.EditorId, 5)]);
+    Assert(batchDeleteEditor.GetCurve(CurveChannel.X)!.Keys.Select(key => key.Frame).SequenceEqual([0, 10]),
+        "框选删除没有保留旧 compiled 的起点和终点");
+    AssertNearAnimation(batchDeleteTrack.Frames[5].X, 50,
+        "框选删除中间关键帧后没有重新连接前后补间");
+    AssertNearAnimation(batchDeleteTrack.Frames[9].X, 90,
+        "框选删除中间关键帧后仍在结束前冻结");
+
     var crossingTimelineEditor = new EditorViewModel(new ActionCatalogService());
     crossingTimelineEditor.CurrentFrame = 5;
     crossingTimelineEditor.CurrentX = 10;
@@ -623,6 +674,9 @@ static void AssertNullableNear(float? actual, float? expected, string message)
 
 static void AssertNear(float? actual, float expected, string message) =>
     Assert(actual.HasValue && Math.Abs(actual.Value - expected) < 0.0001f, message);
+
+static void AssertNearAnimation(float? actual, float expected, string message) =>
+    Assert(actual.HasValue && Math.Abs(actual.Value - expected) < 0.001f, message);
 
 static void AssertNearDouble(double actual, double expected, string message) =>
     Assert(Math.Abs(actual - expected) < 0.0001, message);

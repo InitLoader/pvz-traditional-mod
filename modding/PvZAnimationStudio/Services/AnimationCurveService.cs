@@ -260,7 +260,13 @@ public sealed class AnimationCurveService
 
     public void CaptureExplicitMotionCurves(EditorProject project)
     {
-        foreach (var track in project.Animation.Tracks.Where(track => !track.IsActionTrack))
+        foreach (var track in project.Animation.Tracks)
+            CaptureExplicitMotionCurves(project, track);
+    }
+
+    public void CaptureExplicitMotionCurves(EditorProject project, AnimationTrack track)
+    {
+        if (track.IsActionTrack) return;
         foreach (var channel in AutoInterpolationChannels)
         {
             if (FindCurve(project, track, channel) is not null) continue;
