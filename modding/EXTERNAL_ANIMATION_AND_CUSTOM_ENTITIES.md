@@ -4,7 +4,7 @@
 
 ## 1. 当前实现状态
 
-`0.10.1-dev` 已完成第一阶段：
+`0.10.2-dev` 已完成自定义植物主体动画垂直切片：
 
 - `pvzmod/config/resources/animations.jsonc` 外部动画注册表。
 - `pvzmod/animations/` 分类资源目录和安全路径限制。
@@ -14,9 +14,11 @@
 - 支持的 Transform 字段为 `x/y/kx/ky/sx/sy/f/a/i/font/text`。
 - 动作、循环方式、播放速度、混合帧、帧事件和定位轨道配置。
 - 动画、动作轨道、事件帧、定位轨道和外部贴图 ID 的启动时交叉校验。
-- 只读运行时动画注册表。
+- 只读运行时动画注册表和持久的 32 位 ABI Definition 缓存。
+- `custom_plants.jsonc.animationId` 到植物主体 Reanimation 的运行时注入。
+- 模板行为状态机继续负责攻击时机，但 `anim_idle`、`anim_shooting` 等同名动作从外部动画播放。
 
-当前尚未安装 `ReanimationInitializeType` Detour，也不会把自定义 Definition 写入原版全局数组。日志中的 `Runtime engine injection is not enabled yet` 是明确的阶段提示，不是加载错误。
+当前不安装全局 `ReanimationInitializeType` Detour，也不把自定义 Definition 写入原版固定数组。运行时在自定义植物完成原版初始化后，只替换已有 body Holder 的 Definition 和 TrackInstance；构建或贴图加载失败时保留原模板动画。该路径尚不替换模板创建的附属头部、独立眨眼和其他 Reanimation，也尚未接入僵尸。
 
 ## 2. 原版动画模型
 
@@ -132,7 +134,7 @@ JSON/JSONC 只能放在 `pvzmod/config/` 的所属分类中；自制 Raw/compile
 - FPS 必须在 `(0, 120]`。
 - Alpha 必须在 `[0, 1]`。
 - 浮点数必须有限并处于安全范围。
-- 轨道名大小写不敏感地保持唯一。
+- 轨道名必须为 1–128 个字符；允许原版数据中实际存在的同名轨道，编辑器按轨道顺序完整保留。
 - 拒绝未知 XML 字段、重复 Transform 字段、DTD 和实体声明。
 - 单个动画失败只跳过该动画并写日志，不把半初始化 Definition 交给原版游戏。
 
@@ -176,12 +178,20 @@ shadow.png
 
 ### 6.3 工具路线
 
-1. 可以直接把原版路径写成 `compiled/reanim/Blover.reanim.compiled`；不再强制预先转换。
-2. 需要编辑动作时，再使用 PopStudio、Twinning 或 EffectViewer 转为 Raw XML、JSON 或 XFL，保留原版坐标比例作为参考。
-3. 在 Adobe Animate/XFL 时间轴或兼容编辑流程中替换部件并制作动作。
-4. 使用 `FlashReanimExportAsRaw_Xml.jsfl` 或转换工具导出 Raw `.reanim`。
-5. 把图片符号写入 `animations.jsonc.images`，把贴图文件登记到 `textures.jsonc`。
-6. 完全退出并重新启动游戏，通过 `pvzmod/logs/pvzmod.log` 检查解析和交叉校验。
+1. 运行 `modding/dist/PvZAnimationStudio/PvZAnimationStudio.exe`，可直接打开任意目录中的原版或自制 `.reanim.compiled`；编辑器会先识别 `DEADFED4` 文件头，也可新建植物或僵尸工程。
+2. 在中文分层画布和动作局部时间轴中设置 K 帧；时间轴或曲线区的空白位置直接左键拖动即可跨轨道/通道框选，批量拖动并用 `Delete`/`Backspace` 删除，不需要先按快捷键。拖动跨过已有关键帧时按顺序交换，禁止自动合并吞帧。曲线编辑器按颜色区分位移、旋转、缩放、图片子帧和透明度，可拖关键点及 Bezier 手柄，并把结果烘焙回原版逐帧值。画布使用与原版一致的矩阵、左上注册点和图片子帧语义；`G/R/S` 鼠标变换中旋转围绕图片视觉中心。
+   在两个关键帧之间插入空帧或删除中间关键帧时，工具会自动重算位移、旋转、缩放和透明度；删除后剩余起点与终点会重新连接，不会保持起点到最后一瞬间才跳到终点。旧 compiled 会在删除前从显式运动帧补建缺失曲线；图片切换和动作显示标记保持离散，不会被错误平滑。
+   纯 `anim_*` 动作标记轨道的 `f=0/-1` 强制使用常量插值，`0` 会一直保持到明确的 `-1` 帧；插入空帧会同时移动隐藏端点和运动曲线端点，避免动作范围先结束而位移/缩放补间只播放一部分。旧版本产生的 `-0.x` 动作标记会在打开时自动清理。
+   时间轴可框选同一轨道的多个关键帧后用 `Ctrl+C/Ctrl+V` 复制到目标轨道，也可通过“复制轨道”复制当前动作范围内的整轨关键帧；相对时间、Transform、图片符号、曲线插值和 Bezier 手柄都会保留，粘贴作为一次操作撤销。
+3. 工具动态识别全部 `anim_*`，包括本身带图片的动作轨道；眨眼和未知特殊动作不会因不在内置模板中被丢弃。完整实体预览会按配置组合附属头部动作，单动作编辑则只显示该动作改变的轨道和关键帧。
+4. 导入 PNG/JPG，或把图片直接拖到动画视图落点生成独立可动画轨道；原版 JPG + `_.png` 灰度透明蒙版会自动合成。工具可生成图片、动作、植物/僵尸配置片段以及 Raw/compiled，并可打包 ZIP 或一键合并 JSONC。
+5. 所有编辑共用最近 100 步会话历史：`Ctrl+Z` 可连续撤销，`Ctrl+Y`/`Ctrl+Shift+Z` 可连续恢复，撤销后进行新编辑会清除旧恢复分支。
+6. 工作区可拖动分隔、切换区域类型、使用双动画视图/双时间轴/曲线动画，并把任意区域放入共享工程状态的独立窗口。
+7. 保存 `.pvza` 便携工程会嵌入全部轨道、曲线关键点与手柄、动作、属性、工作区、引用图片及子帧布局；把一个文件交给其他制作者即可继续编辑。
+8. 需要 Adobe Animate/XFL、骨骼 IK、曲线修改器或音频轨等进阶功能时，可使用 PopStudio、Twinning、EffectViewer 或 JSFL 流程转为 Raw，再回到本工具检查和打包。
+9. 完全退出并重新启动游戏，通过 `pvzmod/logs/pvzmod.log` 检查解析和交叉校验。
+
+制作器的完整操作、工程目录、格式边界和回归命令见 `PvZAnimationStudio/README.md`；48 个独立植物动画和 38 个僵尸/僵尸效果动画的逐项结果见 `PvZAnimationStudio/ORIGINAL_ASSET_AUDIT.md`。
 
 运行时会根据完整后缀自动选择 Raw XML 或原版 PC compiled 解码器。检查文件可运行：
 
@@ -212,15 +222,16 @@ Plant*/Zombie* 原版对象池
 
 载体 ID 不再决定名称、属性、图片、动作和攻击，因此不是原版实体的玩法套壳。暂不扩大原版 SeedType、ZombieType 和 ReanimationType 固定数组。
 
-## 8. 后续运行时注入设计
+## 8. 当前注入结构与后续设计
 
-下一阶段建立独立模块：
+当前已落地和后续模块如下：
 
 ```text
-custom_reanim_definition    Raw 数据 -> ABI 兼容 Definition
-animation_texture_resolver 图片符号 -> Image*
-animation_instance_hook     对接 ReanimationInitializeType
-custom_animation_runtime    动画实例创建、查找、销毁
+runtime_reanim_definition   Raw 数据 -> ABI 兼容 Definition（已实现）
+external_texture_runtime    图片符号 -> Image*（已实现）
+custom_plant_animation_runtime 原位替换植物 body Definition（已实现）
+animation_instance_hook     通用 AddReanimation/附属实例接入
+custom_animation_runtime    通用动画实例创建、查找、销毁
 animation_controller        动作、混合、速率、循环
 animation_event_bus         发射、啃咬、爆炸等帧事件
 custom_plant_runtime        独立植物状态机
@@ -229,7 +240,7 @@ custom_entity_save          Mod 存档和版本迁移
 custom_animation_preview    卡片、选卡、图鉴和预览
 ```
 
-创建动画时使用线程局部 `PendingCustomDefinition`：调用原版 `AddReanimation` 分配 Holder 实例，Detour `ReanimationInitializeType` 检测待创建定义并初始化自定义 Definition，同时保留安全的原版载体 ReanimationType。这样不扩大 `NUM_REANIMS`，也不先创建再破坏性替换轨道数组。
+植物 body 的当前实现先完成动画、动作、贴图和 ABI Definition 全部校验，再释放旧 TrackInstance，并在原 Holder 内调用原版初始化函数；失败发生在释放前，因此可安全保留模板动画。后续创建附属动画时再使用线程局部 `PendingCustomDefinition`：调用原版 `AddReanimation` 分配 Holder 实例，由窄范围初始化桥接选择外部 Definition，同时保留安全的原版载体 ReanimationType，不扩大 `NUM_REANIMS`。
 
 ## 9. 动作事件
 

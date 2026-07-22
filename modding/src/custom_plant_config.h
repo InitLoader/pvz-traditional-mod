@@ -19,6 +19,7 @@ struct CustomPlantDefinition {
     int id = 1000;
     std::string name = "Custom Peashooter";
     std::string description;
+    std::string animationId;
     int templatePlantId = 0;
     bool unlocked = true;
     int chooserX = 470;

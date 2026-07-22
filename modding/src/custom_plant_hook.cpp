@@ -1,5 +1,6 @@
 #include "custom_plant_hook.h"
 
+#include "custom_plant_animation_runtime.h"
 #include "hook_modules.h"
 #include "hook_utils.h"
 #include "logger.h"
@@ -86,6 +87,7 @@ const CustomPlantDefinition* PlantDefinitionFor(void* plant) {
 
 bool InstallCustomPlantHooks(std::uint8_t* moduleBase) {
     if (!InitializePlantCatalogRuntime()) return false;
+    if (!InitializeCustomPlantAnimationRuntime(moduleBase)) return false;
     if (!VerifyHookTarget(moduleBase, kPlantGetCostRva, kPlantGetCostPrologue, "Plant::GetCost") ||
         !VerifyHookTarget(moduleBase, kPlantGetRefreshTimeRva, kPlantGetRefreshTimePrologue, "Plant::GetRefreshTime") ||
         !VerifyHookTarget(moduleBase, kPlantInitializeRva, kPlantInitializePrologue, "Plant::Initialize") ||
@@ -166,6 +168,7 @@ extern "C" void __stdcall ApplyPendingCustomPlant(void* plant) {
         definition->initialLaunchDelayMax - definition->initialLaunchDelayMin + 1);
     const unsigned int salt = GetTickCount() ^ static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(plant));
     *reinterpret_cast<int*>(bytes + 0x58) = definition->initialLaunchDelayMin + static_cast<int>(salt % span);
+    static_cast<void>(pvzmod::ApplyCustomPlantAnimation(plant, *definition));
 }
 
 extern "C" int __stdcall PrepareCustomProjectile(void* projectile, const int projectileType) {

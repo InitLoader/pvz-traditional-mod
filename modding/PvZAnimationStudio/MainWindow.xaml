@@ -1,0 +1,110 @@
+<Window x:Class="PvZAnimationStudio.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:PvZAnimationStudio.Controls"
+        Title="植物大战僵尸动画制作器" Width="1500" Height="900"
+        MinWidth="1100" MinHeight="700" PreviewKeyDown="Window_PreviewKeyDown"
+        AllowDrop="True" Drop="Window_Drop">
+  <DockPanel>
+    <Menu DockPanel.Dock="Top">
+      <MenuItem Header="文件(_F)">
+        <MenuItem Header="新建植物工程" Click="NewPlant_Click" InputGestureText="Ctrl+N" />
+        <MenuItem Header="新建僵尸工程" Click="NewZombie_Click" />
+        <Separator />
+        <MenuItem Header="打开动画…" Click="OpenAnimation_Click" InputGestureText="Ctrl+O" />
+        <MenuItem Header="打开工程…" Click="OpenProject_Click" />
+        <MenuItem Header="保存工程" Click="SaveProject_Click" InputGestureText="Ctrl+S" />
+        <MenuItem Header="工程另存为…" Click="SaveProjectAs_Click" />
+        <Separator />
+        <MenuItem Header="导出 Raw .reanim…" Click="ExportRaw_Click" />
+        <MenuItem Header="导出 .reanim.compiled…" Click="ExportCompiled_Click" />
+        <MenuItem Header="打包 Mod ZIP…" Click="Package_Click" />
+        <MenuItem Header="一键安装到游戏" Click="Install_Click" />
+        <Separator />
+        <MenuItem Header="退出" Click="Exit_Click" />
+      </MenuItem>
+      <MenuItem Header="编辑(_E)">
+        <MenuItem Header="{Binding UndoLabel}" IsEnabled="{Binding CanUndo}" Click="Undo_Click" InputGestureText="Ctrl+Z" />
+        <MenuItem Header="{Binding RedoLabel}" IsEnabled="{Binding CanRedo}" Click="Redo_Click" InputGestureText="Ctrl+Y" />
+        <Separator />
+        <MenuItem Header="复制当前关键帧" Click="CopyCurrentKey_Click" InputGestureText="Ctrl+C" />
+        <MenuItem Header="复制当前轨道全部关键帧" Click="CopyTrackKeys_Click" />
+        <MenuItem Header="粘贴到当前轨道" Click="PasteKeys_Click" InputGestureText="Ctrl+V" />
+        <Separator />
+        <MenuItem Header="设置关键帧" Click="SetKey_Click" InputGestureText="K" />
+        <MenuItem Header="删除当前轨道关键帧" Click="ClearKey_Click" InputGestureText="Shift+K / Delete" />
+        <MenuItem Header="生成线性补间" Click="LinearTween_Click" />
+        <MenuItem Header="生成平滑补间" Click="SmoothTween_Click" />
+        <MenuItem Header="插入空白整帧" Click="InsertFrame_Click" />
+        <MenuItem Header="删除当前整帧" Click="DeleteFrame_Click" />
+      </MenuItem>
+      <MenuItem Header="资源(_R)">
+        <MenuItem Header="选择游戏目录…" Click="ChooseGameRoot_Click" />
+        <MenuItem Header="导入 PNG / JPG 图片…" Click="ImportImages_Click" />
+        <MenuItem Header="重新识别动作标记" Click="InferActions_Click" />
+      </MenuItem>
+      <MenuItem Header="视图(_V)">
+        <MenuItem Header="动画制作工作区" Click="AnimationWorkspace_Click" />
+        <MenuItem Header="双动画视图工作区" Click="DualViewWorkspace_Click" />
+        <MenuItem Header="双时间轴工作区" Click="DualTimelineWorkspace_Click" />
+        <MenuItem Header="曲线动画工作区" Click="GraphWorkspace_Click" />
+        <MenuItem Header="专注动画工作区" Click="FocusWorkspace_Click" />
+      </MenuItem>
+      <MenuItem Header="帮助(_H)">
+        <MenuItem Header="快捷键与制作流程" Click="Help_Click" />
+      </MenuItem>
+    </Menu>
+
+    <Border DockPanel.Dock="Top" Background="#1D242C" BorderBrush="#45515F" BorderThickness="0,0,0,1" Padding="3">
+      <DockPanel LastChildFill="True">
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,3,0">
+          <TextBlock Text="工作区" FontWeight="SemiBold" Margin="0,0,5,0" />
+          <ComboBox x:Name="WorkspacePresetCombo" Width="160" SelectionChanged="WorkspacePresetCombo_SelectionChanged">
+            <ComboBoxItem Tag="Custom"><TextBlock Text="自定义布局" Foreground="#EEF3F6" /></ComboBoxItem>
+            <ComboBoxItem Tag="Animation" IsSelected="True"><TextBlock Text="动画制作" Foreground="#EEF3F6" /></ComboBoxItem>
+            <ComboBoxItem Tag="DualView"><TextBlock Text="双动画视图" Foreground="#EEF3F6" /></ComboBoxItem>
+            <ComboBoxItem Tag="DualTimeline"><TextBlock Text="双时间轴" Foreground="#EEF3F6" /></ComboBoxItem>
+            <ComboBoxItem Tag="GraphEditing"><TextBlock Text="曲线动画" Foreground="#EEF3F6" /></ComboBoxItem>
+            <ComboBoxItem Tag="Focus"><TextBlock Text="专注动画" Foreground="#EEF3F6" /></ComboBoxItem>
+          </ComboBox>
+        </StackPanel>
+        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+          <StackPanel Orientation="Horizontal">
+            <Button Style="{StaticResource ToolButtonStyle}" Content="新建植物" Click="NewPlant_Click" />
+            <Button Style="{StaticResource ToolButtonStyle}" Content="新建僵尸" Click="NewZombie_Click" />
+            <Button Style="{StaticResource ToolButtonStyle}" Content="打开动画" Click="OpenAnimation_Click" />
+            <Button Style="{StaticResource ToolButtonStyle}" Content="保存工程" Click="SaveProject_Click" />
+            <Border Width="1" Margin="7,3" Background="#596675" />
+            <Button IsEnabled="{Binding CanUndo}" Click="Undo_Click" ToolTip="Ctrl+Z"><TextBlock Text="{Binding UndoLabel}" Foreground="#DCE5ED" /></Button>
+            <Button IsEnabled="{Binding CanRedo}" Click="Redo_Click" ToolTip="Ctrl+Y"><TextBlock Text="{Binding RedoLabel}" Foreground="#DCE5ED" /></Button>
+            <Border Width="1" Margin="7,3" Background="#596675" />
+            <Button x:Name="SelectToolButton" Content="Q 选择" Click="SelectTool_Click" />
+            <Button x:Name="MoveToolButton" Content="W/G 移动" Click="MoveTool_Click" />
+            <Button x:Name="RotateToolButton" Content="E/R 旋转" Click="RotateTool_Click" />
+            <Button x:Name="ScaleToolButton" Content="S 缩放" Click="ScaleTool_Click" />
+            <Border Width="1" Margin="7,3" Background="#596675" />
+            <Button x:Name="PlayButton" Content="▶ 播放" Click="Play_Click" />
+            <Button Content="■ 停止" Click="Stop_Click" />
+            <Button Content="◆ 设置 K 帧" Click="SetKey_Click" />
+            <Button Content="清除 K 帧" Click="ClearKey_Click" />
+            <Button Content="线性补间" Click="LinearTween_Click" />
+            <Button Content="平滑补间" Click="SmoothTween_Click" />
+            <Button Content="适配全部" Click="FrameAll_Click" />
+            <Button Content="重置视图" Click="ResetView_Click" />
+            <Button Style="{StaticResource PrimaryButtonStyle}" Content="一键安装" Click="Install_Click" />
+          </StackPanel>
+        </ScrollViewer>
+      </DockPanel>
+    </Border>
+
+    <StatusBar DockPanel.Dock="Bottom" Background="#202832" Foreground="#FFFFFF">
+      <StatusBarItem Content="{Binding Status}" />
+      <Separator />
+      <StatusBarItem Content="{Binding FrameLabel}" />
+      <Separator />
+      <StatusBarItem><TextBlock Text="拖动分隔线调整区域 · 拖动区域右上角斜纹拆分 · ↗ 打开独立窗口" /></StatusBarItem>
+    </StatusBar>
+
+    <controls:WorkspaceHostControl x:Name="WorkspaceHost" />
+  </DockPanel>
+</Window>

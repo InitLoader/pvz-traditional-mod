@@ -20,34 +20,43 @@
 - `F08` — 选卡分页、原版页与自定义页切换、原版式选入/退回动画、手型光标和工具提示。
 - `F09` — 配置目录分类、JSON/JSONC 校验、无配置回退原版及运行日志。
 - `F10` — 通用外部贴图注册表、受限路径校验、字符串 ID 查询、原版图片加载器与进程缓存；支持按僵尸 Reanimation 部位/轨道替换，贴图缺失时安全跳过。
+- `F11` — 独立中文动画制作器：按原版矩阵/注册点/子帧规则预览、Blender 式 `G/R/S` 中心变换、时间轴/曲线空白处随时左键框选与批量移动删除、跨帧交换防吞帧、插入空帧及删除中间关键帧后自动重算连续运动、彩色曲线与可拉 Bezier 手柄、可拆分工作区和独立窗口、100 步 `Ctrl+Z`/`Ctrl+Y`、任意目录 compiled 文件头识别、内嵌图片/曲线/动作/属性/布局的 `.pvza` 单文件工程、JSONC/ZIP 打包和一键安装。
+- 动作标记的 `f=0/-1` 使用阶梯插值并随空帧同步移动，修复动作范围已经结束、位移/缩放过渡却只播放一部分的问题；旧版错误生成的 `-0.x` 标记会在加载时自动清理。
+- 时间轴支持 `Ctrl+C/Ctrl+V` 复制同一轨道的框选/当前关键帧，以及按钮复制当前动作范围内的整轨关键帧；粘贴保留相对间距、曲线和 Bezier 手柄，并可一次撤销。
 
 ### 🟡 部分实现
 
-- `P01` — 自定义植物拥有独立逻辑 ID、名称、介绍、阳光、冷却、生命、射速和投射物属性；当前动画、动作与目标选择仍复用 `templatePlantId`，尚未接入原创资源和全新行为树。
+- `P01` — 自定义植物拥有独立逻辑 ID、名称、介绍、阳光、冷却、生命、射速和投射物属性；`animationId` 已能把原创 Definition 注入主体 Reanimation，并让模板状态机播放外部 `anim_idle/anim_shooting` 等同名轨道；目标选择与行为树仍复用 `templatePlantId`。
 - `P02` — 随机附加防具已适配路障、铁桶、铁门和普通僵尸坚果头；梯子、报纸、气球等跨僵尸类型套用时仍缺少对应动作、挂点和视觉适配，不能视为完整支持。
 - `P03` — 关卡配置已能改变出怪和数量，但还不是完整关卡编辑器，不能新建地图网格、背景、关卡流程或胜负条件。
 - `P04` — UI 已完成选卡分页按钮和自定义卡片交互；通用设置页、主菜单入口、图鉴和完整界面改造尚未完成。
 - `T01` — 精英僵尸已完成实例编号与侧挂状态、确定性概率、属性倍率、技能事件、红色视觉标记和外部贴图引用；当前只有 `RAGE/BERSERK` 垂直切片，掉落和更多技能尚未实现。
-- `P05` — 外部动作资源已完成 Raw `.reanim` 与原版 PC `.reanim.compiled` 自动读取、安全解析、动作/事件/定位轨道校验和只读注册表；尚未把自定义 Definition 注入原版 `ReanimationHolder`，因此暂时不会改变游戏内植物或僵尸动画。
+- `P05` — 外部动作资源已完成 Raw `.reanim` 与原版 PC `.reanim.compiled` 自动读取、安全解析、ABI Definition 构建和自定义植物主体动画注入；多 Reanimation 植物附件、独立眨眼、僵尸动画与通用事件控制器仍未接入。
+- `P06` — 动画制作器会动态保留所有 `anim_*` 动作并支持眨眼/特殊动作编辑，已有跨轨道/通道框选、可持久化 Bezier 曲线手柄和 100 步撤销/恢复；当前尚未实现骨骼 IK、曲线修改器和音频轨。
 
 ### ⬜ 尚未实现
 
 - `T02` — 每个大关的独立 Boss、多阶段技能和 Boss 波控制器。
 - `T03` — 真正的新僵尸类型、原创 AI、动画状态机和资源注册。
 - `T04` — 新地图、背景、地图机制、完整新关卡和关卡选择入口。
-- `T05` — 自定义植物/僵尸的原创动画、贴图、音效和资源热加载管线。
+- `T05` — 自定义僵尸、植物附属 Reanimation、原创音效和资源热加载管线。
 - `T06` — Mod 设置界面、可视化配置编辑器和游戏内调试面板。
 - `T07` — Mod 独立存档、版本迁移、精英图鉴、Boss 进度和自定义解锁状态。
 - `T08` — 自动打包 Release、安装器和多游戏版本适配。
 
 详细设计和实现依据见 [`PVZ传统改版技术路线.md`](PVZ传统改版技术路线.md)。
 外部动作制作、配置和真正新增实体的分阶段契约见 [`modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`](modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md)。
+动画制作器操作与边界见 [`modding/PvZAnimationStudio/README.md`](modding/PvZAnimationStudio/README.md)。
+原版 48 个独立植物动画与 38 个僵尸/僵尸效果动画的逐项审计见 [`modding/PvZAnimationStudio/ORIGINAL_ASSET_AUDIT.md`](modding/PvZAnimationStudio/ORIGINAL_ASSET_AUDIT.md)。
+原版植物 `SeedType 0–52`、可复用模板范围和动画资源映射见 [`modding/PvZAnimationStudio/PLANT_TEMPLATE_IDS.md`](modding/PvZAnimationStudio/PLANT_TEMPLATE_IDS.md)。
 
 ## 仓库内容
 
 - `modding/src`：按功能拆分的运行时 Hook 模块。
 - `modding/patcher`：仅支持已校验 `1.0.0.1051` 文件的补丁加载器。
 - `modding/tests`：配置与生成逻辑回归测试。
+- `modding/PvZAnimationStudio`：全中文 Reanimation 动画制作器和自动配置/打包器。
+- `modding/PvZAnimationStudio.Tests`：Raw/compiled 往返、补间、JSONC 与打包自测。
 - `pvzmod/config`：按关卡、植物、僵尸、UI 和全局设置分类的配置示例。
 - `PVZ传统改版技术路线.md`：逆向结论、模块边界、配置规则与后续路线。
 - `modding/ARCHITECTURE.md`：代码架构和 Hook 接入说明。

@@ -1,14 +1,32 @@
 # PvZ Mod 运行时模块架构
 
+## 动画制作器边界
+
+`PvZAnimationStudio` 是独立 WPF 工具，不链接或注入 `pvzmod.dll`。`Models` 保存可序列化工程；`RawReanimCodec`/`CompiledReanimCodec` 只做格式往返；`ReanimationRenderMath` 复现原版矩阵、左上注册点和资源子帧语义；`ActionCatalogService` 与 `ActionViewService` 分别负责动作识别和动作局部视图；`AnimationCurveService` 维护曲线关键点、Bezier 手柄、插值求值和向 PVZ 普通帧的烘焙；`EntityPreviewProfileService` 负责原版多 Reanimation 组合与普通僵尸可选装备过滤；`OriginalResourceService` 只索引图片并合成原版 JPG + 灰度透明蒙版；`ProjectFileService` 负责旧 JSON 和安全受限的 `.pvza` 单文件工程，保存时嵌入全部引用图片及子帧布局；`WorkspaceHostControl` 只维护可拆分区域树、比例和独立窗口，动画视图、时间轴、曲线编辑器、资源浏览器和属性检查器仍是独立控件；`EditHistoryService`/`ProjectCloneService` 保存会话级完整撤销与恢复；`TweenService` 只烘焙数值补间；`ProjectPackageService` 只生成分类资源、配置片段和安装合并。UI、工作区树、曲线数学、渲染数学、编解码、历史、补间、资源索引与打包禁止并入一个类。
+
+`.pvza` 是 ZIP 容器，但只能包含根目录 `project.json` 和受限的 `assets/` 图片。读取端限制文件数量、单图大小、总大小并拒绝 `..` 和非 `assets/` 路径；图片解压到按工程路径、长度和修改时间散列出的本地缓存。保存端把原版 JPG+灰度遮罩先合成为带 Alpha 的 PNG，连同 `cols/rows` 一起写入工程。曲线关键点、属性值、插值类型及左右手柄保存在 schema 3 的 `project.json`；Raw/compiled 本身没有 Bezier 元数据，因此导出前使用已烘焙的逐帧值。工作区是可序列化的二叉拆分树；GridSplitter 只更新比例，区域类型、拆分、关闭和独立窗口不侵入动画模型。
+
+插入或删除整帧前，`AnimationCurveService.CaptureExplicitMotionCurves` 只从非动作轨道的 `x/y/kx/ky/sx/sy/a` 显式值补建缺失曲线；禁止自动为图片子帧 `f`、图片符号或动作标记建立平滑曲线。帧索引移动完成后，`BakeAllCurves` 重算所有已有曲线，使插入的空帧获得连续运动值。删除单个或框选的中间关键帧时也必须先捕获目标轨道，再清空帧并删除曲线关键点，使剩余相邻端点自动重新烘焙；顺序禁止颠倒，否则旧 compiled 会丢失待删帧以外的补间上下文并退回保持后跳变。设置 K 帧也必须立即烘焙关联曲线，不能只保存编辑器元数据而让预览继续继承上一帧。
+
+`f` 同时承担图片子帧和动作标记可见性，但纯 `anim_*` 标记轨道必须采用离散语义。`AnimationCurveService` 创建 `Frame` 曲线时默认使用 `Constant`，并在标记轨道上拒绝改成 Bezier/Linear；每次烘焙再次强制该不变量。加载旧工程时 `NormalizeActionMarkerFrames` 会把已有标记曲线改为常量并重烘焙；无曲线元数据但包含旧版本平滑结果的文件，会清除 `(-1, 0)` 内的过渡值，使 `0` 保持到明确的 `-1` 关键帧。否则 `ActionViewService` 会把第一个负小数当成隐藏，导致播放范围早于运动曲线终点。
+
+预览必须区分“完整实体审计”和“单动作编辑”。完整视图可按配置叠加豌豆头、三线射手三头等原版附属动作，并隐藏普通僵尸骨架上未启用的路障、铁桶、铁门等可选装备；选中动作后只显示该动作影响的轨道与关键帧。所有会改变工程内容的入口——画布变换、K 帧、补间、帧/轨道/动作增删、动作参数、实体属性、FPS 和图片绑定——必须进入同一最多 100 步的会话历史，`Ctrl+Z` 逐项撤销，`Ctrl+Y`/`Ctrl+Shift+Z` 按原顺序恢复；撤销后发生新编辑时丢弃旧恢复分支。
+
+时间轴多选使用 `(trackId, frame)`，曲线多选使用 `(channel, frame)`，选择状态只属于编辑控件，不写入工程文件。`EditorViewModel` 的批量移动接口按移动方向逐格交换源/目标关键帧，禁止在跨越目标帧时删除已占用关键点；这等价于关闭 Blender Graph Editor 的 Auto-Merge Keyframes。框选是时间轴和曲线区的常驻命中分支：左键命中关键点时选择/拖动，左键命中空白区域时直接开始框选，不依赖前置快捷键；框选可覆盖多轨道或多通道。单个删除和框选删除共用“先捕获曲线、后清空关键帧、再烘焙相邻区间”的不变量；批量移动/删除必须由一个编辑事务包裹，只产生一个撤销记录。画布 `G/R/S` 是鼠标模态变换，旋转时 `AnimationPreviewControl` 传入图片局部中心，`EditorViewModel.RotateSelectedAround` 同步补偿 `x/y`，确保视觉中心在旋转前后不漂移。
+
+时间轴关键帧剪贴板属于 `EditorViewModel` 会话状态，不进入 `.pvza`，使多个时间轴区域共享同一份复制内容。复制入口只接受单一源轨道，并以最早选中帧为相对零点；每个条目保存离散 `i/font/text` 和真正的曲线关键点、插值及手柄。存在曲线时禁止把逐帧烘焙样本误当成关键点；没有曲线元数据的旧 Reanimation 显式值才升级为关键点。粘贴先无烘焙移除目标帧的旧曲线点，再写入复制点、统一烘焙目标轨道并恢复离散字符串；整次操作只记录一次撤销。动作标记轨道和视觉轨道类型必须一致，动作局部视图中超出动作尾部的粘贴必须拒绝并提示先插帧。
+
+编辑器输出必须经过独立运行时管线才能进入游戏。它不能绕过 `custom_reanim_definition`、`animation_instance_hook`、动作事件总线或自定义实体侧挂状态，也不能因 UI 中存在“新僵尸”表单就宣称游戏端已经支持新僵尸。
+
 ## 0.10.1 原版 compiled 资源读取
 
-`compiled_reanim` 独立负责 PC `.reanim.compiled` 的 Cookie、zlib、Schema 和固定结构解码；`reanim_loader` 只按完整后缀把输入分流到 Raw XML 或 compiled 解码器。两种输入最终都转换为同一个规范化 `RawReanimDefinition`，因此动作、事件、挂点和后续 Definition 注入不需要维护两套逻辑。缓存中的指针字段只按布局跳过，禁止解引用。
+`compiled_reanim` 独立负责 PC `.reanim.compiled` 的 Cookie、zlib、Schema 和固定结构解码；编辑器打开文件时优先嗅探 `DEADFED4` Cookie，再按完整后缀分流，运行时 `reanim_loader` 仍执行路径与后缀白名单。两种输入最终都转换为同一个规范化 `RawReanimDefinition`，因此动作、事件、挂点和后续 Definition 注入不需要维护两套逻辑。缓存中的指针字段只按布局跳过，禁止解引用。
 
 ## 0.10.0 外部动作资源边界
 
 `external_animation_config` 只解析 `animations.jsonc` 元数据，`raw_reanim` 只负责受限 Raw XML、逐帧字段继承和结构校验，`external_animation_runtime` 只做启动时路径解析、贴图 ID/动作/事件/定位轨道交叉校验和只读注册。三者不得并回 `pvz_hook.cpp`；启动器仍只按顺序初始化贴图注册表和动画注册表。
 
-当前阶段故意不安装 `ReanimationInitializeType` Detour，也不扩大原版 `ReanimationType` 数组。后续注入必须新增 `custom_reanim_definition`、`animation_instance_hook`、`animation_controller` 和 `animation_event_bus`，并先核对 1.0.0.1051 的 Definition/Track/Transform ABI。完整格式、制作流程和真正新增实体的侧挂模型见 `EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`。
+`0.10.2-dev` 不安装全局 `ReanimationInitializeType` Detour，也不扩大原版 `ReanimationType` 数组。`runtime_reanim_definition` 把已校验的 Raw/compiled 数据转换为 1.0.0.1051 的 16/12/44 字节 Definition/Track/Transform；`custom_plant_animation_runtime` 只在自定义植物首次更新时释放模板 body 的旧 TrackInstance，并在同一 Holder 对象内用外部 Definition 重新初始化。所有贴图和 Definition 在破坏旧 body 前准备完成，失败则保留模板动画。该垂直切片已支持模板状态机调用外部同名 `anim_*` 轨道，但附属头部、独立眨眼、多 Reanimation 组合、僵尸和动作事件仍需要独立适配器。完整格式和边界见 `EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`。
 
 ## 0.9.0 精英与通用外部贴图边界
 
@@ -49,12 +67,13 @@ custom_plant_config.*     # 新植物完整定义和字段校验
 plant_catalog_runtime.*   # 启动时目录读取、逻辑 ID 查询
 seed_ui_hook.cpp          # 40 张/页、商店翻页按钮、种子栏桥接
 custom_plant_hook.cpp     # 植物实例、生命、射击和子弹实例旁路状态
+custom_plant_animation_runtime.* # 外部 Definition 的植物 body 生命周期与动作入口
 plant_attack_hook.cpp     # 原版攻击覆盖；只通过公开接口查询自定义子弹伤害
 ```
 
 原版 `SeedChooserScreen::mChosenSeeds` 后只有 4 个安全空记录，不能把它当成新植物总表。0.8.0 改为侧挂分页和已选卡列表：第 0 页保留原版，每个自定义页 40 张；关闭选卡时才借用一个空记录把“模板 ID + 自定义逻辑 ID”送入原版 `SeedPacket`。因此配置总数不再受 4 限制，也不扩大原版对象结构。
 
-新植物实例仍让原版保存 `templatePlantId`，以复用稳定的动画和行为；自定义 ID 由侧挂表关联到具体 `Plant*` 和 `Projectile*`。对象复用入口先清除旧关联，首次更新时一次性覆盖生命、射速和首发延迟。以后新增特殊攻击必须建立独立行为适配器，不应继续向 `custom_plant_hook.cpp` 堆积模板特判。
+新植物实例仍让原版保存 `templatePlantId`，以复用稳定的目标选择和行为状态机；自定义 ID 由侧挂表关联到具体 `Plant*` 和 `Projectile*`。对象复用入口先清除旧关联，首次更新时一次性覆盖生命、射速和首发延迟；配置了 `animationId` 时，再由独立动画模块替换 body Definition。以后新增特殊攻击、附属 Reanimation 或帧事件必须建立独立适配器，不应继续向 `custom_plant_hook.cpp` 堆积模板特判。
 
 ## 目标
 

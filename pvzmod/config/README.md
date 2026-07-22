@@ -43,7 +43,7 @@
 - `images` 的值必须是 `resources/textures.jsonc` 已注册的贴图 ID。
 - `actions` 至少包含一个动作；每个动作通过 `track` 指向 Raw `.reanim` 的 `anim_*` 轨道。
 - 事件使用相对动作帧 `frame` 或 `normalizedTime`，二者必须且只能填写一个。
-- 当前阶段只完成解析、校验和注册，尚未注入原版 Reanimation 对象；完整制作与实施边界见 `modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`。
+- 自定义植物的 `animationId` 已支持把注册动画注入主体 Reanimation；其他植物附件、僵尸和通用动作事件仍处于分阶段接入，完整边界见 `modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`。
 
 精英视觉示例：
 
@@ -70,6 +70,8 @@
 - `plants/custom_plants.jsonc`：管理独立逻辑植物和卡片。新卡默认解锁，第 0 页是原版卡，第 1 页起每页显示 40 张自定义卡，当前配置上限 512 张。
 - 选卡面板“一起摇滚吧！”右侧使用商店下一页图标循环翻页。已选自定义卡的逻辑 ID 会固化到上方种子包，翻页不会把它改成另一张卡。
 - `templatePlantId` 只是动画、动作和目标选择的套壳；`cost`、`rechargeTime`、`health`、`launchRate`、首发延迟、连发数、子弹类型和伤害属于新植物自身，不覆盖模板植物。
+- `animationId` 可省略；省略时保持模板主体动画，填写时必须引用 `resources/animations.jsonc` 中已通过校验的字符串 ID。外部动画必须提供可用的 `idle` 动作，并保留模板状态机会调用的动作轨道名（香蒲攻击为 `anim_shooting`），只覆盖主体 body，不自动替换独立头部或眨眼实例。
+- `templatePlantId` 当前只允许 `0–48`。完整 ID、中文名、载体 Reanimation 与 compiled 对照表见 [`../../modding/PvZAnimationStudio/PLANT_TEMPLATE_IDS.md`](../../modding/PvZAnimationStudio/PLANT_TEMPLATE_IDS.md)；原版 `49–52` 是模式专用植物，不能直接当普通模板。
 - 两份配置均在 DLL 启动时读取，修改后要完全退出并重启游戏。配置无效时对应模块回退为原版槽位或不加载新卡，并在 `pvzmod/logs/pvzmod.log` 记录原因。
 
 所有外部配置统一放在 `pvzmod/config` 下，禁止再把 JSON 文件直接放到游戏根目录。
