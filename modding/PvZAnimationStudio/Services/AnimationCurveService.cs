@@ -8,6 +8,11 @@ public readonly record struct CurveHandlePair(CurvePoint Left, CurvePoint Right)
 public sealed class AnimationCurveService
 {
     private static readonly CurveChannel[] Channels = Enum.GetValues<CurveChannel>();
+    private static readonly CurveChannel[] AutoInterpolationChannels =
+    [
+        CurveChannel.X, CurveChannel.Y, CurveChannel.SkewX, CurveChannel.SkewY,
+        CurveChannel.ScaleX, CurveChannel.ScaleY, CurveChannel.Alpha
+    ];
 
     public IReadOnlyList<CurveChannel> GetAvailableChannels(EditorProject project, AnimationTrack track) =>
         Channels.Where(channel =>
@@ -251,6 +256,26 @@ public sealed class AnimationCurveService
     public void ShiftForInsertedFrame(EditorProject project, int frame)
     {
         foreach (var key in project.Curves.SelectMany(curve => curve.Keys).Where(key => key.Frame >= frame)) key.Frame++;
+    }
+
+    public void CaptureExplicitMotionCurves(EditorProject project)
+    {
+        foreach (var track in project.Animation.Tracks.Where(track => !track.IsActionTrack))
+        foreach (var channel in AutoInterpolationChannels)
+        {
+            if (FindCurve(project, track, channel) is not null) continue;
+            if (track.Frames.Any(frame => GetExplicitValue(frame, channel).HasValue))
+                EnsureCurve(project, track, channel);
+        }
+    }
+
+    public void BakeAllCurves(EditorProject project)
+    {
+        foreach (var curve in project.Curves.ToArray())
+        {
+            var track = project.Animation.Tracks.FirstOrDefault(item => item.EditorId == curve.TrackId);
+            if (track is not null) BakeCurve(project, track, curve);
+        }
     }
 
     public void ShiftForDeletedFrame(EditorProject project, int frame)

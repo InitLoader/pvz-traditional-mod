@@ -320,11 +320,14 @@ public sealed class EditorViewModel : ObservableObject
         RecordUndo("设置关键帧");
         var resolved = SelectedTrack.ResolveFrame(CurrentFrame);
         SelectedTrack.Frames[CurrentFrame] = resolved.ToExplicitFrame();
+        var curves = new List<AnimationCurveDefinition>();
         foreach (var channel in Enum.GetValues<CurveChannel>())
         {
             var key = _curveService.EnsureKey(Project, SelectedTrack, channel, CurrentFrame);
             key.Value = _curveService.GetValue(SelectedTrack, channel, CurrentFrame);
+            curves.Add(_curveService.EnsureCurve(Project, SelectedTrack, channel));
         }
+        foreach (var curve in curves) _curveService.BakeCurve(Project, SelectedTrack, curve);
         RaiseFrameProperties();
         NotifyVisualChanged();
     }
@@ -354,9 +357,11 @@ public sealed class EditorViewModel : ObservableObject
     public void InsertFrame()
     {
         RecordUndo("插入帧");
+        _curveService.CaptureExplicitMotionCurves(Project);
         foreach (var track in Project.Animation.Tracks)
             track.Frames.Insert(Math.Min(CurrentFrame, track.Frames.Count), new AnimationFrame());
         _curveService.ShiftForInsertedFrame(Project, CurrentFrame);
+        _curveService.BakeAllCurves(Project);
         RaiseAll();
         NotifyVisualChanged();
     }
@@ -368,6 +373,7 @@ public sealed class EditorViewModel : ObservableObject
         foreach (var track in Project.Animation.Tracks)
             track.Frames.RemoveAt(Math.Clamp(CurrentFrame, 0, track.Frames.Count - 1));
         _curveService.ShiftForDeletedFrame(Project, CurrentFrame);
+        _curveService.BakeAllCurves(Project);
         _currentFrame = Math.Min(CurrentFrame, Project.Animation.FrameCount - 1);
         RaiseAll();
         NotifyVisualChanged();

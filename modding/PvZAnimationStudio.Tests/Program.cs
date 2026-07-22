@@ -297,6 +297,50 @@ try
     editor.Redo();
     AssertNear(editor.CurrentResolvedFrame?.X, originalX + 12, "Ctrl+Y 历史恢复错误");
 
+    var insertedTweenEditor = new EditorViewModel(new ActionCatalogService());
+    insertedTweenEditor.CurrentFrame = 0;
+    insertedTweenEditor.CurrentX = 0;
+    insertedTweenEditor.CurrentScaleX = 1;
+    insertedTweenEditor.SetKeyframe();
+    insertedTweenEditor.CurrentFrame = 2;
+    insertedTweenEditor.CurrentX = 20;
+    insertedTweenEditor.CurrentScaleX = 2;
+    insertedTweenEditor.SetKeyframe();
+    insertedTweenEditor.CurrentFrame = 1;
+    insertedTweenEditor.InsertFrame();
+    insertedTweenEditor.InsertFrame();
+    AssertNear(insertedTweenEditor.SelectedTrack!.Frames[1].X, 5,
+        "在两个关键帧之间插入空帧后没有重新插值位移");
+    AssertNear(insertedTweenEditor.SelectedTrack.Frames[2].X, 10,
+        "插入多个空帧后中点位移被冻结");
+    AssertNear(insertedTweenEditor.SelectedTrack.Frames[3].X, 15,
+        "插入多个空帧后结束前位移被冻结");
+    AssertNear(insertedTweenEditor.SelectedTrack.Frames[1].ScaleX, 1.25f,
+        "在两个关键帧之间插入空帧后没有重新插值缩放");
+    AssertNear(insertedTweenEditor.SelectedTrack.Frames[2].ScaleX, 1.5f,
+        "插入多个空帧后中点缩放被冻结");
+    AssertNear(insertedTweenEditor.SelectedTrack.Frames[3].ScaleX, 1.75f,
+        "插入多个空帧后结束前缩放被冻结");
+    insertedTweenEditor.Undo();
+    AssertNear(insertedTweenEditor.SelectedTrack!.Frames[1].X, 20f / 3f,
+        "第一次撤销没有只撤回最后一次插帧");
+    insertedTweenEditor.Undo();
+    AssertNear(insertedTweenEditor.SelectedTrack!.Frames[1].X, 10,
+        "插帧后的自动重插值没有进入撤销历史");
+
+    var legacyInsertEditor = new EditorViewModel(new ActionCatalogService());
+    var legacyTrack = legacyInsertEditor.SelectedTrack!;
+    foreach (var frame in legacyTrack.Frames) frame.Clear();
+    legacyInsertEditor.Project.Curves.Clear();
+    legacyTrack.Frames[0].X = 0;
+    legacyTrack.Frames[2].X = 30;
+    legacyInsertEditor.CurrentFrame = 1;
+    legacyInsertEditor.InsertFrame();
+    AssertNear(legacyTrack.Frames[1].X, 10,
+        "无曲线元数据的旧 compiled 插帧时没有从显式运动帧建立曲线");
+    AssertNear(legacyTrack.Frames[2].X, 20,
+        "旧 compiled 插入空帧后没有连续重算中间位移");
+
     var timelineKeyEditor = new EditorViewModel(new ActionCatalogService());
     timelineKeyEditor.CurrentFrame = 10;
     timelineKeyEditor.CurrentX = 40;
