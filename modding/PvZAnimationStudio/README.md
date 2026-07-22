@@ -30,6 +30,8 @@
 
 48 个独立植物动画和 38 个僵尸/僵尸效果动画的逐项结果、特殊组合与预期空文件见 [`ORIGINAL_ASSET_AUDIT.md`](ORIGINAL_ASSET_AUDIT.md)。
 
+完整植物 `SeedType`、中文名称、载体 Reanimation 和 compiled 文件映射见 [`PLANT_TEMPLATE_IDS.md`](PLANT_TEMPLATE_IDS.md)。编辑器属性检查器使用同一全局目录提供 `0–48` 模板速选；`49–52` 会被识别为模式专用植物，但禁止误导出为普通 `templatePlantId`。
+
 ## 运行
 
 本机发布版：

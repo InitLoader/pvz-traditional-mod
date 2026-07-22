@@ -48,6 +48,7 @@
 外部动作制作、配置和真正新增实体的分阶段契约见 [`modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`](modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md)。
 动画制作器操作与边界见 [`modding/PvZAnimationStudio/README.md`](modding/PvZAnimationStudio/README.md)。
 原版 48 个独立植物动画与 38 个僵尸/僵尸效果动画的逐项审计见 [`modding/PvZAnimationStudio/ORIGINAL_ASSET_AUDIT.md`](modding/PvZAnimationStudio/ORIGINAL_ASSET_AUDIT.md)。
+原版植物 `SeedType 0–52`、可复用模板范围和动画资源映射见 [`modding/PvZAnimationStudio/PLANT_TEMPLATE_IDS.md`](modding/PvZAnimationStudio/PLANT_TEMPLATE_IDS.md)。
 
 ## 仓库内容
 

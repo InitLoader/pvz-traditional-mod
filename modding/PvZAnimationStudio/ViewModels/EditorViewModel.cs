@@ -56,6 +56,7 @@ public sealed class EditorViewModel : ObservableObject
     public ObservableCollection<AnimationTrack> Tracks => Project.Animation.Tracks;
     public ObservableCollection<ActionDefinition> Actions => Project.Actions;
     public IReadOnlyList<ActionTemplate> ActionTemplates => _actionCatalog.Templates;
+    public IReadOnlyList<PlantTemplateDefinition> PlantTemplates => PlantTemplateCatalog.RuntimeTemplates;
     public IReadOnlyList<AnimationTrack> TimelineTracks => _actionView.GetTimelineTracks(Project.Animation, SelectedAction);
     public ActionFrameRange ActiveRange => _actionView.GetRange(Project.Animation, SelectedAction);
     public int TimelineFrameStart => ActiveRange.Start;
@@ -64,6 +65,7 @@ public sealed class EditorViewModel : ObservableObject
     public bool IsActionView => SelectedAction is not null;
     public bool CanUndo => _history.CanUndo;
     public bool CanRedo => _history.CanRedo;
+    public bool IsPlantProject => Project.Kind == EntityKind.Plant;
     public string UndoLabel => _history.UndoName is null ? "撤销" : $"撤销：{_history.UndoName}";
     public string RedoLabel => _history.RedoName is null ? "重做" : $"重做：{_history.RedoName}";
 
@@ -76,6 +78,15 @@ public sealed class EditorViewModel : ObservableObject
     public string? ProjectGameRoot { get => Project.GameRoot; set => SetProjectValue("修改游戏目录", Project.GameRoot, value, item => Project.GameRoot = item); }
     public int ProjectNumericEntityId { get => Project.NumericEntityId; set => SetProjectValue("修改数字 ID", Project.NumericEntityId, value, item => Project.NumericEntityId = item); }
     public int ProjectTemplateEntityId { get => Project.TemplateEntityId; set => SetProjectValue("修改模板 ID", Project.TemplateEntityId, value, item => Project.TemplateEntityId = item); }
+    public string ProjectTemplateSummary
+    {
+        get
+        {
+            if (!IsPlantProject) return "僵尸、UI 和其他工程不使用植物模板目录。";
+            var definition = PlantTemplateCatalog.Find(ProjectTemplateEntityId);
+            return definition?.Summary ?? $"未知植物模板 ID：{ProjectTemplateEntityId}。";
+        }
+    }
     public int ProjectCost { get => Project.Cost; set => SetProjectValue("修改阳光", Project.Cost, value, item => Project.Cost = item); }
     public int ProjectRechargeTime { get => Project.RechargeTime; set => SetProjectValue("修改冷却", Project.RechargeTime, value, item => Project.RechargeTime = item); }
     public int ProjectHealth { get => Project.Health; set => SetProjectValue("修改生命", Project.Health, value, item => Project.Health = item); }
@@ -983,7 +994,8 @@ public sealed class EditorViewModel : ObservableObject
                  {
                      nameof(ProjectKind), nameof(ProjectId), nameof(ProjectDisplayName), nameof(ProjectDescription),
                      nameof(ProjectCarrierReanimation), nameof(ProjectOutputFormat), nameof(ProjectGameRoot),
-                     nameof(ProjectNumericEntityId), nameof(ProjectTemplateEntityId), nameof(ProjectCost),
+                     nameof(ProjectNumericEntityId), nameof(ProjectTemplateEntityId), nameof(ProjectTemplateSummary),
+                     nameof(IsPlantProject), nameof(PlantTemplates), nameof(ProjectCost),
                      nameof(ProjectRechargeTime), nameof(ProjectHealth), nameof(ProjectLaunchRate),
                      nameof(ProjectProjectileType), nameof(ProjectDamage), nameof(ProjectShotsPerAttack),
                      nameof(AnimationFps)

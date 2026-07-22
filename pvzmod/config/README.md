@@ -70,6 +70,7 @@
 - `plants/custom_plants.jsonc`：管理独立逻辑植物和卡片。新卡默认解锁，第 0 页是原版卡，第 1 页起每页显示 40 张自定义卡，当前配置上限 512 张。
 - 选卡面板“一起摇滚吧！”右侧使用商店下一页图标循环翻页。已选自定义卡的逻辑 ID 会固化到上方种子包，翻页不会把它改成另一张卡。
 - `templatePlantId` 只是动画、动作和目标选择的套壳；`cost`、`rechargeTime`、`health`、`launchRate`、首发延迟、连发数、子弹类型和伤害属于新植物自身，不覆盖模板植物。
+- `templatePlantId` 当前只允许 `0–48`。完整 ID、中文名、载体 Reanimation 与 compiled 对照表见 [`../../modding/PvZAnimationStudio/PLANT_TEMPLATE_IDS.md`](../../modding/PvZAnimationStudio/PLANT_TEMPLATE_IDS.md)；原版 `49–52` 是模式专用植物，不能直接当普通模板。
 - 两份配置均在 DLL 启动时读取，修改后要完全退出并重启游戏。配置无效时对应模块回退为原版槽位或不加载新卡，并在 `pvzmod/logs/pvzmod.log` 记录原因。
 
 所有外部配置统一放在 `pvzmod/config` 下，禁止再把 JSON 文件直接放到游戏根目录。

@@ -40,16 +40,30 @@
       <GroupBox Header="植物 / 僵尸配置">
         <Grid>
           <Grid.ColumnDefinitions><ColumnDefinition Width="115"/><ColumnDefinition Width="*" MinWidth="120"/></Grid.ColumnDefinitions>
-          <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+          <Grid.RowDefinitions>
+            <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition Height="Auto"/>
+            <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+          </Grid.RowDefinitions>
           <TextBlock Grid.Row="0" Text="数字 ID"/><TextBox Grid.Row="0" Grid.Column="1" Text="{Binding ProjectNumericEntityId}"/>
           <TextBlock Grid.Row="1" Text="模板 ID"/><TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ProjectTemplateEntityId}"/>
-          <TextBlock Grid.Row="2" Text="阳光"/><TextBox Grid.Row="2" Grid.Column="1" Text="{Binding ProjectCost}"/>
-          <TextBlock Grid.Row="3" Text="冷却"/><TextBox Grid.Row="3" Grid.Column="1" Text="{Binding ProjectRechargeTime}"/>
-          <TextBlock Grid.Row="4" Text="生命"/><TextBox Grid.Row="4" Grid.Column="1" Text="{Binding ProjectHealth}"/>
-          <TextBlock Grid.Row="5" Text="攻击间隔"/><TextBox Grid.Row="5" Grid.Column="1" Text="{Binding ProjectLaunchRate}"/>
-          <TextBlock Grid.Row="6" Text="子弹类型"/><TextBox Grid.Row="6" Grid.Column="1" Text="{Binding ProjectProjectileType}"/>
-          <TextBlock Grid.Row="7" Text="伤害"/><TextBox Grid.Row="7" Grid.Column="1" Text="{Binding ProjectDamage}"/>
-          <TextBlock Grid.Row="8" Text="每次发射"/><TextBox Grid.Row="8" Grid.Column="1" Text="{Binding ProjectShotsPerAttack}"/>
+          <TextBlock Grid.Row="2" Text="植物模板速选"/>
+          <ComboBox Grid.Row="2" Grid.Column="1"
+                    ItemsSource="{Binding PlantTemplates}"
+                    DisplayMemberPath="DisplayLabel"
+                    SelectedValuePath="Id"
+                    SelectedValue="{Binding ProjectTemplateEntityId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                    IsEnabled="{Binding IsPlantProject}"
+                    ToolTip="全局目录中的 0–48 为当前 DLL 可复用模板"/>
+          <TextBlock Grid.Row="3" Grid.ColumnSpan="2" Margin="3,4,3,7"
+                     Foreground="#9FC3D8" TextWrapping="Wrap"
+                     Text="{Binding ProjectTemplateSummary}"/>
+          <TextBlock Grid.Row="4" Text="阳光"/><TextBox Grid.Row="4" Grid.Column="1" Text="{Binding ProjectCost}"/>
+          <TextBlock Grid.Row="5" Text="冷却"/><TextBox Grid.Row="5" Grid.Column="1" Text="{Binding ProjectRechargeTime}"/>
+          <TextBlock Grid.Row="6" Text="生命"/><TextBox Grid.Row="6" Grid.Column="1" Text="{Binding ProjectHealth}"/>
+          <TextBlock Grid.Row="7" Text="攻击间隔"/><TextBox Grid.Row="7" Grid.Column="1" Text="{Binding ProjectLaunchRate}"/>
+          <TextBlock Grid.Row="8" Text="子弹类型"/><TextBox Grid.Row="8" Grid.Column="1" Text="{Binding ProjectProjectileType}"/>
+          <TextBlock Grid.Row="9" Text="伤害"/><TextBox Grid.Row="9" Grid.Column="1" Text="{Binding ProjectDamage}"/>
+          <TextBlock Grid.Row="10" Text="每次发射"/><TextBox Grid.Row="10" Grid.Column="1" Text="{Binding ProjectShotsPerAttack}"/>
         </Grid>
       </GroupBox>
     </StackPanel>

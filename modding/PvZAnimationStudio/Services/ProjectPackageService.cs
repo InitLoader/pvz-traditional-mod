@@ -246,6 +246,13 @@ public sealed class ProjectPackageService
     private static void Validate(EditorProject project)
     {
         _ = SafePathSegment(project.Id);
+        if (project.Kind == EntityKind.Plant && !PlantTemplateCatalog.IsRuntimeTemplate(project.TemplateEntityId))
+        {
+            var known = PlantTemplateCatalog.Find(project.TemplateEntityId);
+            throw new InvalidDataException(known is null
+                ? $"未知植物模板 ID {project.TemplateEntityId}；当前支持 0–{PlantTemplateCatalog.LastRuntimeTemplateId}。"
+                : $"植物 ID {known.Id}（{known.ChineseName}）是原版模式专用类型，不能作为 templatePlantId；请选择 0–{PlantTemplateCatalog.LastRuntimeTemplateId}。 ");
+        }
         if (project.Animation.Tracks.Count == 0) throw new InvalidDataException("动画没有轨道。 ");
         if (project.Actions.Count == 0) throw new InvalidDataException("至少需要定义一个动作。 ");
         foreach (var action in project.Actions)

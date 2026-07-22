@@ -39,6 +39,67 @@ try
     var raw = new RawReanimCodec();
     var compiled = new CompiledReanimCodec();
 
+    var plantCatalog = PlantTemplateCatalog.All;
+    Assert(plantCatalog.Count == 53, "植物全局目录必须完整覆盖 SeedType 0–52");
+    Assert(plantCatalog.Select(definition => definition.Id).SequenceEqual(Enumerable.Range(0, 53)),
+        "植物全局目录 ID 不连续或顺序错误");
+    Assert(plantCatalog.Select(definition => definition.SeedConstant).Distinct(StringComparer.Ordinal).Count() == 53,
+        "植物全局目录存在重复 SeedType 常量");
+    Assert(PlantTemplateCatalog.RuntimeTemplates.Count == 49 &&
+           PlantTemplateCatalog.RuntimeTemplates.All(definition => definition.Id <= 48),
+        "当前运行时模板必须严格限制在 0–48");
+    Assert(PlantTemplateCatalog.Find(7)?.CompiledFileName == "PeaShooter.reanim.compiled",
+        "双发射手没有登记为共享 PeaShooter compiled");
+    Assert(PlantTemplateCatalog.Find(21)?.CompiledFileName == "Caltrop.reanim.compiled",
+        "地刺的 SeedType 与 Caltrop 文件映射错误");
+    Assert(PlantTemplateCatalog.Find(49)?.IsRuntimeTemplate == false &&
+           PlantTemplateCatalog.Find(52)?.IsRuntimeTemplate == false,
+        "模式专用植物被错误开放为普通模板");
+
+    var editorViewModel = new EditorViewModel(new ActionCatalogService());
+    Assert(editorViewModel.PlantTemplates.Count == 49, "编辑器植物模板速选没有使用全局 0–48 目录");
+    editorViewModel.ProjectTemplateEntityId = 21;
+    Assert(editorViewModel.ProjectTemplateSummary.Contains("Caltrop.reanim.compiled", StringComparison.Ordinal),
+        "编辑器没有根据全局目录解释当前植物模板");
+    editorViewModel.ProjectTemplateEntityId = 49;
+    Assert(editorViewModel.ProjectTemplateSummary.Contains("模式专用", StringComparison.Ordinal),
+        "编辑器没有识别特殊植物 ID");
+
+    var repositoryRoot = FindRepositoryRoot();
+    Assert(repositoryRoot is not null, "无法定位仓库根目录以校验植物模板文档");
+    var templateDocument = File.ReadAllText(
+        Path.Combine(repositoryRoot!, "modding", "PvZAnimationStudio", "PLANT_TEMPLATE_IDS.md"));
+    foreach (var definition in plantCatalog)
+    {
+        Assert(templateDocument.Contains($"| {definition.Id} | `{definition.SeedConstant}` |", StringComparison.Ordinal),
+            $"植物模板文档缺少 ID {definition.Id} / {definition.SeedConstant}");
+        var compiledAsset = Path.Combine(repositoryRoot!, "compiled", "reanim", definition.CompiledFileName);
+        Assert(File.Exists(compiledAsset), $"植物模板目录引用了不存在的原版资源：{definition.CompiledFileName}");
+    }
+
+    var rejectedSpecialPlant = new EditorProject
+    {
+        Kind = EntityKind.Plant,
+        Id = "SPECIAL_TEMPLATE_TEST",
+        TemplateEntityId = 49,
+        Animation = CreateDocument(),
+        Actions = new ObservableCollection<ActionDefinition>
+        {
+            new() { Id = "idle", DisplayName = "待机", Track = "anim_idle" }
+        }
+    };
+    var specialTemplateRejected = false;
+    try
+    {
+        new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor())
+            .CreatePackage(rejectedSpecialPlant, Path.Combine(root, "special-template.zip"));
+    }
+    catch (InvalidDataException exception) when (exception.Message.Contains("模式专用", StringComparison.Ordinal))
+    {
+        specialTemplateRejected = true;
+    }
+    Assert(specialTemplateRejected, "模式专用植物 ID 49 没有在打包阶段被拒绝");
+
     raw.Save(source, rawPath);
     var rawLoaded = raw.Load(rawPath);
     compiled.Save(rawLoaded, compiledPath);
@@ -784,6 +845,18 @@ static void AssertNearDouble(double actual, double expected, string message) =>
 static void Assert(bool condition, string message)
 {
     if (!condition) throw new InvalidOperationException(message);
+}
+
+static string? FindRepositoryRoot()
+{
+    for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+    {
+        if (File.Exists(Path.Combine(directory.FullName, "PVZ传统改版技术路线.md")) &&
+            Directory.Exists(Path.Combine(directory.FullName, "compiled", "reanim")))
+            return directory.FullName;
+    }
+
+    return null;
 }
 
 static int CountWorkspaceEditors(WorkspaceLayoutNode node, WorkspaceEditorKind editor) =>
