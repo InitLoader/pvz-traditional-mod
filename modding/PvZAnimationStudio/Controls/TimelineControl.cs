@@ -17,7 +17,6 @@ public sealed class TimelineControl : FrameworkElement
     private bool _keyDragActive;
     private int _dragFrame;
     private Point _dragOrigin;
-    private bool _boxSelectArmed;
     private bool _boxSelecting;
     private bool _boxAdditive;
     private Point _boxStart;
@@ -128,18 +127,6 @@ public sealed class TimelineControl : FrameworkElement
         Focus();
         var tracks = _viewModel.TimelineTracks;
         var point = eventArgs.GetPosition(this);
-        if (_boxSelectArmed && eventArgs.ChangedButton == MouseButton.Left)
-        {
-            _boxSelecting = true;
-            _boxAdditive = Keyboard.Modifiers.HasFlag(ModifierKeys.Control) ||
-                           Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
-            _boxStart = point;
-            _boxRect = new Rect(point, point);
-            CaptureMouse();
-            InvalidateVisual();
-            eventArgs.Handled = true;
-            return;
-        }
         var row = (int)(point.Y / RowHeight);
         if (row < 0 || row >= tracks.Count) return;
         _viewModel.SelectedTrack = tracks[row];
@@ -175,9 +162,16 @@ public sealed class TimelineControl : FrameworkElement
                 _dragOrigin = point;
                 CaptureMouse();
             }
-            else if (!Keyboard.Modifiers.HasFlag(ModifierKeys.Control) &&
-                     !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
-                _selectedKeys.Clear();
+            else if (eventArgs.ChangedButton == MouseButton.Left)
+            {
+                _boxSelecting = true;
+                _boxAdditive = Keyboard.Modifiers.HasFlag(ModifierKeys.Control) ||
+                               Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+                _boxStart = point;
+                _boxRect = new Rect(point, point);
+                CaptureMouse();
+                eventArgs.Handled = true;
+            }
         }
         InvalidateVisual();
     }
@@ -215,7 +209,6 @@ public sealed class TimelineControl : FrameworkElement
         {
             ApplyBoxSelection();
             _boxSelecting = false;
-            _boxSelectArmed = false;
             Cursor = Cursors.Arrow;
             if (IsMouseCaptured) ReleaseMouseCapture();
             InvalidateVisual();
@@ -241,15 +234,9 @@ public sealed class TimelineControl : FrameworkElement
             else _viewModel.DeleteCurrentKeyframe();
             eventArgs.Handled = true;
         }
-        else if (eventArgs.Key == Key.B)
+        else if (eventArgs.Key == Key.Escape && _boxSelecting)
         {
-            _boxSelectArmed = true;
-            Cursor = Cursors.Cross;
-            eventArgs.Handled = true;
-        }
-        else if (eventArgs.Key == Key.Escape && _boxSelectArmed)
-        {
-            _boxSelectArmed = _boxSelecting = false;
+            _boxSelecting = false;
             Cursor = Cursors.Arrow;
             if (IsMouseCaptured) ReleaseMouseCapture();
             InvalidateVisual();

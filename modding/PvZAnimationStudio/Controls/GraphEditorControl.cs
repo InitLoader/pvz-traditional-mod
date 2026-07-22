@@ -40,7 +40,6 @@ public sealed class GraphEditorControl : FrameworkElement
     private Point _lastPanPoint;
     private int _dragFrame;
     private Point _lastDragPoint;
-    private bool _boxSelectArmed;
     private bool _boxAdditive;
     private Rect _boxRect;
     private Rect _plotRect;
@@ -336,17 +335,6 @@ public sealed class GraphEditorControl : FrameworkElement
         if (_viewModel is null) return;
         Focus();
         var point = eventArgs.GetPosition(this);
-        if (_boxSelectArmed && _plotRect.Contains(point))
-        {
-            _dragTarget = DragTarget.Box;
-            _boxAdditive = Keyboard.Modifiers.HasFlag(ModifierKeys.Control) ||
-                           Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
-            _dragStart = point;
-            _boxRect = new Rect(point, point);
-            CaptureMouse();
-            eventArgs.Handled = true;
-            return;
-        }
         var legend = _renderedLegends.FirstOrDefault(item => item.Bounds.Contains(point));
         if (legend is not null)
         {
@@ -367,8 +355,17 @@ public sealed class GraphEditorControl : FrameworkElement
             var key = FindKey(point);
             if (key is null)
             {
-                if (!Keyboard.Modifiers.HasFlag(ModifierKeys.Control) &&
-                    !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) _selectedKeys.Clear();
+                if (_plotRect.Contains(point))
+                {
+                    _dragTarget = DragTarget.Box;
+                    _boxAdditive = Keyboard.Modifiers.HasFlag(ModifierKeys.Control) ||
+                                   Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+                    _dragStart = point;
+                    _boxRect = new Rect(point, point);
+                    CaptureMouse();
+                    eventArgs.Handled = true;
+                    return;
+                }
                 InvalidateVisual();
                 return;
             }
@@ -460,7 +457,6 @@ public sealed class GraphEditorControl : FrameworkElement
         if (_dragTarget == DragTarget.Box)
         {
             ApplyBoxSelection();
-            _boxSelectArmed = false;
         }
         if (_dragTransaction) _viewModel?.EndEditTransaction();
         _dragTarget = DragTarget.None;
@@ -486,15 +482,8 @@ public sealed class GraphEditorControl : FrameworkElement
             DeleteSelected();
             eventArgs.Handled = true;
         }
-        else if (eventArgs.Key == Key.B)
+        else if (eventArgs.Key == Key.Escape && _dragTarget == DragTarget.Box)
         {
-            _boxSelectArmed = true;
-            Cursor = Cursors.Cross;
-            eventArgs.Handled = true;
-        }
-        else if (eventArgs.Key == Key.Escape && _boxSelectArmed)
-        {
-            _boxSelectArmed = false;
             _dragTarget = DragTarget.None;
             if (IsMouseCaptured) ReleaseMouseCapture();
             InvalidateVisual();

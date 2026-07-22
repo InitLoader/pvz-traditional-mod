@@ -8,7 +8,7 @@
 
 预览必须区分“完整实体审计”和“单动作编辑”。完整视图可按配置叠加豌豆头、三线射手三头等原版附属动作，并隐藏普通僵尸骨架上未启用的路障、铁桶、铁门等可选装备；选中动作后只显示该动作影响的轨道与关键帧。所有会改变工程内容的入口——画布变换、K 帧、补间、帧/轨道/动作增删、动作参数、实体属性、FPS 和图片绑定——必须进入同一最多 100 步的会话历史，`Ctrl+Z` 逐项撤销，`Ctrl+Y`/`Ctrl+Shift+Z` 按原顺序恢复；撤销后发生新编辑时丢弃旧恢复分支。
 
-时间轴多选使用 `(trackId, frame)`，曲线多选使用 `(channel, frame)`，选择状态只属于编辑控件，不写入工程文件。`EditorViewModel` 的批量移动接口按移动方向逐格交换源/目标关键帧，禁止在跨越目标帧时删除已占用关键点；这等价于关闭 Blender Graph Editor 的 Auto-Merge Keyframes。`B` 框选可以覆盖多轨道或多通道，批量移动/删除必须由一个编辑事务包裹，只产生一个撤销记录。画布 `G/R/S` 是鼠标模态变换，旋转时 `AnimationPreviewControl` 传入图片局部中心，`EditorViewModel.RotateSelectedAround` 同步补偿 `x/y`，确保视觉中心在旋转前后不漂移。
+时间轴多选使用 `(trackId, frame)`，曲线多选使用 `(channel, frame)`，选择状态只属于编辑控件，不写入工程文件。`EditorViewModel` 的批量移动接口按移动方向逐格交换源/目标关键帧，禁止在跨越目标帧时删除已占用关键点；这等价于关闭 Blender Graph Editor 的 Auto-Merge Keyframes。框选是时间轴和曲线区的常驻命中分支：左键命中关键点时选择/拖动，左键命中空白区域时直接开始框选，不依赖前置快捷键；框选可覆盖多轨道或多通道。批量移动/删除必须由一个编辑事务包裹，只产生一个撤销记录。画布 `G/R/S` 是鼠标模态变换，旋转时 `AnimationPreviewControl` 传入图片局部中心，`EditorViewModel.RotateSelectedAround` 同步补偿 `x/y`，确保视觉中心在旋转前后不漂移。
 
 编辑器输出必须经过独立运行时管线才能进入游戏。它不能绕过 `custom_reanim_definition`、`animation_instance_hook`、动作事件总线或自定义实体侧挂状态，也不能因 UI 中存在“新僵尸”表单就宣称游戏端已经支持新僵尸。
 
