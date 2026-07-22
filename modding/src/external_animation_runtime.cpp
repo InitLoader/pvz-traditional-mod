@@ -3,6 +3,7 @@
 #include "external_texture_runtime.h"
 #include "logger.h"
 #include "reanim_loader.h"
+#include "runtime_reanim_definition.h"
 
 #include <filesystem>
 #include <cwchar>
@@ -16,6 +17,7 @@ namespace {
 
 std::mutex g_animationMutex;
 std::unordered_map<std::string, std::shared_ptr<const LoadedExternalAnimation>> g_animations;
+std::unordered_map<std::string, std::shared_ptr<RuntimeReanimDefinitionStorage>> g_runtimeDefinitions;
 
 bool IsUnderDirectory(const std::filesystem::path& child, const std::filesystem::path& parent) {
     auto childPart = child.begin();
@@ -68,6 +70,7 @@ bool InitializeExternalAnimationRuntime(std::uint8_t* moduleBase) {
         LogInfo("External animation registry is absent; external animations are disabled.");
         std::lock_guard lock(g_animationMutex);
         g_animations.clear();
+        g_runtimeDefinitions.clear();
         return true;
     }
 
@@ -76,6 +79,7 @@ bool InitializeExternalAnimationRuntime(std::uint8_t* moduleBase) {
         LogWarning(loadedConfig.error + "; external animations are disabled.");
         std::lock_guard lock(g_animationMutex);
         g_animations.clear();
+        g_runtimeDefinitions.clear();
         return false;
     }
 
@@ -135,9 +139,10 @@ bool InitializeExternalAnimationRuntime(std::uint8_t* moduleBase) {
     {
         std::lock_guard lock(g_animationMutex);
         g_animations = std::move(next);
+        g_runtimeDefinitions.clear();
     }
     LogInfo("Loaded external animation registry: " + std::to_string(accepted) + "/" +
-            std::to_string(configured) + " animation(s) validated. Runtime engine injection is not enabled yet.");
+            std::to_string(configured) + " animation(s) validated; custom-plant Definition injection is available.");
     return accepted == configured;
 }
 
@@ -145,6 +150,42 @@ std::shared_ptr<const LoadedExternalAnimation> FindExternalAnimation(const std::
     std::lock_guard lock(g_animationMutex);
     const auto found = g_animations.find(std::string(animationId));
     return found == g_animations.end() ? nullptr : found->second;
+}
+
+RuntimeReanimatorDefinition* PrepareExternalReanimationDefinition(
+    const std::string_view animationId, void* lawnApp) {
+    if (animationId.empty() || lawnApp == nullptr) return nullptr;
+    std::shared_ptr<const LoadedExternalAnimation> animation;
+    {
+        std::lock_guard lock(g_animationMutex);
+        const std::string id(animationId);
+        if (const auto cached = g_runtimeDefinitions.find(id); cached != g_runtimeDefinitions.end()) {
+            return cached->second->Definition();
+        }
+        const auto found = g_animations.find(id);
+        if (found == g_animations.end()) return nullptr;
+        animation = found->second;
+    }
+
+    RuntimeReanimBuildResult built = BuildRuntimeReanimDefinition(
+        animation->raw, animation->config,
+        [lawnApp](const std::string_view textureId) {
+            return ResolveExternalTexture(textureId, lawnApp);
+        });
+    if (!built.Ok()) {
+        LogWarning(built.error + "; external animation '" + std::string(animationId) +
+                   "' cannot be injected into a plant.");
+        return nullptr;
+    }
+
+    std::lock_guard lock(g_animationMutex);
+    const auto [stored, inserted] = g_runtimeDefinitions.emplace(
+        std::string(animationId), std::move(built.storage));
+    if (inserted) {
+        LogInfo("Built game-native Reanimation Definition for external animation '" +
+                std::string(animationId) + "'.");
+    }
+    return stored->second->Definition();
 }
 
 std::size_t ExternalAnimationCount() {

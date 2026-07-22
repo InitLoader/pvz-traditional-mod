@@ -7,6 +7,7 @@
 #include "plant_attack_config.h"
 #include "raw_reanim.h"
 #include "reanim_loader.h"
+#include "runtime_reanim_definition.h"
 #include "seed_ui_config.h"
 #include "spawn_config.h"
 #include "wave_generator.h"
@@ -485,7 +486,7 @@ void TestSeedUiAndCustomPlantConfig() {
         output << R"({
           "schemaVersion":1,
           "plants":[{
-            "id":1000,"name":"test","templatePlantId":0,"unlocked":true,
+            "id":1000,"name":"test","templatePlantId":0,"animationId":"TEST_PLANT_ANIM","unlocked":true,
             "cost":125,"rechargeTime":600,"health":450,"launchRate":90,
             "initialLaunchDelay":{"min":5,"max":20},
             "attack":{"mode":"projectile","projectileType":1,"damage":35,"shotsPerAttack":2}
@@ -503,6 +504,8 @@ void TestSeedUiAndCustomPlantConfig() {
         const auto& plant = plants.config->plants.front();
         Expect(plant.id == 1000 && plant.cost == 125 && plant.health == 450,
                "custom plant identity and independent attributes should be retained");
+        Expect(plant.animationId == "TEST_PLANT_ANIM",
+               "custom plant animationId should be retained for runtime definition injection");
         Expect(plant.attack.projectileType == 1 && plant.attack.damage == 35 &&
                plant.attack.shotsPerAttack == 2,
                "custom projectile fields should be retained");
@@ -703,6 +706,46 @@ void TestExternalAnimationConfigAndRawReanim() {
                    std::abs(*body->transforms[1].x - 2.5) < 0.0001,
                "transform values should inherit from previous Raw reanimation frames");
     }
+}
+
+void TestRuntimeReanimDefinitionBuild() {
+    pvzmod::RawReanimDefinition raw;
+    raw.fps = 18.0f;
+    pvzmod::RawReanimTrack idle;
+    idle.name = "anim_idle";
+    pvzmod::RawReanimTransform first;
+    first.x = 12.0f;
+    first.image = "IMAGE_REANIM_TEST_BODY";
+    first.text = "runtime text";
+    idle.transforms.push_back(first);
+    idle.transforms.emplace_back();
+    raw.tracks.push_back(std::move(idle));
+
+    pvzmod::ExternalAnimationDefinition config;
+    config.id = "TEST_RUNTIME";
+    config.images.emplace("IMAGE_REANIM_TEST_BODY", "TEST_TEXTURE");
+    void* expectedImage = reinterpret_cast<void*>(static_cast<std::uintptr_t>(0x12345678));
+    const auto built = pvzmod::BuildRuntimeReanimDefinition(
+        raw, config, [expectedImage](const std::string_view id) {
+            return id == "TEST_TEXTURE" ? expectedImage : nullptr;
+        });
+    Expect(built.Ok(), "Raw animation should build a game-native runtime Definition");
+    if (built.Ok()) {
+        const auto* definition = built.storage->Definition();
+        Expect(definition->trackCount == 1 && std::abs(definition->fps - 18.0f) < 0.0001f,
+               "runtime Definition should retain track count and fps");
+        Expect(std::string(definition->tracks[0].name) == "anim_idle" &&
+                   definition->tracks[0].transformCount == 2,
+               "runtime Definition should own stable track names and transforms");
+        Expect(definition->tracks[0].transforms[0].image == expectedImage &&
+                   std::string(definition->tracks[0].transforms[0].text) == "runtime text",
+               "runtime transforms should resolve Image pointers and own text storage");
+    }
+
+    pvzmod::ExternalAnimationDefinition missingBinding;
+    const auto rejected = pvzmod::BuildRuntimeReanimDefinition(
+        raw, missingBinding, [](const std::string_view) { return static_cast<void*>(nullptr); });
+    Expect(!rejected.Ok(), "runtime Definition build must reject unmapped external image symbols");
 }
 
 void TestExternalAnimationConfigRejectsUnsafeInput() {
@@ -932,6 +975,7 @@ int main() {
     TestExternalTextureConfigAndAliases();
     TestExternalTextureConfigRejectsTraversal();
     TestExternalAnimationConfigAndRawReanim();
+    TestRuntimeReanimDefinitionBuild();
     TestExternalAnimationConfigRejectsUnsafeInput();
     TestRawReanimRejectsUnsafeOrMalformedInput();
     TestCompiledReanimDecoding();

@@ -61,6 +61,8 @@ try
     editorViewModel.ProjectTemplateEntityId = 21;
     Assert(editorViewModel.ProjectTemplateSummary.Contains("Caltrop.reanim.compiled", StringComparison.Ordinal),
         "编辑器没有根据全局目录解释当前植物模板");
+    Assert(editorViewModel.ProjectCarrierReanimation == "REANIM_SPIKEWEED",
+        "修改植物模板 ID 时没有同步载体 Reanimation");
     editorViewModel.ProjectTemplateEntityId = 49;
     Assert(editorViewModel.ProjectTemplateSummary.Contains("模式专用", StringComparison.Ordinal),
         "编辑器没有识别特殊植物 ID");

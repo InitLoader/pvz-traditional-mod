@@ -61,6 +61,7 @@ add_library(pvz_wave_core STATIC
     src/plant_attack_config.cpp
     src/raw_reanim.cpp
     src/reanim_loader.cpp
+    src/runtime_reanim_definition.cpp
     src/seed_ui_config.cpp
     src/spawn_config.cpp
     src/wave_generator.cpp
@@ -78,6 +79,7 @@ target_link_libraries(pvz_wave_core PUBLIC
 target_compile_definitions(pvz_wave_core PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
 
 add_library(pvzmod SHARED
+    src/custom_plant_animation_runtime.cpp
     src/custom_plant_hook.cpp
     src/custom_plant_text_hook.cpp
     src/dllmain.cpp

@@ -1,5 +1,7 @@
 #include "custom_plant_config.h"
 
+#include "external_texture_config.h"
+
 #include <fstream>
 #include <stdexcept>
 #include <unordered_set>
@@ -67,6 +69,10 @@ CustomPlantConfigLoadResult LoadCustomPlantConfig(const std::filesystem::path& p
             if (!ids.insert(plant.id).second) throw std::runtime_error("custom plant id values must be unique");
             plant.name = String(item, "name", plant.name);
             plant.description = String(item, "description", plant.description);
+            plant.animationId = String(item, "animationId", {});
+            if (!plant.animationId.empty() && !IsExternalResourceId(plant.animationId)) {
+                throw std::runtime_error("animationId must match [A-Za-z0-9_]+ and contain 1-64 characters");
+            }
             plant.templatePlantId = Integer(item, "templatePlantId", 0, 0, 48);
             plant.unlocked = Boolean(item, "unlocked", true);
             plant.cost = Integer(item, "cost", 100, 0, 9999);

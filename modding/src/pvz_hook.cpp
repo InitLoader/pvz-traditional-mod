@@ -68,7 +68,7 @@ bool InstallPvZHooks() {
 
 DWORD WINAPI InitializeModThread(void* moduleParameter) {
     InitializeLogger(static_cast<HMODULE>(moduleParameter));
-    LogInfo("pvzmod.dll loaded; mod runtime version 0.10.1-dev.");
+    LogInfo("pvzmod.dll loaded; mod runtime version 0.10.2-dev.");
     if (!InstallPvZHooks()) {
         LogError("One or more isolated hook modules are inactive; see earlier log entries.");
     }

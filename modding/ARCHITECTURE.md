@@ -26,7 +26,7 @@
 
 `external_animation_config` 只解析 `animations.jsonc` 元数据，`raw_reanim` 只负责受限 Raw XML、逐帧字段继承和结构校验，`external_animation_runtime` 只做启动时路径解析、贴图 ID/动作/事件/定位轨道交叉校验和只读注册。三者不得并回 `pvz_hook.cpp`；启动器仍只按顺序初始化贴图注册表和动画注册表。
 
-当前阶段故意不安装 `ReanimationInitializeType` Detour，也不扩大原版 `ReanimationType` 数组。后续注入必须新增 `custom_reanim_definition`、`animation_instance_hook`、`animation_controller` 和 `animation_event_bus`，并先核对 1.0.0.1051 的 Definition/Track/Transform ABI。完整格式、制作流程和真正新增实体的侧挂模型见 `EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`。
+`0.10.2-dev` 不安装全局 `ReanimationInitializeType` Detour，也不扩大原版 `ReanimationType` 数组。`runtime_reanim_definition` 把已校验的 Raw/compiled 数据转换为 1.0.0.1051 的 16/12/44 字节 Definition/Track/Transform；`custom_plant_animation_runtime` 只在自定义植物首次更新时释放模板 body 的旧 TrackInstance，并在同一 Holder 对象内用外部 Definition 重新初始化。所有贴图和 Definition 在破坏旧 body 前准备完成，失败则保留模板动画。该垂直切片已支持模板状态机调用外部同名 `anim_*` 轨道，但附属头部、独立眨眼、多 Reanimation 组合、僵尸和动作事件仍需要独立适配器。完整格式和边界见 `EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`。
 
 ## 0.9.0 精英与通用外部贴图边界
 
@@ -67,12 +67,13 @@ custom_plant_config.*     # 新植物完整定义和字段校验
 plant_catalog_runtime.*   # 启动时目录读取、逻辑 ID 查询
 seed_ui_hook.cpp          # 40 张/页、商店翻页按钮、种子栏桥接
 custom_plant_hook.cpp     # 植物实例、生命、射击和子弹实例旁路状态
+custom_plant_animation_runtime.* # 外部 Definition 的植物 body 生命周期与动作入口
 plant_attack_hook.cpp     # 原版攻击覆盖；只通过公开接口查询自定义子弹伤害
 ```
 
 原版 `SeedChooserScreen::mChosenSeeds` 后只有 4 个安全空记录，不能把它当成新植物总表。0.8.0 改为侧挂分页和已选卡列表：第 0 页保留原版，每个自定义页 40 张；关闭选卡时才借用一个空记录把“模板 ID + 自定义逻辑 ID”送入原版 `SeedPacket`。因此配置总数不再受 4 限制，也不扩大原版对象结构。
 
-新植物实例仍让原版保存 `templatePlantId`，以复用稳定的动画和行为；自定义 ID 由侧挂表关联到具体 `Plant*` 和 `Projectile*`。对象复用入口先清除旧关联，首次更新时一次性覆盖生命、射速和首发延迟。以后新增特殊攻击必须建立独立行为适配器，不应继续向 `custom_plant_hook.cpp` 堆积模板特判。
+新植物实例仍让原版保存 `templatePlantId`，以复用稳定的目标选择和行为状态机；自定义 ID 由侧挂表关联到具体 `Plant*` 和 `Projectile*`。对象复用入口先清除旧关联，首次更新时一次性覆盖生命、射速和首发延迟；配置了 `animationId` 时，再由独立动画模块替换 body Definition。以后新增特殊攻击、附属 Reanimation 或帧事件必须建立独立适配器，不应继续向 `custom_plant_hook.cpp` 堆积模板特判。
 
 ## 目标
 

@@ -4,7 +4,7 @@
 
 ## 1. 当前实现状态
 
-`0.10.1-dev` 已完成第一阶段：
+`0.10.2-dev` 已完成自定义植物主体动画垂直切片：
 
 - `pvzmod/config/resources/animations.jsonc` 外部动画注册表。
 - `pvzmod/animations/` 分类资源目录和安全路径限制。
@@ -14,9 +14,11 @@
 - 支持的 Transform 字段为 `x/y/kx/ky/sx/sy/f/a/i/font/text`。
 - 动作、循环方式、播放速度、混合帧、帧事件和定位轨道配置。
 - 动画、动作轨道、事件帧、定位轨道和外部贴图 ID 的启动时交叉校验。
-- 只读运行时动画注册表。
+- 只读运行时动画注册表和持久的 32 位 ABI Definition 缓存。
+- `custom_plants.jsonc.animationId` 到植物主体 Reanimation 的运行时注入。
+- 模板行为状态机继续负责攻击时机，但 `anim_idle`、`anim_shooting` 等同名动作从外部动画播放。
 
-当前尚未安装 `ReanimationInitializeType` Detour，也不会把自定义 Definition 写入原版全局数组。日志中的 `Runtime engine injection is not enabled yet` 是明确的阶段提示，不是加载错误。
+当前不安装全局 `ReanimationInitializeType` Detour，也不把自定义 Definition 写入原版固定数组。运行时在自定义植物完成原版初始化后，只替换已有 body Holder 的 Definition 和 TrackInstance；构建或贴图加载失败时保留原模板动画。该路径尚不替换模板创建的附属头部、独立眨眼和其他 Reanimation，也尚未接入僵尸。
 
 ## 2. 原版动画模型
 
@@ -220,15 +222,16 @@ Plant*/Zombie* 原版对象池
 
 载体 ID 不再决定名称、属性、图片、动作和攻击，因此不是原版实体的玩法套壳。暂不扩大原版 SeedType、ZombieType 和 ReanimationType 固定数组。
 
-## 8. 后续运行时注入设计
+## 8. 当前注入结构与后续设计
 
-下一阶段建立独立模块：
+当前已落地和后续模块如下：
 
 ```text
-custom_reanim_definition    Raw 数据 -> ABI 兼容 Definition
-animation_texture_resolver 图片符号 -> Image*
-animation_instance_hook     对接 ReanimationInitializeType
-custom_animation_runtime    动画实例创建、查找、销毁
+runtime_reanim_definition   Raw 数据 -> ABI 兼容 Definition（已实现）
+external_texture_runtime    图片符号 -> Image*（已实现）
+custom_plant_animation_runtime 原位替换植物 body Definition（已实现）
+animation_instance_hook     通用 AddReanimation/附属实例接入
+custom_animation_runtime    通用动画实例创建、查找、销毁
 animation_controller        动作、混合、速率、循环
 animation_event_bus         发射、啃咬、爆炸等帧事件
 custom_plant_runtime        独立植物状态机
@@ -237,7 +240,7 @@ custom_entity_save          Mod 存档和版本迁移
 custom_animation_preview    卡片、选卡、图鉴和预览
 ```
 
-创建动画时使用线程局部 `PendingCustomDefinition`：调用原版 `AddReanimation` 分配 Holder 实例，Detour `ReanimationInitializeType` 检测待创建定义并初始化自定义 Definition，同时保留安全的原版载体 ReanimationType。这样不扩大 `NUM_REANIMS`，也不先创建再破坏性替换轨道数组。
+植物 body 的当前实现先完成动画、动作、贴图和 ABI Definition 全部校验，再释放旧 TrackInstance，并在原 Holder 内调用原版初始化函数；失败发生在释放前，因此可安全保留模板动画。后续创建附属动画时再使用线程局部 `PendingCustomDefinition`：调用原版 `AddReanimation` 分配 Holder 实例，由窄范围初始化桥接选择外部 Definition，同时保留安全的原版载体 ReanimationType，不扩大 `NUM_REANIMS`。
 
 ## 9. 动作事件
 

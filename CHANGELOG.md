@@ -6,6 +6,8 @@
 
 ### Added in animation-studio-dev
 
+- 增加自定义植物 `animationId` 运行时链路：把 Raw/compiled 转换为 1.0.0.1051 ABI Definition，在原 Holder 内安全替换 body Reanimation，使模板攻击状态机播放外部 `anim_*` 轨道；失败时保留原模板动画。
+- 植物模板 ID 修改时自动同步编辑器载体 Reanimation，避免香蒲模板仍导出豌豆载体；文档明确主体、附属头部和眨眼的当前支持边界。
 - 增加全中文 `PvZAnimationStudio` 独立桌面工具，提供分层预览、时间轴、K 帧、拖动、旋转、缩放、透明度、线性/平滑补间和播放。
 - 支持新建植物/僵尸工程，动态识别所有 `anim_*` 动作，分类常用植物、僵尸、Boss、特殊动作和眨眼。
 - 支持 Raw `.reanim` 和原版 PC `.reanim.compiled` 读取、编辑、导出与重新打包，以及 PNG 资源绑定。

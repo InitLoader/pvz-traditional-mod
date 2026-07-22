@@ -77,7 +77,21 @@ public sealed class EditorViewModel : ObservableObject
     public AnimationOutputFormat ProjectOutputFormat { get => Project.OutputFormat; set => SetProjectValue("修改导出格式", Project.OutputFormat, value, item => Project.OutputFormat = item); }
     public string? ProjectGameRoot { get => Project.GameRoot; set => SetProjectValue("修改游戏目录", Project.GameRoot, value, item => Project.GameRoot = item); }
     public int ProjectNumericEntityId { get => Project.NumericEntityId; set => SetProjectValue("修改数字 ID", Project.NumericEntityId, value, item => Project.NumericEntityId = item); }
-    public int ProjectTemplateEntityId { get => Project.TemplateEntityId; set => SetProjectValue("修改模板 ID", Project.TemplateEntityId, value, item => Project.TemplateEntityId = item); }
+    public int ProjectTemplateEntityId
+    {
+        get => Project.TemplateEntityId;
+        set
+        {
+            if (Project.TemplateEntityId == value) return;
+            RecordUndo("修改模板 ID");
+            Project.TemplateEntityId = value;
+            if (Project.Kind == EntityKind.Plant &&
+                PlantTemplateCatalog.Find(value) is { IsRuntimeTemplate: true } template)
+                Project.CarrierReanimation = template.CarrierReanimation;
+            RaiseProjectEditProperties();
+            NotifyVisualChanged();
+        }
+    }
     public string ProjectTemplateSummary
     {
         get

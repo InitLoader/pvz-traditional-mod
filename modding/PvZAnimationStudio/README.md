@@ -37,7 +37,7 @@
 本机发布版：
 
 ```text
-H:\pvz\modding\dist\PvZAnimationStudio\PvZAnimationStudio.exe
+H:\pvz\modding\dist\PvZAnimationStudio.runtimefix\PvZAnimationStudio.exe
 ```
 
 从源码启动：
@@ -114,10 +114,11 @@ ZIP 中使用 `generated/<id>/*.fragment.jsonc`，便于人工审查后合并；
 
 ## 当前边界
 
-编辑器与格式打包器已经可用，但“文件可生成”不等于“游戏运行时已经支持真正新实体”。当前 DLL 仍缺少自定义 `ReanimatorDefinition` 注入、自定义僵尸运行时和完整动作事件控制器。因此：
+编辑器与格式打包器已经可用，自定义植物的主体 `ReanimatorDefinition` 也已接入游戏，但“文件可生成”仍不等于所有实体和动作都已支持。因此：
 
 - 可以安全编辑、重打包和登记原创动画资源。
-- 自定义植物配置可接入现有模板载体；原创动画最终替换仍取决于后续运行时 Definition 注入。
+- 自定义植物填写 `animationId` 后会替换模板的主体动画；攻击动画必须保留模板会调用的同名轨道，例如香蒲使用 `anim_shooting`。选择植物模板时编辑器会同步载体 Reanimation，避免模板 ID 与导出元数据错配。
+- 多头、独立眨眼和其他附属 Reanimation 当前仍由模板创建；这些部分需要后续专用适配器，不能仅靠一个 body compiled 自动替换。
 - 僵尸配置目前生成到独立文件，等待 `custom_zombie_runtime` 接入，避免假装已经能在游戏中生成真正新僵尸。
 - 曲线在编辑器中保留 Bezier 关键点与手柄，同时烘焙为原版可读取的逐帧数值；当前还没有骨骼 IK、曲线修改器和音频时间轴。
 
