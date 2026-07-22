@@ -10,6 +10,7 @@ public sealed record EditorSnapshot(
 
 public sealed class EditHistoryService
 {
+    public const int MaximumEntries = 100;
     private readonly List<(string Name, EditorSnapshot Snapshot)> _undo = [];
     private readonly List<(string Name, EditorSnapshot Snapshot)> _redo = [];
 
@@ -27,6 +28,8 @@ public sealed class EditHistoryService
     public void Record(string name, EditorSnapshot snapshot)
     {
         _undo.Add((name, snapshot));
+        if (_undo.Count > MaximumEntries)
+            _undo.RemoveRange(0, _undo.Count - MaximumEntries);
         _redo.Clear();
     }
 
@@ -45,6 +48,8 @@ public sealed class EditHistoryService
         var entry = _redo[^1];
         _redo.RemoveAt(_redo.Count - 1);
         _undo.Add((entry.Name, current));
+        if (_undo.Count > MaximumEntries)
+            _undo.RemoveRange(0, _undo.Count - MaximumEntries);
         return entry;
     }
 }

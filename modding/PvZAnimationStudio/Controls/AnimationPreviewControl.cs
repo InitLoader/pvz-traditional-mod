@@ -25,7 +25,9 @@ public sealed class AnimationPreviewControl : FrameworkElement
     private Point _lastMouse;
     private Point _dragStart;
     private Point _selectedPivot;
+    private Point _selectedLocalCenter;
     private GizmoHandle _activeHandle;
+    private bool _modalTransform;
     private bool _panning;
     private Vector _pan;
     private double _zoom = 1;
@@ -42,6 +44,7 @@ public sealed class AnimationPreviewControl : FrameworkElement
         MouseMove += OnMouseMove;
         MouseUp += OnMouseUp;
         MouseWheel += OnMouseWheel;
+        KeyDown += OnKeyDown;
         DragOver += OnDragOver;
         Drop += OnDrop;
         MouseLeave += (_, _) => { if (_activeHandle == GizmoHandle.None) Cursor = Cursors.Arrow; };
@@ -124,6 +127,7 @@ public sealed class AnimationPreviewControl : FrameworkElement
         if (selected is not null)
         {
             _selectedPivot = selected.Pivot;
+            _selectedLocalCenter = new Point(selected.LocalBounds.Width / 2, selected.LocalBounds.Height / 2);
             DrawGizmo(context, selected.Pivot, _viewModel.ActiveTool);
         }
 
@@ -164,7 +168,7 @@ public sealed class AnimationPreviewControl : FrameworkElement
             // uses top-left coordinates, so the equivalent local rectangle starts at 0,0.
             // Centering it here again shifts every rotated body part by half its bitmap.
             var localBounds = new Rect(0, 0, bitmap.PixelWidth, bitmap.PixelHeight);
-            var pivot = new Point(matrix.OffsetX, matrix.OffsetY);
+            var pivot = matrix.Transform(new Point(localBounds.Width / 2, localBounds.Height / 2));
             if (previewFrame.Selectable)
                 _renderedParts.Add(new RenderedPart(track, matrix, localBounds, pivot));
 
@@ -304,9 +308,9 @@ public sealed class AnimationPreviewControl : FrameworkElement
         var tool = _viewModel.ActiveTool switch
         {
             EditorTool.Select => "选择(Q)",
-            EditorTool.Move => "移动(W)",
-            EditorTool.Rotate => "旋转(E)",
-            _ => "缩放(R)"
+            EditorTool.Move => "移动(G/W)",
+            EditorTool.Rotate => "旋转(R/E)",
+            _ => "缩放(S)"
         };
         var line1 = MakeText($"{_viewModel.FrameLabel}    视图 {_zoom:P0}    工具：{tool}", 13, Brushes.White, FontWeights.SemiBold);
         var selectedName = _viewModel.SelectedTrack?.Name ?? "未选择部件";
@@ -329,6 +333,13 @@ public sealed class AnimationPreviewControl : FrameworkElement
     private void OnMouseDown(object sender, MouseButtonEventArgs eventArgs)
     {
         Focus();
+        if (_modalTransform)
+        {
+            if (eventArgs.ChangedButton == MouseButton.Left) CompleteModalTransform();
+            else if (eventArgs.ChangedButton == MouseButton.Right) CancelModalTransform();
+            eventArgs.Handled = true;
+            return;
+        }
         _lastMouse = _dragStart = eventArgs.GetPosition(this);
         if (eventArgs.ChangedButton == MouseButton.Middle)
         {
@@ -346,6 +357,7 @@ public sealed class AnimationPreviewControl : FrameworkElement
             if (hit is null) return;
             _viewModel.SelectedTrack = hit.Track;
             _selectedPivot = hit.Pivot;
+            _selectedLocalCenter = new Point(hit.LocalBounds.Width / 2, hit.LocalBounds.Height / 2);
             if (_viewModel.ActiveTool == EditorTool.Move) _activeHandle = GizmoHandle.FreeMove;
         }
 
@@ -373,7 +385,8 @@ public sealed class AnimationPreviewControl : FrameworkElement
             InvalidateVisual();
             return;
         }
-        if (_activeHandle != GizmoHandle.None && _viewModel is not null && eventArgs.LeftButton == MouseButtonState.Pressed)
+        if (_activeHandle != GizmoHandle.None && _viewModel is not null &&
+            (_modalTransform || eventArgs.LeftButton == MouseButtonState.Pressed))
         {
             var delta = current - _lastMouse;
             switch (_activeHandle)
@@ -400,7 +413,7 @@ public sealed class AnimationPreviewControl : FrameworkElement
                 case GizmoHandle.Rotate:
                     var before = Math.Atan2(_lastMouse.Y - _selectedPivot.Y, _lastMouse.X - _selectedPivot.X);
                     var after = Math.Atan2(current.Y - _selectedPivot.Y, current.X - _selectedPivot.X);
-                    _viewModel.RotateSelected((float)((after - before) * 180 / Math.PI));
+                    _viewModel.RotateSelectedAround((float)((after - before) * 180 / Math.PI), _selectedLocalCenter);
                     break;
             }
             _lastMouse = current;
@@ -412,6 +425,7 @@ public sealed class AnimationPreviewControl : FrameworkElement
 
     private void OnMouseUp(object sender, MouseButtonEventArgs eventArgs)
     {
+        if (_modalTransform) return;
         if (_activeHandle != GizmoHandle.None) _viewModel?.EndEditTransaction();
         _panning = false;
         _activeHandle = GizmoHandle.None;
@@ -434,6 +448,68 @@ public sealed class AnimationPreviewControl : FrameworkElement
             InvalidateVisual();
         }
         eventArgs.Handled = true;
+    }
+
+    public bool BeginModalTransform(EditorTool tool)
+    {
+        if (_viewModel?.SelectedTrack is null || tool == EditorTool.Select) return false;
+        var selected = _renderedParts.LastOrDefault(part => ReferenceEquals(part.Track, _viewModel.SelectedTrack));
+        if (selected is null) return false;
+        Focus();
+        _viewModel.ActiveTool = tool;
+        _selectedPivot = selected.Pivot;
+        _selectedLocalCenter = new Point(selected.LocalBounds.Width / 2, selected.LocalBounds.Height / 2);
+        _lastMouse = Mouse.GetPosition(this);
+        if (tool == EditorTool.Rotate && (_lastMouse - _selectedPivot).Length < 8)
+            _lastMouse = new Point(_selectedPivot.X + 40, _selectedPivot.Y);
+        _activeHandle = tool switch
+        {
+            EditorTool.Rotate => GizmoHandle.Rotate,
+            EditorTool.Scale => GizmoHandle.ScaleUniform,
+            _ => GizmoHandle.FreeMove
+        };
+        _viewModel.BeginEditTransaction(tool switch
+        {
+            EditorTool.Rotate => "鼠标旋转部件",
+            EditorTool.Scale => "鼠标缩放部件",
+            _ => "鼠标移动部件"
+        });
+        _modalTransform = true;
+        Cursor = tool == EditorTool.Rotate ? Cursors.Cross : Cursors.SizeAll;
+        CaptureMouse();
+        InvalidateVisual();
+        return true;
+    }
+
+    private void CompleteModalTransform()
+    {
+        _viewModel?.EndEditTransaction();
+        EndModalCapture();
+    }
+
+    private void CancelModalTransform()
+    {
+        _viewModel?.EndEditTransaction();
+        _viewModel?.Undo();
+        EndModalCapture();
+    }
+
+    private void EndModalCapture()
+    {
+        _modalTransform = false;
+        _activeHandle = GizmoHandle.None;
+        Cursor = Cursors.Arrow;
+        if (IsMouseCaptured) ReleaseMouseCapture();
+        InvalidateVisual();
+    }
+
+    private void OnKeyDown(object sender, KeyEventArgs eventArgs)
+    {
+        if (eventArgs.Key == Key.Escape && _modalTransform)
+        {
+            CancelModalTransform();
+            eventArgs.Handled = true;
+        }
     }
 
     private RenderedPart? HitTestPart(Point point)

@@ -75,9 +75,9 @@
             <Button IsEnabled="{Binding CanRedo}" Click="Redo_Click" ToolTip="Ctrl+Y"><TextBlock Text="{Binding RedoLabel}" Foreground="#DCE5ED" /></Button>
             <Border Width="1" Margin="7,3" Background="#596675" />
             <Button x:Name="SelectToolButton" Content="Q 选择" Click="SelectTool_Click" />
-            <Button x:Name="MoveToolButton" Content="W 移动" Click="MoveTool_Click" />
-            <Button x:Name="RotateToolButton" Content="E 旋转" Click="RotateTool_Click" />
-            <Button x:Name="ScaleToolButton" Content="R 缩放" Click="ScaleTool_Click" />
+            <Button x:Name="MoveToolButton" Content="W/G 移动" Click="MoveTool_Click" />
+            <Button x:Name="RotateToolButton" Content="E/R 旋转" Click="RotateTool_Click" />
+            <Button x:Name="ScaleToolButton" Content="S 缩放" Click="ScaleTool_Click" />
             <Border Width="1" Margin="7,3" Background="#596675" />
             <Button x:Name="PlayButton" Content="▶ 播放" Click="Play_Click" />
             <Button Content="■ 停止" Click="Stop_Click" />

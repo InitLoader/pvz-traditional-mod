@@ -4,6 +4,9 @@ using PvZAnimationStudio.Services;
 
 namespace PvZAnimationStudio.ViewModels;
 
+public readonly record struct TimelineKeySelection(string TrackId, int Frame);
+public readonly record struct CurveKeySelection(CurveChannel Channel, int Frame);
+
 public sealed class EditorViewModel : ObservableObject
 {
     private readonly ActionCatalogService _actionCatalog;
@@ -122,9 +125,9 @@ public sealed class EditorViewModel : ObservableObject
             Status = value switch
             {
                 EditorTool.Select => "选择工具 Q：单击部件选择，不修改动画",
-                EditorTool.Move => "移动工具 W/G：拖动中心或红/蓝轴；方向键微调，Shift 加速",
-                EditorTool.Rotate => "旋转工具 E：拖动黄色圆环",
-                _ => "缩放工具 R/S：红色 X、蓝色 Y、黄色对角等比缩放"
+                EditorTool.Move => "移动工具 W/G：W 切换操纵器，G 进入鼠标移动；方向键微调",
+                EditorTool.Rotate => "旋转工具 E/R：E 切换操纵器，R 围绕图片中心跟随鼠标旋转",
+                _ => "缩放工具 S：按 S 进入鼠标等比缩放，或拖红色 X、蓝色 Y、黄色对角手柄"
             };
             NotifyVisualChanged();
         }
@@ -377,9 +380,7 @@ public sealed class EditorViewModel : ObservableObject
         targetFrame = Math.Clamp(targetFrame, TimelineFrameStart, TimelineFrameEnd);
         if (sourceFrame == targetFrame) return false;
         RecordUndo("移动轨道关键帧");
-        var source = SelectedTrack.Frames[sourceFrame].Clone();
-        MergeExplicitFrame(SelectedTrack.Frames[targetFrame], source);
-        SelectedTrack.Frames[sourceFrame].Clear();
+        SwapTimelineFrames(SelectedTrack, sourceFrame, targetFrame);
         _curveService.MoveFrameKeys(Project, SelectedTrack, sourceFrame, targetFrame);
         _currentFrame = targetFrame;
         RaisePropertyChanged(nameof(CurrentFrame));
@@ -387,6 +388,65 @@ public sealed class EditorViewModel : ObservableObject
         Status = $"已将 {SelectedTrack.Name} 的关键帧移动到第 {targetFrame + 1} 帧";
         NotifyVisualChanged();
         return true;
+    }
+
+    public IReadOnlyCollection<TimelineKeySelection> MoveTimelineKeys(
+        IReadOnlyCollection<TimelineKeySelection> selection, int offset)
+    {
+        if (selection.Count == 0 || offset == 0) return selection;
+        RecordUndo("批量移动轨道关键帧");
+        var result = selection.ToHashSet();
+        var direction = Math.Sign(offset);
+        for (var step = 0; step < Math.Abs(offset); step++)
+        {
+            foreach (var group in result.GroupBy(item => item.TrackId).ToArray())
+            {
+                var track = Project.Animation.Tracks.FirstOrDefault(item => item.EditorId == group.Key);
+                if (track is null) continue;
+                var frames = group.Select(item => item.Frame)
+                    .OrderBy(frame => direction > 0 ? -frame : frame).ToArray();
+                foreach (var source in frames)
+                {
+                    var target = source + direction;
+                    if (target < TimelineFrameStart || target > TimelineFrameEnd) continue;
+                    SwapTimelineFrames(track, source, target);
+                    _curveService.MoveFrameKeys(Project, track, source, target);
+                    result.Remove(new TimelineKeySelection(track.EditorId, source));
+                    result.Add(new TimelineKeySelection(track.EditorId, target));
+                }
+            }
+        }
+        var primary = result.FirstOrDefault();
+        var primaryTrack = Project.Animation.Tracks.FirstOrDefault(item => item.EditorId == primary.TrackId);
+        if (primaryTrack is not null)
+        {
+            _selectedTrack = primaryTrack;
+            _currentFrame = primary.Frame;
+            RaisePropertyChanged(nameof(SelectedTrack));
+            RaisePropertyChanged(nameof(CurrentFrame));
+        }
+        RaiseFrameProperties();
+        NotifyVisualChanged();
+        return result;
+    }
+
+    public void DeleteTimelineKeys(IReadOnlyCollection<TimelineKeySelection> selection)
+    {
+        if (selection.Count == 0) return;
+        RecordUndo("批量删除轨道关键帧");
+        foreach (var group in selection.GroupBy(item => item.TrackId))
+        {
+            var track = Project.Animation.Tracks.FirstOrDefault(item => item.EditorId == group.Key);
+            if (track is null) continue;
+            foreach (var frame in group.Select(item => item.Frame).Distinct())
+            {
+                if (frame < 0 || frame >= track.Frames.Count) continue;
+                track.Frames[frame].Clear();
+                _curveService.DeleteFrameKeys(Project, track, frame);
+            }
+        }
+        RaiseFrameProperties();
+        NotifyVisualChanged();
     }
 
     public bool NudgeCurrentKeyframe(int offset) => MoveCurrentKeyframe(CurrentFrame + offset);
@@ -436,6 +496,62 @@ public sealed class EditorViewModel : ObservableObject
         _curveService.MoveKey(Project, SelectedTrack, channel, sourceFrame, targetFrame, value);
         _currentFrame = targetFrame;
         RaisePropertyChanged(nameof(CurrentFrame));
+        RaiseFrameProperties();
+        NotifyVisualChanged();
+    }
+
+    public IReadOnlyCollection<CurveKeySelection> MoveCurveKeys(
+        IReadOnlyCollection<CurveKeySelection> selection, int frameOffset, float valueOffset)
+    {
+        if (SelectedTrack is null || selection.Count == 0 || frameOffset == 0 && Math.Abs(valueOffset) < 0.000001f)
+            return selection;
+        RecordUndo("批量移动曲线关键点");
+        var result = selection.ToHashSet();
+        var direction = Math.Sign(frameOffset);
+        for (var step = 0; step < Math.Abs(frameOffset); step++)
+        {
+            foreach (var group in result.GroupBy(item => item.Channel).ToArray())
+            {
+                var frames = group.Select(item => item.Frame)
+                    .OrderBy(frame => direction > 0 ? -frame : frame).ToArray();
+                foreach (var source in frames)
+                {
+                    var target = source + direction;
+                    if (target < TimelineFrameStart || target > TimelineFrameEnd) continue;
+                    var curve = _curveService.GetCurveForDisplay(Project, SelectedTrack, group.Key);
+                    var key = curve.Keys.FirstOrDefault(item => item.Frame == source);
+                    if (key is null) continue;
+                    _curveService.MoveKey(Project, SelectedTrack, group.Key, source, target, key.Value);
+                    result.Remove(new CurveKeySelection(group.Key, source));
+                    result.Add(new CurveKeySelection(group.Key, target));
+                }
+            }
+        }
+        if (Math.Abs(valueOffset) >= 0.000001f)
+        {
+            foreach (var item in result)
+            {
+                var curve = _curveService.GetCurveForDisplay(Project, SelectedTrack, item.Channel);
+                var key = curve.Keys.FirstOrDefault(candidate => candidate.Frame == item.Frame);
+                if (key is not null)
+                    _curveService.MoveKey(Project, SelectedTrack, item.Channel, item.Frame, item.Frame,
+                        key.Value + valueOffset);
+            }
+        }
+        var primary = result.First();
+        _currentFrame = primary.Frame;
+        RaisePropertyChanged(nameof(CurrentFrame));
+        RaiseFrameProperties();
+        NotifyVisualChanged();
+        return result;
+    }
+
+    public void DeleteCurveKeys(IReadOnlyCollection<CurveKeySelection> selection)
+    {
+        if (SelectedTrack is null || selection.Count == 0) return;
+        RecordUndo("批量删除曲线关键点");
+        foreach (var item in selection)
+            _curveService.DeleteKey(Project, SelectedTrack, item.Channel, item.Frame);
         RaiseFrameProperties();
         NotifyVisualChanged();
     }
@@ -513,13 +629,25 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     public void RotateSelected(float deltaDegrees)
+        => RotateSelectedAround(deltaDegrees, new System.Windows.Point(0, 0));
+
+    public void RotateSelectedAround(float deltaDegrees, System.Windows.Point localCenter)
     {
         if (SelectedTrack is null || SelectedTrack.IsActionTrack) return;
         RecordUndo("旋转部件");
         var resolved = SelectedTrack.ResolveFrame(CurrentFrame);
+        var oldMatrix = ReanimationRenderMath.CreateScreenMatrix(resolved, 1, new System.Windows.Point());
+        var fixedCenter = oldMatrix.Transform(localCenter);
         var frame = EnsureCurrentFrame();
         frame.SkewX = resolved.SkewX + deltaDegrees;
         frame.SkewY = resolved.SkewY + deltaDegrees;
+        var rotated = SelectedTrack.ResolveFrame(CurrentFrame);
+        var newMatrix = ReanimationRenderMath.CreateScreenMatrix(rotated, 1, new System.Windows.Point());
+        var movedCenter = newMatrix.Transform(localCenter);
+        frame.X = rotated.X + (float)(fixedCenter.X - movedCenter.X);
+        frame.Y = rotated.Y + (float)(fixedCenter.Y - movedCenter.Y);
+        SyncCurveKey(CurveChannel.X);
+        SyncCurveKey(CurveChannel.Y);
         SyncCurveKey(CurveChannel.SkewX);
         SyncCurveKey(CurveChannel.SkewY);
         RaiseFrameProperties();
@@ -594,19 +722,11 @@ public sealed class EditorViewModel : ObservableObject
         if (curve is not null) _curveService.BakeCurve(Project, SelectedTrack, curve);
     }
 
-    private static void MergeExplicitFrame(AnimationFrame target, AnimationFrame source)
+    private static void SwapTimelineFrames(AnimationTrack track, int first, int second)
     {
-        if (source.X.HasValue) target.X = source.X;
-        if (source.Y.HasValue) target.Y = source.Y;
-        if (source.SkewX.HasValue) target.SkewX = source.SkewX;
-        if (source.SkewY.HasValue) target.SkewY = source.SkewY;
-        if (source.ScaleX.HasValue) target.ScaleX = source.ScaleX;
-        if (source.ScaleY.HasValue) target.ScaleY = source.ScaleY;
-        if (source.Frame.HasValue) target.Frame = source.Frame;
-        if (source.Alpha.HasValue) target.Alpha = source.Alpha;
-        if (source.Image is not null) target.Image = source.Image;
-        if (source.Font is not null) target.Font = source.Font;
-        if (source.Text is not null) target.Text = source.Text;
+        var value = track.Frames[first];
+        track.Frames[first] = track.Frames[second];
+        track.Frames[second] = value;
     }
 
     private void SetProjectValue<T>(string historyName, T current, T value, Action<T> setter)

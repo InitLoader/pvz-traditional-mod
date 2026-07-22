@@ -204,7 +204,9 @@ public sealed class AnimationCurveService
         if (sourceFrame != targetFrame)
         {
             var occupied = curve.Keys.FirstOrDefault(item => item.Frame == targetFrame && !ReferenceEquals(item, key));
-            if (occupied is not null) curve.Keys.Remove(occupied);
+            // Blender-style reordering: crossing an occupied frame swaps the two
+            // keys instead of destructively merging the key being crossed.
+            if (occupied is not null) occupied.Frame = sourceFrame;
             SetExplicitValue(track.Frames[sourceFrame], channel, null);
             key.Frame = targetFrame;
             SortKeys(curve);
@@ -229,7 +231,7 @@ public sealed class AnimationCurveService
             var key = curve.Keys.FirstOrDefault(item => item.Frame == sourceFrame);
             if (key is null) continue;
             var occupied = curve.Keys.FirstOrDefault(item => item.Frame == targetFrame && !ReferenceEquals(item, key));
-            if (occupied is not null) curve.Keys.Remove(occupied);
+            if (occupied is not null) occupied.Frame = sourceFrame;
             key.Frame = targetFrame;
             SortKeys(curve);
             BakeCurve(project, track, curve);

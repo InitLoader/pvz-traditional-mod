@@ -9,7 +9,7 @@ namespace PvZAnimationStudio.Controls;
 
 public sealed class GraphEditorControl : FrameworkElement
 {
-    private enum DragTarget { None, Key, LeftHandle, RightHandle, Pan }
+    private enum DragTarget { None, Key, LeftHandle, RightHandle, Pan, Box }
     private sealed record ChannelStyle(CurveChannel Channel, string Name, Color Color);
     private sealed record RenderedKey(CurveChannel Channel, int Frame, Point Point);
     private sealed record RenderedHandle(CurveChannel Channel, int Frame, bool Left, Point Point);
@@ -31,6 +31,7 @@ public sealed class GraphEditorControl : FrameworkElement
     private readonly List<RenderedHandle> _renderedHandles = [];
     private readonly List<RenderedLegend> _renderedLegends = [];
     private EditorViewModel? _viewModel;
+    private readonly HashSet<CurveKeySelection> _selectedKeys = [];
     private CurveChannel? _selectedChannel;
     private int _selectedFrame;
     private DragTarget _dragTarget;
@@ -38,6 +39,10 @@ public sealed class GraphEditorControl : FrameworkElement
     private Point _dragStart;
     private Point _lastPanPoint;
     private int _dragFrame;
+    private Point _lastDragPoint;
+    private bool _boxSelectArmed;
+    private bool _boxAdditive;
+    private Rect _boxRect;
     private Rect _plotRect;
     private float _valueMinimum = -1;
     private float _valueMaximum = 1;
@@ -95,19 +100,19 @@ public sealed class GraphEditorControl : FrameworkElement
 
     public void NudgeSelected(int offset)
     {
-        if (_viewModel is null || !_selectedChannel.HasValue || GetSelectedKey() is null) return;
-        var target = Math.Clamp(_selectedFrame + offset, _viewModel.TimelineFrameStart, _viewModel.TimelineFrameEnd);
-        if (target == _selectedFrame) return;
-        var value = GetSelectedKey()!.Value;
-        _viewModel.MoveCurveKey(_selectedChannel.Value, _selectedFrame, target, value);
-        _selectedFrame = target;
+        if (_viewModel is null || _selectedKeys.Count == 0) return;
+        var moved = _viewModel.MoveCurveKeys(_selectedKeys, offset, 0);
+        ReplaceSelection(moved);
+        if (_selectedChannel.HasValue && _selectedKeys.Any(item => item.Channel == _selectedChannel.Value))
+            _selectedFrame = _selectedKeys.First(item => item.Channel == _selectedChannel.Value).Frame;
         SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void DeleteSelected()
     {
-        if (_viewModel is null || !_selectedChannel.HasValue || GetSelectedKey() is null) return;
-        _viewModel.DeleteCurveKey(_selectedChannel.Value, _selectedFrame);
+        if (_viewModel is null || _selectedKeys.Count == 0) return;
+        _viewModel.DeleteCurveKeys(_selectedKeys);
+        _selectedKeys.Clear();
         EnsureSelection();
         SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -152,6 +157,9 @@ public sealed class GraphEditorControl : FrameworkElement
         foreach (var style in Styles.Where(style => channels.Contains(style.Channel))) DrawCurve(context, style);
         DrawPlayhead(context);
         DrawSelectionStatus(context);
+        if (_dragTarget == DragTarget.Box)
+            context.DrawRectangle(new SolidColorBrush(Color.FromArgb(42, 73, 151, 255)),
+                new Pen(new SolidColorBrush(Color.FromRgb(95, 176, 255)), 1), _boxRect);
     }
 
     private void DrawLegend(DrawingContext context, IReadOnlyList<CurveChannel> channels)
@@ -268,10 +276,11 @@ public sealed class GraphEditorControl : FrameworkElement
         {
             var point = ToPoint(key.Frame, key.Value);
             _renderedKeys.Add(new RenderedKey(style.Channel, key.Frame, point));
-            var selected = style.Channel == _selectedChannel && key.Frame == _selectedFrame;
+            var selected = _selectedKeys.Contains(new CurveKeySelection(style.Channel, key.Frame));
             context.DrawEllipse(selected ? Brushes.Orange : Brushes.Black,
                 new Pen(new SolidColorBrush(style.Color), selected ? 2 : 1.2), point, selected ? 5 : 3.8, selected ? 5 : 3.8);
-            if (selected && curve.Interpolation == CurveInterpolationMode.Bezier) DrawHandles(context, style, curve, key);
+            if (selected && style.Channel == _selectedChannel && key.Frame == _selectedFrame &&
+                curve.Interpolation == CurveInterpolationMode.Bezier) DrawHandles(context, style, curve, key);
         }
     }
 
@@ -327,29 +336,50 @@ public sealed class GraphEditorControl : FrameworkElement
         if (_viewModel is null) return;
         Focus();
         var point = eventArgs.GetPosition(this);
+        if (_boxSelectArmed && _plotRect.Contains(point))
+        {
+            _dragTarget = DragTarget.Box;
+            _boxAdditive = Keyboard.Modifiers.HasFlag(ModifierKeys.Control) ||
+                           Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+            _dragStart = point;
+            _boxRect = new Rect(point, point);
+            CaptureMouse();
+            eventArgs.Handled = true;
+            return;
+        }
         var legend = _renderedLegends.FirstOrDefault(item => item.Bounds.Contains(point));
         if (legend is not null)
         {
             var keys = _viewModel.GetCurveKeyFrames(legend.Channel);
             if (keys.Count > 0)
-                Select(legend.Channel, keys.OrderBy(frame => Math.Abs(frame - _viewModel.CurrentFrame)).First());
+                Select(legend.Channel, keys.OrderBy(frame => Math.Abs(frame - _viewModel.CurrentFrame)).First(), false);
             eventArgs.Handled = true;
             return;
         }
         var handle = FindHandle(point);
         if (handle is not null)
         {
-            Select(handle.Channel, handle.Frame);
+            Select(handle.Channel, handle.Frame, false);
             _dragTarget = handle.Left ? DragTarget.LeftHandle : DragTarget.RightHandle;
         }
         else
         {
             var key = FindKey(point);
-            if (key is null) return;
-            Select(key.Channel, key.Frame);
+            if (key is null)
+            {
+                if (!Keyboard.Modifiers.HasFlag(ModifierKeys.Control) &&
+                    !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) _selectedKeys.Clear();
+                InvalidateVisual();
+                return;
+            }
+            var additive = Keyboard.Modifiers.HasFlag(ModifierKeys.Control) ||
+                           Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+            Select(key.Channel, key.Frame, additive);
+            if (!_selectedKeys.Contains(new CurveKeySelection(key.Channel, key.Frame))) return;
             _dragTarget = DragTarget.Key;
         }
         _dragStart = point;
+        _lastDragPoint = point;
         _dragFrame = _selectedFrame;
         _dragTransaction = false;
         CaptureMouse();
@@ -378,6 +408,12 @@ public sealed class GraphEditorControl : FrameworkElement
     {
         if (_viewModel is null || _dragTarget == DragTarget.None) return;
         var point = eventArgs.GetPosition(this);
+        if (_dragTarget == DragTarget.Box && eventArgs.LeftButton == MouseButtonState.Pressed)
+        {
+            _boxRect = new Rect(_dragStart, point);
+            InvalidateVisual();
+            return;
+        }
         if (_dragTarget == DragTarget.Pan && eventArgs.MiddleButton == MouseButtonState.Pressed)
         {
             _panX += (point.X - _lastPanPoint.X) / Math.Max(1, _plotRect.Width);
@@ -396,12 +432,19 @@ public sealed class GraphEditorControl : FrameworkElement
         if (!_dragTransaction) return;
         if (_dragTarget == DragTarget.Key)
         {
+            var previousFrame = Math.Clamp((int)Math.Round(XToFrame(_lastDragPoint.X)),
+                _viewModel.TimelineFrameStart, _viewModel.TimelineFrameEnd);
             var targetFrame = Math.Clamp((int)Math.Round(XToFrame(point.X)),
                 _viewModel.TimelineFrameStart, _viewModel.TimelineFrameEnd);
-            var value = (float)YToValue(point.Y);
-            _viewModel.MoveCurveKey(_selectedChannel.Value, _dragFrame, targetFrame, value);
-            _dragFrame = targetFrame;
-            _selectedFrame = targetFrame;
+            var frameOffset = targetFrame - previousFrame;
+            var valueOffset = (float)(YToValue(point.Y) - YToValue(_lastDragPoint.Y));
+            var moved = _viewModel.MoveCurveKeys(_selectedKeys, frameOffset, valueOffset);
+            ReplaceSelection(moved);
+            var primaryTarget = _selectedFrame + frameOffset;
+            if (_selectedKeys.Contains(new CurveKeySelection(_selectedChannel.Value, primaryTarget)))
+                _selectedFrame = primaryTarget;
+            _dragFrame = _selectedFrame;
+            _lastDragPoint = point;
         }
         else
         {
@@ -414,6 +457,11 @@ public sealed class GraphEditorControl : FrameworkElement
     private void OnMouseUp(object sender, MouseButtonEventArgs eventArgs)
     {
         if (_dragTarget == DragTarget.None) return;
+        if (_dragTarget == DragTarget.Box)
+        {
+            ApplyBoxSelection();
+            _boxSelectArmed = false;
+        }
         if (_dragTransaction) _viewModel?.EndEditTransaction();
         _dragTarget = DragTarget.None;
         _dragTransaction = false;
@@ -438,6 +486,20 @@ public sealed class GraphEditorControl : FrameworkElement
             DeleteSelected();
             eventArgs.Handled = true;
         }
+        else if (eventArgs.Key == Key.B)
+        {
+            _boxSelectArmed = true;
+            Cursor = Cursors.Cross;
+            eventArgs.Handled = true;
+        }
+        else if (eventArgs.Key == Key.Escape && _boxSelectArmed)
+        {
+            _boxSelectArmed = false;
+            _dragTarget = DragTarget.None;
+            if (IsMouseCaptured) ReleaseMouseCapture();
+            InvalidateVisual();
+            eventArgs.Handled = true;
+        }
         else if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) && eventArgs.Key is Key.Left or Key.Right)
         {
             NudgeSelected(eventArgs.Key == Key.Left ? -1 : 1);
@@ -450,8 +512,18 @@ public sealed class GraphEditorControl : FrameworkElement
         }
     }
 
-    private void Select(CurveChannel channel, int frame)
+    private void Select(CurveChannel channel, int frame, bool additive)
     {
+        var selection = new CurveKeySelection(channel, frame);
+        if (additive)
+        {
+            if (!_selectedKeys.Add(selection)) _selectedKeys.Remove(selection);
+        }
+        else if (!_selectedKeys.Contains(selection))
+        {
+            _selectedKeys.Clear();
+            _selectedKeys.Add(selection);
+        }
         _selectedChannel = channel;
         _selectedFrame = frame;
         if (_viewModel is not null) _viewModel.CurrentFrame = frame;
@@ -469,6 +541,32 @@ public sealed class GraphEditorControl : FrameworkElement
         if (keys.Count == 0) return;
         if (!keys.Contains(_selectedFrame))
             _selectedFrame = keys.OrderBy(frame => Math.Abs(frame - _viewModel.CurrentFrame)).First();
+        _selectedKeys.RemoveWhere(item => !channels.Contains(item.Channel) ||
+            !_viewModel.GetCurveKeyFrames(item.Channel).Contains(item.Frame));
+        if (_selectedKeys.Count == 0 && keys.Contains(_selectedFrame))
+            _selectedKeys.Add(new CurveKeySelection(_selectedChannel.Value, _selectedFrame));
+    }
+
+    private void ApplyBoxSelection()
+    {
+        if (!_boxAdditive) _selectedKeys.Clear();
+        foreach (var key in _renderedKeys.Where(key => _boxRect.Contains(key.Point)))
+            _selectedKeys.Add(new CurveKeySelection(key.Channel, key.Frame));
+        if (_selectedKeys.Count > 0)
+        {
+            var first = _selectedKeys.First();
+            _selectedChannel = first.Channel;
+            _selectedFrame = first.Frame;
+            if (_viewModel is not null) _viewModel.CurrentFrame = first.Frame;
+        }
+        SelectionChanged?.Invoke(this, EventArgs.Empty);
+        InvalidateVisual();
+    }
+
+    private void ReplaceSelection(IEnumerable<CurveKeySelection> selection)
+    {
+        _selectedKeys.Clear();
+        foreach (var item in selection) _selectedKeys.Add(item);
     }
 
     private AnimationCurveDefinition? GetSelectedCurve() =>

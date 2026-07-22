@@ -12,10 +12,16 @@ public sealed class TimelineControl : FrameworkElement
     private const double CellWidth = 14;
     private const double RowHeight = 26;
     private EditorViewModel? _viewModel;
+    private readonly HashSet<TimelineKeySelection> _selectedKeys = [];
     private bool _pendingKeyDrag;
     private bool _keyDragActive;
     private int _dragFrame;
     private Point _dragOrigin;
+    private bool _boxSelectArmed;
+    private bool _boxSelecting;
+    private bool _boxAdditive;
+    private Point _boxStart;
+    private Rect _boxRect;
 
     public TimelineControl()
     {
@@ -88,14 +94,18 @@ public sealed class TimelineControl : FrameworkElement
                     }
                 }
                 if (!_viewModel.IsMeaningfulKey(track, absoluteFrame)) continue;
+                var keySelected = _selectedKeys.Contains(new TimelineKeySelection(track.EditorId, absoluteFrame));
                 DrawDiamond(context, new Point(x + CellWidth / 2, y + RowHeight / 2 + 2),
-                    selected ? Brushes.Gold : track.IsActionTrack ? Brushes.Plum : Brushes.LightGreen);
+                    keySelected ? Brushes.Orange : selected ? Brushes.Gold : track.IsActionTrack ? Brushes.Plum : Brushes.LightGreen);
             }
         }
 
         var currentLocalFrame = _viewModel.CurrentFrame - rangeStart;
         var playheadX = HeaderWidth + currentLocalFrame * CellWidth + CellWidth / 2;
         context.DrawLine(new Pen(Brushes.OrangeRed, 2), new Point(playheadX, 0), new Point(playheadX, ActualHeight));
+        if (_boxSelecting)
+            context.DrawRectangle(new SolidColorBrush(Color.FromArgb(42, 73, 151, 255)),
+                new Pen(new SolidColorBrush(Color.FromRgb(95, 176, 255)), 1), _boxRect);
     }
 
     private static void DrawDiamond(DrawingContext context, Point center, Brush fill)
@@ -118,6 +128,18 @@ public sealed class TimelineControl : FrameworkElement
         Focus();
         var tracks = _viewModel.TimelineTracks;
         var point = eventArgs.GetPosition(this);
+        if (_boxSelectArmed && eventArgs.ChangedButton == MouseButton.Left)
+        {
+            _boxSelecting = true;
+            _boxAdditive = Keyboard.Modifiers.HasFlag(ModifierKeys.Control) ||
+                           Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+            _boxStart = point;
+            _boxRect = new Rect(point, point);
+            CaptureMouse();
+            InvalidateVisual();
+            eventArgs.Handled = true;
+            return;
+        }
         var row = (int)(point.Y / RowHeight);
         if (row < 0 || row >= tracks.Count) return;
         _viewModel.SelectedTrack = tracks[row];
@@ -126,26 +148,52 @@ public sealed class TimelineControl : FrameworkElement
             var localFrame = (int)((point.X - HeaderWidth) / CellWidth);
             _viewModel.CurrentFrame = Math.Clamp(_viewModel.TimelineFrameStart + localFrame,
                 _viewModel.TimelineFrameStart, _viewModel.TimelineFrameEnd);
+            var selection = new TimelineKeySelection(tracks[row].EditorId, _viewModel.CurrentFrame);
             if (eventArgs.ClickCount >= 2)
             {
                 _viewModel.ToggleKeyframe();
+                _selectedKeys.Clear();
+                if (_viewModel.IsMeaningfulKey(tracks[row], _viewModel.CurrentFrame)) _selectedKeys.Add(selection);
             }
             else if (_viewModel.IsMeaningfulKey(_viewModel.SelectedTrack, _viewModel.CurrentFrame))
             {
+                var additive = Keyboard.Modifiers.HasFlag(ModifierKeys.Control) ||
+                               Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+                if (additive)
+                {
+                    if (!_selectedKeys.Add(selection)) _selectedKeys.Remove(selection);
+                }
+                else if (!_selectedKeys.Contains(selection))
+                {
+                    _selectedKeys.Clear();
+                    _selectedKeys.Add(selection);
+                }
+                if (!_selectedKeys.Contains(selection)) { InvalidateVisual(); return; }
                 _pendingKeyDrag = true;
                 _keyDragActive = false;
                 _dragFrame = _viewModel.CurrentFrame;
                 _dragOrigin = point;
                 CaptureMouse();
             }
+            else if (!Keyboard.Modifiers.HasFlag(ModifierKeys.Control) &&
+                     !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+                _selectedKeys.Clear();
         }
         InvalidateVisual();
     }
 
     private void OnMouseMove(object sender, MouseEventArgs eventArgs)
     {
-        if (_viewModel is null || !_pendingKeyDrag || eventArgs.LeftButton != MouseButtonState.Pressed) return;
+        if (_viewModel is null) return;
         var point = eventArgs.GetPosition(this);
+        if (_boxSelecting)
+        {
+            if (eventArgs.LeftButton != MouseButtonState.Pressed) return;
+            _boxRect = new Rect(_boxStart, point);
+            InvalidateVisual();
+            return;
+        }
+        if (!_pendingKeyDrag || eventArgs.LeftButton != MouseButtonState.Pressed) return;
         var target = Math.Clamp(_viewModel.TimelineFrameStart +
                                 (int)Math.Floor((point.X - HeaderWidth) / CellWidth),
             _viewModel.TimelineFrameStart, _viewModel.TimelineFrameEnd);
@@ -155,11 +203,24 @@ public sealed class TimelineControl : FrameworkElement
             _keyDragActive = true;
         }
         if (!_keyDragActive || target == _dragFrame) return;
-        if (_viewModel.MoveCurrentKeyframe(target)) _dragFrame = target;
+        var moved = _viewModel.MoveTimelineKeys(_selectedKeys, target - _dragFrame);
+        _selectedKeys.Clear();
+        foreach (var key in moved) _selectedKeys.Add(key);
+        _dragFrame = target;
     }
 
     private void OnMouseUp(object sender, MouseButtonEventArgs eventArgs)
     {
+        if (_boxSelecting)
+        {
+            ApplyBoxSelection();
+            _boxSelecting = false;
+            _boxSelectArmed = false;
+            Cursor = Cursors.Arrow;
+            if (IsMouseCaptured) ReleaseMouseCapture();
+            InvalidateVisual();
+            return;
+        }
         if (!_pendingKeyDrag) return;
         if (_keyDragActive) _viewModel?.EndEditTransaction();
         _pendingKeyDrag = false;
@@ -172,13 +233,65 @@ public sealed class TimelineControl : FrameworkElement
         if (_viewModel is null) return;
         if (eventArgs.Key is Key.Delete or Key.Back)
         {
-            _viewModel.DeleteCurrentKeyframe();
+            if (_selectedKeys.Count > 0)
+            {
+                _viewModel.DeleteTimelineKeys(_selectedKeys);
+                _selectedKeys.Clear();
+            }
+            else _viewModel.DeleteCurrentKeyframe();
+            eventArgs.Handled = true;
+        }
+        else if (eventArgs.Key == Key.B)
+        {
+            _boxSelectArmed = true;
+            Cursor = Cursors.Cross;
+            eventArgs.Handled = true;
+        }
+        else if (eventArgs.Key == Key.Escape && _boxSelectArmed)
+        {
+            _boxSelectArmed = _boxSelecting = false;
+            Cursor = Cursors.Arrow;
+            if (IsMouseCaptured) ReleaseMouseCapture();
+            InvalidateVisual();
             eventArgs.Handled = true;
         }
         else if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) && eventArgs.Key is Key.Left or Key.Right)
         {
-            _viewModel.NudgeCurrentKeyframe(eventArgs.Key == Key.Left ? -1 : 1);
+            var offset = eventArgs.Key == Key.Left ? -1 : 1;
+            if (_selectedKeys.Count > 0)
+            {
+                var moved = _viewModel.MoveTimelineKeys(_selectedKeys, offset);
+                _selectedKeys.Clear();
+                foreach (var key in moved) _selectedKeys.Add(key);
+            }
+            else _viewModel.NudgeCurrentKeyframe(offset);
             eventArgs.Handled = true;
+        }
+    }
+
+    private void ApplyBoxSelection()
+    {
+        if (_viewModel is null) return;
+        if (!_boxAdditive) _selectedKeys.Clear();
+        var tracks = _viewModel.TimelineTracks;
+        for (var row = 0; row < tracks.Count; row++)
+        {
+            var track = tracks[row];
+            for (var frame = _viewModel.TimelineFrameStart; frame <= _viewModel.TimelineFrameEnd; frame++)
+            {
+                if (!_viewModel.IsMeaningfulKey(track, frame)) continue;
+                var localFrame = frame - _viewModel.TimelineFrameStart;
+                var center = new Point(HeaderWidth + localFrame * CellWidth + CellWidth / 2,
+                    row * RowHeight + RowHeight / 2 + 2);
+                if (_boxRect.Contains(center)) _selectedKeys.Add(new TimelineKeySelection(track.EditorId, frame));
+            }
+        }
+        var first = _selectedKeys.FirstOrDefault();
+        var selectedTrack = tracks.FirstOrDefault(track => track.EditorId == first.TrackId);
+        if (selectedTrack is not null)
+        {
+            _viewModel.SelectedTrack = selectedTrack;
+            _viewModel.CurrentFrame = first.Frame;
         }
     }
 
@@ -190,5 +303,14 @@ public sealed class TimelineControl : FrameworkElement
         InvalidateVisual();
     }
 
-    private void OnVisualStateChanged(object? sender, EventArgs eventArgs) => UpdateExtent();
+    private void OnVisualStateChanged(object? sender, EventArgs eventArgs)
+    {
+        if (_viewModel is not null)
+            _selectedKeys.RemoveWhere(key =>
+            {
+                var track = _viewModel.Project.Animation.Tracks.FirstOrDefault(item => item.EditorId == key.TrackId);
+                return track is null || !_viewModel.IsMeaningfulKey(track, key.Frame);
+            });
+        UpdateExtent();
+    }
 }

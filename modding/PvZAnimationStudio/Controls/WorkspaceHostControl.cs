@@ -57,6 +57,13 @@ public sealed class WorkspaceHostControl : Grid
     public void ResetAllViews() { foreach (var preview in _previews) preview.ResetView(); }
     public void RefreshImageBindings() { foreach (var browser in _browsers) browser.RefreshImageBindings(); }
 
+    public bool BeginModalTransform(EditorTool tool)
+    {
+        var preview = _previews.FirstOrDefault(item => item.IsKeyboardFocusWithin || item.IsMouseOver)
+                      ?? _previews.FirstOrDefault();
+        return preview?.BeginModalTransform(tool) == true;
+    }
+
     public void Unbind()
     {
         foreach (var preview in _previews) preview.Unbind();

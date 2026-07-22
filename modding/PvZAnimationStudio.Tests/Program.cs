@@ -315,6 +315,33 @@ try
     timelineKeyEditor.Undo();
     Assert(timelineKeyEditor.CurrentHasKey, "删除关键帧没有进入撤销历史");
 
+    var crossingTimelineEditor = new EditorViewModel(new ActionCatalogService());
+    crossingTimelineEditor.CurrentFrame = 5;
+    crossingTimelineEditor.CurrentX = 10;
+    crossingTimelineEditor.CurrentFrame = 6;
+    crossingTimelineEditor.CurrentX = 20;
+    crossingTimelineEditor.CurrentFrame = 7;
+    crossingTimelineEditor.CurrentX = 30;
+    var crossingTrackId = crossingTimelineEditor.SelectedTrack!.EditorId;
+    IReadOnlyCollection<TimelineKeySelection> timelineSelection =
+        [new TimelineKeySelection(crossingTrackId, 5)];
+    crossingTimelineEditor.BeginEditTransaction("连续跨帧");
+    timelineSelection = crossingTimelineEditor.MoveTimelineKeys(timelineSelection, 1);
+    timelineSelection = crossingTimelineEditor.MoveTimelineKeys(timelineSelection, 1);
+    crossingTimelineEditor.EndEditTransaction();
+    var crossingTimelineCurve = crossingTimelineEditor.GetCurve(CurveChannel.X)!;
+    Assert(crossingTimelineCurve.Keys.Count(key => key.Frame is >= 5 and <= 7) == 3,
+        "时间轴关键帧跨过其他关键帧时发生了合并或丢失");
+    AssertNear(crossingTimelineCurve.Keys.Single(key => key.Frame == 5).Value, 20,
+        "时间轴跨帧后被跨过的第一帧没有保留");
+    AssertNear(crossingTimelineCurve.Keys.Single(key => key.Frame == 6).Value, 30,
+        "时间轴跨帧后被跨过的第二帧没有保留");
+    AssertNear(crossingTimelineCurve.Keys.Single(key => key.Frame == 7).Value, 10,
+        "时间轴拖动帧没有按 Blender 式重排到目标位置");
+    crossingTimelineEditor.Undo();
+    AssertNear(crossingTimelineEditor.GetCurve(CurveChannel.X)!.Keys.Single(key => key.Frame == 5).Value, 10,
+        "连续跨帧拖动没有作为一个操作撤销");
+
     var curveEditor = new EditorViewModel(new ActionCatalogService());
     curveEditor.CurrentFrame = 0;
     curveEditor.CurrentX = 0;
@@ -339,6 +366,37 @@ try
     curveEditor.Undo();
     Assert(curveEditor.GetCurveKeyFrames(CurveChannel.X).Contains(12), "曲线关键点删除没有进入撤销历史");
 
+    var crossingCurveEditor = new EditorViewModel(new ActionCatalogService());
+    foreach (var (frame, value) in new[] { (5, 10f), (6, 20f), (7, 30f) })
+    {
+        crossingCurveEditor.CurrentFrame = frame;
+        crossingCurveEditor.CurrentX = value;
+    }
+    IReadOnlyCollection<CurveKeySelection> curveSelection = [new(CurveChannel.X, 5)];
+    crossingCurveEditor.BeginEditTransaction("连续拖动曲线点");
+    curveSelection = crossingCurveEditor.MoveCurveKeys(curveSelection, 1, 0);
+    curveSelection = crossingCurveEditor.MoveCurveKeys(curveSelection, 1, 5);
+    crossingCurveEditor.EndEditTransaction();
+    var crossingCurve = crossingCurveEditor.GetCurve(CurveChannel.X)!;
+    Assert(crossingCurve.Keys.Count(key => key.Frame is >= 5 and <= 7) == 3,
+        "曲线关键点跨过其他点时发生了合并或丢失");
+    AssertNear(crossingCurve.Keys.Single(key => key.Frame == 7).Value, 15,
+        "批量曲线拖动没有同时保留时间偏移和值偏移");
+
+    var centeredRotationEditor = new EditorViewModel(new ActionCatalogService());
+    centeredRotationEditor.CurrentX = 25;
+    centeredRotationEditor.CurrentY = 40;
+    centeredRotationEditor.CurrentScaleX = 1.2f;
+    centeredRotationEditor.CurrentScaleY = 0.8f;
+    var localCenter = new Point(50, 25);
+    var beforeRotation = ReanimationRenderMath.CreateScreenMatrix(
+        centeredRotationEditor.CurrentResolvedFrame!, 1, new Point()).Transform(localCenter);
+    centeredRotationEditor.RotateSelectedAround(47, localCenter);
+    var afterRotation = ReanimationRenderMath.CreateScreenMatrix(
+        centeredRotationEditor.CurrentResolvedFrame!, 1, new Point()).Transform(localCenter);
+    AssertNearDouble(afterRotation.X, beforeRotation.X, "旋转后图片中心 X 发生漂移");
+    AssertNearDouble(afterRotation.Y, beforeRotation.Y, "旋转后图片中心 Y 发生漂移");
+
     var longHistoryEditor = new EditorViewModel(new ActionCatalogService());
     var longHistoryStart = longHistoryEditor.CurrentResolvedFrame?.X ?? 0;
     for (var index = 0; index < 75; index++) longHistoryEditor.MoveSelected(1, 0);
@@ -350,6 +408,17 @@ try
     longHistoryEditor.Undo();
     longHistoryEditor.MoveSelected(3, 0);
     Assert(!longHistoryEditor.CanRedo, "撤销后产生新编辑时必须清空旧的恢复分支");
+
+    var cappedHistoryEditor = new EditorViewModel(new ActionCatalogService());
+    var cappedHistoryStart = cappedHistoryEditor.CurrentResolvedFrame?.X ?? 0;
+    for (var index = 0; index < 125; index++) cappedHistoryEditor.MoveSelected(1, 0);
+    for (var index = 0; index < EditHistoryService.MaximumEntries; index++) cappedHistoryEditor.Undo();
+    AssertNear(cappedHistoryEditor.CurrentResolvedFrame?.X, cappedHistoryStart + 25,
+        "撤销历史没有严格保留最近 100 步");
+    Assert(!cappedHistoryEditor.CanUndo, "撤销历史超过了 100 步上限");
+    for (var index = 0; index < EditHistoryService.MaximumEntries; index++) cappedHistoryEditor.Redo();
+    AssertNear(cappedHistoryEditor.CurrentResolvedFrame?.X, cappedHistoryStart + 125,
+        "100 步恢复历史没有完整保留");
 
     var fullHistoryEditor = new EditorViewModel(new ActionCatalogService());
     var originalName = fullHistoryEditor.ProjectDisplayName;
