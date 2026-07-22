@@ -288,6 +288,57 @@ try
     Assert(actionTracks.Contains(markerTrack) && actionTracks.Contains(changedTrack), "动作视图漏掉标记或变化轨道");
     Assert(!actionTracks.Contains(staticTrack), "动作视图不应列出动作期间未变化的轨道");
 
+    var playbackDocument = new AnimationDocument();
+    var playbackMarker = new AnimationTrack { Name = "anim_attack" };
+    var playbackBody = new AnimationTrack { Name = "body" };
+    playbackMarker.EnsureFrameCount(12);
+    playbackBody.EnsureFrameCount(12);
+    playbackMarker.Frames[0].Frame = 0;
+    playbackMarker.Frames[11].Frame = -1;
+    playbackBody.Frames[0].X = 0;
+    playbackBody.Frames[10].X = 100;
+    playbackDocument.Tracks.Add(playbackMarker);
+    playbackDocument.Tracks.Add(playbackBody);
+    var playbackProject = new EditorProject { Animation = playbackDocument };
+    playbackProject.Actions.Add(new ActionDefinition
+    {
+        Id = "attack",
+        DisplayName = "攻击",
+        Track = "anim_attack",
+        Loop = AnimationLoopMode.Loop,
+        Rate = playbackDocument.Fps
+    });
+    var playbackEditor = new EditorViewModel(new ActionCatalogService());
+    playbackEditor.ReplaceProject(playbackProject);
+    playbackEditor.SelectedTrack = playbackBody;
+    playbackEditor.CurrentFrame = 0;
+    playbackEditor.CurrentX = 0;
+    playbackEditor.CurrentFrame = 10;
+    playbackEditor.CurrentX = 100;
+    playbackEditor.SelectedTrack = playbackMarker;
+    playbackEditor.CurrentFrame = 0;
+    playbackEditor.SetKeyframe();
+    playbackEditor.SelectedAction = playbackProject.Actions[0];
+    Assert(playbackEditor.ActiveRange.Start == 0 && playbackEditor.ActiveRange.End == 10,
+        "动作标记 f=0 到 f=-1 被错误平滑，导致动作范围提前结束");
+    playbackEditor.CurrentFrame = 5;
+    playbackEditor.InsertFrame();
+    playbackEditor.InsertFrame();
+    Assert(playbackEditor.ActiveRange.End == 12,
+        "动作中插入空帧后动作标记范围没有和补间终点同步延长");
+    playbackEditor.SelectedTrack = playbackBody;
+    playbackEditor.CurrentFrame = playbackEditor.ActiveRange.Start;
+    playbackEditor.IsPlaying = true;
+    for (var frame = playbackEditor.ActiveRange.Start; frame < playbackEditor.ActiveRange.End; frame++)
+        playbackEditor.StepPlayback();
+    Assert(playbackEditor.CurrentFrame == playbackEditor.ActiveRange.End,
+        "动作播放尚未到达补间终点就提前循环");
+    AssertNearAnimation(playbackEditor.CurrentResolvedFrame?.X, 100,
+        "动作播放完成时位移补间没有同时到达终点");
+    playbackEditor.StepPlayback();
+    Assert(playbackEditor.CurrentFrame == playbackEditor.ActiveRange.Start,
+        "动作到达补间终点后没有按循环模式返回起点");
+
     var editor = new EditorViewModel(new ActionCatalogService());
     var originalX = editor.CurrentResolvedFrame?.X ?? 0;
     editor.MoveSelected(12, 0);

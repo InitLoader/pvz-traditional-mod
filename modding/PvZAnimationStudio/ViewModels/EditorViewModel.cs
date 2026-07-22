@@ -185,6 +185,7 @@ public sealed class EditorViewModel : ObservableObject
 
     public void ReplaceProject(EditorProject project)
     {
+        _curveService.NormalizeActionMarkerFrames(project);
         Project = project;
         _currentFrame = 0;
         _selectedTrack = project.Animation.Tracks.FirstOrDefault(track => !track.IsActionTrack)
@@ -203,6 +204,7 @@ public sealed class EditorViewModel : ObservableObject
     {
         Project.Animation = document;
         Project.Curves.Clear();
+        _curveService.NormalizeActionMarkerFrames(Project);
         Project.SourceAnimationPath = sourcePath;
         Project.Actions = _actionCatalog.InferActions(document, Project.Kind);
         _selectedTrack = document.Tracks.FirstOrDefault(track => !track.IsActionTrack)

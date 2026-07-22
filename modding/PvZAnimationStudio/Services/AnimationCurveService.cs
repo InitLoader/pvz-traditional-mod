@@ -26,7 +26,12 @@ public sealed class AnimationCurveService
     public AnimationCurveDefinition EnsureCurve(EditorProject project, AnimationTrack track, CurveChannel channel)
     {
         var existing = FindCurve(project, track, channel);
-        if (existing is not null) return existing;
+        if (existing is not null)
+        {
+            if (channel == CurveChannel.Frame && track.IsActionTrack)
+                existing.Interpolation = CurveInterpolationMode.Constant;
+            return existing;
+        }
         var curve = CreateDerivedCurve(track, channel);
         project.Curves.Add(curve);
         return curve;
@@ -37,7 +42,17 @@ public sealed class AnimationCurveService
 
     private static AnimationCurveDefinition CreateDerivedCurve(AnimationTrack track, CurveChannel channel)
     {
-        var curve = new AnimationCurveDefinition { TrackId = track.EditorId, Channel = channel };
+        var curve = new AnimationCurveDefinition
+        {
+            TrackId = track.EditorId,
+            Channel = channel,
+            // Reanimation f is a discrete image/visibility selector. In
+            // particular, anim_* marker tracks use 0 / -1 to delimit an
+            // action. Smooth interpolation would hide the action immediately.
+            Interpolation = channel == CurveChannel.Frame
+                ? CurveInterpolationMode.Constant
+                : CurveInterpolationMode.Bezier
+        };
         for (var frame = 0; frame < track.Frames.Count; frame++)
         {
             if (GetExplicitValue(track.Frames[frame], channel).HasValue)
@@ -196,7 +211,9 @@ public sealed class AnimationCurveService
         CurveInterpolationMode mode)
     {
         var curve = EnsureCurve(project, track, channel);
-        curve.Interpolation = mode;
+        curve.Interpolation = channel == CurveChannel.Frame && track.IsActionTrack
+            ? CurveInterpolationMode.Constant
+            : mode;
         BakeCurve(project, track, curve);
     }
 
@@ -284,6 +301,29 @@ public sealed class AnimationCurveService
         }
     }
 
+    public void NormalizeActionMarkerFrames(EditorProject project)
+    {
+        foreach (var track in project.Animation.Tracks.Where(track => track.IsActionTrack))
+        {
+            var curve = FindCurve(project, track, CurveChannel.Frame);
+            if (curve is not null)
+            {
+                curve.Interpolation = CurveInterpolationMode.Constant;
+                BakeCurve(project, track, curve);
+                continue;
+            }
+
+            // Repair compiled/Raw files exported by older editor builds where
+            // a 0 -> -1 marker transition was baked as fractional negatives.
+            // Those values are not meaningful image frames; leaving them in
+            // place makes the action range end before the motion tween does.
+            foreach (var frame in track.Frames)
+            {
+                if (frame.Frame is > -1f and < 0f) frame.Frame = null;
+            }
+        }
+    }
+
     public void ShiftForDeletedFrame(EditorProject project, int frame)
     {
         foreach (var curve in project.Curves)
@@ -306,6 +346,8 @@ public sealed class AnimationCurveService
 
     public void BakeCurve(EditorProject project, AnimationTrack track, AnimationCurveDefinition curve)
     {
+        if (curve.Channel == CurveChannel.Frame && track.IsActionTrack)
+            curve.Interpolation = CurveInterpolationMode.Constant;
         var keys = curve.Keys.OrderBy(key => key.Frame).ToArray();
         foreach (var frame in track.Frames) SetExplicitValue(frame, curve.Channel, null);
         if (keys.Length == 0) return;
