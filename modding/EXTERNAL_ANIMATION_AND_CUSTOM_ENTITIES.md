@@ -62,7 +62,7 @@ pvzmod/
 compiled/reanim/                            # 游戏本体已有的原版 compiled 动画，只读引用
 ```
 
-JSON/JSONC 只能放在 `pvzmod/config/` 的所属分类中；自制 Raw/compiled 动画只能放在 `pvzmod/animations/`；图片继续只放在 `pvzmod/images/`。`compiled/reanim/` 只用于引用游戏本体已有资源，不能作为新增 Mod 文件的散放目录。
+业务 JSON/JSONC 配置只能放在 `pvzmod/config/` 的所属分类中；唯一例外是规划中的原生插件元数据 `pvzmod/plugins/native/<plugin-id>/plugin.jsonc`，它必须与自己的 DLL 同目录且不能包含普通玩法配置。自制 Raw/compiled 动画只能放在 `pvzmod/animations/`；图片继续只放在 `pvzmod/images/`。`compiled/reanim/` 只用于引用游戏本体已有资源，不能作为新增 Mod 文件的散放目录。
 
 ## 4. 动画注册格式
 
@@ -244,7 +244,7 @@ custom_animation_preview    卡片、选卡、图鉴和预览
 
 ## 9. 动作事件
 
-动作事件只能引用 DLL 中注册的处理器，JSON 不能执行任意代码。首批事件计划：
+动作事件不能直接在 JSON 中执行任意代码。有限 JSON 可以把一个动画事件映射到一个内置固定效果；复杂条件与组合转发给 Lua；缺少底层能力时由固定目录中的可信 DLL 通过版本化 Host API 注册共享 Capability。JSON、Lua、内置 C++ 和 DLL 使用同一事件中心、顺序、命令缓冲和所有者管理。Lua 不能取得裸指针或任意内存访问。完整方案见 `SCRIPTABLE_SKILLS_AND_BEHAVIORS.md`。首批事件计划：
 
 - 植物：`FIRE_PROJECTILE`、`GENERATE_SUN`、`EXPLODE`、`SPAWN_CHILD`。
 - 僵尸：`BITE_HIT`、`THROW_OBJECT`、`SUMMON_ZOMBIE`、`DROP_ARMOR`。

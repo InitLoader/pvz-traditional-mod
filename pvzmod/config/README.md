@@ -74,7 +74,7 @@
 - `templatePlantId` 当前只允许 `0–48`。完整 ID、中文名、载体 Reanimation 与 compiled 对照表见 [`../../modding/PvZAnimationStudio/PLANT_TEMPLATE_IDS.md`](../../modding/PvZAnimationStudio/PLANT_TEMPLATE_IDS.md)；原版 `49–52` 是模式专用植物，不能直接当普通模板。
 - 两份配置均在 DLL 启动时读取，修改后要完全退出并重启游戏。配置无效时对应模块回退为原版槽位或不加载新卡，并在 `pvzmod/logs/pvzmod.log` 记录原因。
 
-所有外部配置统一放在 `pvzmod/config` 下，禁止再把 JSON 文件直接放到游戏根目录。
+所有业务配置统一放在 `pvzmod/config` 下，禁止再把 JSON 文件直接放到游戏根目录。规划中的 `pvzmod/plugins/native/<plugin-id>/plugin.jsonc` 只是原生插件加载元数据，是唯一目录例外，不能承载普通玩法配置。
 
 ```text
 pvzmod/
@@ -87,10 +87,14 @@ pvzmod/
 │  ├─ bosses/       # 各大关 Boss 阶段和技能
 │  ├─ ui/           # UI 布局、按钮、文本和界面开关
 │  ├─ settings/     # Mod 全局设置和难度配置
+│  ├─ rules/        # 规划中的有限 JSON MicroRule
+│  ├─ scripts/      # 规划中由工具生成的 Lua 模块索引
+│  ├─ extensions/   # 规划中的统一扩展包索引和依赖
 │  └─ schemas/      # JSON Schema 和配置版本定义
 ├─ saves/           # Mod 独立存档，不放配置模板
 ├─ images/          # 用户提供的外部图片；按用途继续分子目录
 ├─ animations/      # Raw .reanim 外部动作；按植物、僵尸和 UI 分类
+├─ plugins/native/  # 规划中的可信 Win32 DLL 插件；每个插件独占子目录
 └─ logs/            # 运行日志
 ```
 
@@ -110,12 +114,18 @@ pvzmod/
 - `resources/textures.jsonc`：通用外部贴图 ID、受限相对路径和原版图片加载缓存。
 - `resources/animations.jsonc`：外部 Raw/compiled Reanimation、动作、事件、定位轨道和贴图符号映射。
 - `elites/zombies.jsonc`：精英编号、概率、视觉、贴图引用和技能绑定。
+- `rules/*.jsonc`：规划中的有限 MicroRule；只允许“一个事件 + 简单过滤 + 一个固定效果”，复杂逻辑必须升级为 Lua。
+- `scripts/modules.jsonc`：规划中由打包工具生成的 Lua 发布索引、API 版本和能力声明，新手不手写。
+- `extensions/packages.jsonc`：规划中由工具生成的统一包索引，管理 JSON、Lua、DLL 的所有者、版本、依赖、启用状态和文件哈希。
+- 原生插件只允许位于 `pvzmod/plugins/native/<plugin-id>/`，不放在 `config`；每个目录必须包含 `plugin.jsonc` 和 manifest 精确指定的 Win32 DLL。
 - `plants/attacks.jsonc`：植物攻击伤害稀疏覆盖；文件内已列出所有数值攻击的原版默认值。
 - `zombies/attributes.jsonc`：完整原版防具生命目录、按僵尸 ID 稀疏覆盖本体生命/啃食伤害，以及带等级和概率的额外防具。
 
 `plants/attacks.jsonc` 中只有实际写出的键会覆盖原版。注释掉的示例只是攻击目录，不会生效；删除已启用键后，投射物会在下次启动或进入关卡时恢复原版，直接攻击会在下一次命中时恢复原版。未知键、非整数或超出 `0–1000000` 的数值会拒绝整份新配置并保留上一次有效配置。
 
 `zombies/attributes.jsonc` 中的 `originalArmorHealth` 完整列出 1051 版 11 个有效防具/额外生命池。文件中的数值等于 DLL 内核对过的原版默认值时不写内存，保留原版初始化；改动某个数值时只覆盖对应防具，且不要求在 `zombies` 中再写该僵尸 ID。删除某个键也表示完全使用原版。
+
+复杂技能、Boss 状态机和以后需要自由代码的功能不会继续扩张为大量 JSON 字段。规划采用有限 JSON、Lua、可信 DLL 三级扩展，并让它们共用 `pvzmod.dll` 的事件、Capability、命令、配置和所有者注册中心；以上目录和运行时目前都尚未实现，设计与迁移顺序见 `modding/SCRIPTABLE_SKILLS_AND_BEHAVIORS.md`。
 
 `armorDefinitions` 和 `armorRolls` 是另一套“给任意兼容僵尸随机附加防具”的系统，使用独立 Mod ID。`chance` 为 0 时永不附加，为 100 时必定附加；同一种子和僵尸实例会得到相同结果。`zombies` 仍只稀疏覆盖本体生命、啃食攻击和随机装备规则，当前示例只覆盖普通僵尸 ID 0。
 

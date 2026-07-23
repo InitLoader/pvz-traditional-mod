@@ -22,6 +22,16 @@
 
 动画视图区直接接受外部 PNG/JPG/JPEG 文件拖放。落点先按视图平移与缩放逆变换成 Reanimation 世界坐标，再根据图片单帧尺寸居中；每张图建立独立轨道并在当前帧写入 `x/y/sx/sy/f/a/i`，多图使用轻微偏移避免完全重叠。资源绑定与轨道创建放在同一编辑事务中，单次 `Ctrl+Z` 即可完整撤销。
 
+## 0.11.x 设计契约：可脚本化技能与自由行为
+
+植物、僵尸、精英、Boss 和关卡机制不能继续依赖“每种技能在 DLL 中预注册一个专用处理器”，也不能把条件、循环和状态机继续扩张成大量 JSON 字段。后续采用三级扩展：有限 JSON 保存静态数据并允许“一个事件 + 简单过滤 + 一个固定效果”的微规则；Lua 编写条件、组合和状态机；可信 Win32 DLL 从 `pvzmod/plugins/native/<plugin-id>/` 加载，通过版本化 C ABI 调用 `pvzmod` 并注册可供 JSON、Lua 和其他 DLL 共用的新 Capability。`pvzmod.dll` 继续隔离 1051 版地址、对象偏移和调用约定。
+
+脚本只接收带实例世代校验的实体句柄和受控 `ctx`，不能取得 `Plant*`/`Zombie*`、读写任意内存、调用任意地址或安装 Hook。同步伤害/攻击事件只允许修改白名单字段；生成、删除和二次伤害等操作进入命令缓冲区，在原版调用退出后的安全点执行。脚本采用指令、时间、内存、事件和命令上限，热重载失败时保留上一有效世代。完整模块布局、Lua 示例、API 版本、存档边界和分阶段验收见 `modding/SCRIPTABLE_SKILLS_AND_BEHAVIORS.md`；当前仅为设计，尚未实现。
+
+脚本层采用渐进式学习：新手先用 `shoot/every/nearest_enemy/explode` 等配方函数，熟悉后再组合 `world/combat/animation/timer` 核心能力，只有缺少通用原语时才由原生开发者增加 Hook。开发包必须同步提供创建并绑定向导、Mock 实验场、中文错误、热重载、事件检查器、LuaLS 补全、60 分钟教程和分级示例，并以“1 小时能做原创小技能、10 小时熟悉、30 小时能独立做多阶段精英/Boss”验收脚本玩法层。
+
+所有扩展由统一 `ExtensionHub` 管理。Event 允许几十到上百个带所有者、阶段、优先级、过滤器和订阅 Token 的处理器；Capability 默认只有一个版本化 Provider，可叠加逻辑必须显式声明为 Modifier Pipeline。注册表按事件构建不可变快照，回调时不持全局锁；同一事件 100 个混合 JSON/Lua/DLL 订阅者进入压力测试。禁用包时按 `ownerId + generation` 一次撤销其配置、脚本、插件、订阅、能力和 Schema，禁止后加载覆盖与半注册状态。
+
 ## 0.10.1-dev 原版 compiled Reanimation 读取
 
 外部动画入口现在同时接受 Raw `.reanim` 和原版 32 位 PC `.reanim.compiled`。compiled 解码器验证 `0xDEADFED4`、zlib 解压长度、`0xB393B4C0` Schema 以及 16/12/44 字节的 Definition/Track/Transform 缓存结构，忽略文件中的旧指针并重建安全的 DLL 侧动画定义。配置可以直接引用 `compiled/reanim/Blover.reanim.compiled`，自制 compiled 仍必须分类放入 `pvzmod/animations/`。
@@ -599,7 +609,7 @@ H:\pvz\modding\
 
 ## 19. 外部文件目录规范
 
-游戏根目录只保留必须由 EXE 直接加载的 `pvzmod.dll`。所有 JSON 配置统一放入 `pvzmod/config` 并按模块分类：
+游戏根目录只保留必须由 EXE 直接加载的 `pvzmod.dll`。所有业务 JSON 配置统一放入 `pvzmod/config` 并按模块分类；规划中的原生插件只有 `pvzmod/plugins/native/<plugin-id>/plugin.jsonc` 可作为元数据例外，与 manifest 指定 DLL 放在同一插件子目录：
 
 ```text
 pvzmod/

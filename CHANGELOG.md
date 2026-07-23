@@ -4,6 +4,15 @@
 
 ## Unreleased
 
+### Planned documentation for 0.11.x
+
+- 设计有限 JSON、Lua、可信 Win32 DLL 三级扩展体系：小型“一事件一效果”功能保留 JSON，复杂状态与组合使用 Lua，原生能力由 `pvzmod/plugins/native/<plugin-id>/` 中的版本化插件提供。
+- 设计统一 `ExtensionHub`，让 JSON、Lua、内置 C++ 和多个 DLL 共用 Event、Capability、命令缓冲、配置 Schema、所有者/世代和事务加载；区分“一个 Capability Provider”和“一个事件多个订阅者”。
+- 为几十到上百个处理器定义不可变订阅快照、稳定阶段/优先级顺序、过滤器、订阅 Token、配额、热点统计及 100 个混合订阅者压力测试。
+- 定义 `PvZModHostApiV1` 双向 C ABI、固定插件目录、manifest/PE32/hash/依赖校验、受限 DLL 搜索、共享 Capability 和不支持二进制热卸载的生命周期边界。
+- 把 1 小时完成首个技能、10 小时熟悉常用能力、30 小时近乎掌握脚本玩法层写为产品验收目标，并规划配方 API、Mock 实验场、LuaLS 补全、中文诊断和创建绑定向导。
+- 本节仅记录设计文档变化；当前 `pvzmod.dll` 尚未实现 JSON MicroRule、Lua 宿主或外部 DLL 插件加载。
+
 ### Added in animation-studio-dev
 
 - 增加自定义植物 `animationId` 运行时链路：把 Raw/compiled 转换为 1.0.0.1051 ABI Definition，在原 Holder 内安全替换 body Reanimation，使模板攻击状态机播放外部 `anim_*` 轨道；失败时保留原模板动画。

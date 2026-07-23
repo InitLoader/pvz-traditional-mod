@@ -1,5 +1,30 @@
 # PvZ Mod 运行时模块架构
 
+## 0.11.x 规划：三级扩展宿主
+
+> 本节是设计契约，当前运行时尚未实现 JSON MicroRule、Lua 宿主或外部 DLL 插件加载。完整接口、目录、示例和阶段验收见 `SCRIPTABLE_SKILLS_AND_BEHAVIORS.md`。
+
+后续扩展固定分为三级：有限 JSON 只处理静态配置和“一个事件 + 简单过滤 + 一个固定效果”；Lua 处理条件、计时、状态机和能力组合；可信 Win32 DLL 只从 `pvzmod/plugins/native/<plugin-id>/` 加载，通过 `PvZModHostApiV1` 调用核心并注册共享原生 Capability。三者不能分别建立事件总线、实体包装或命令系统。
+
+```text
+版本专用 Hook / ABI 桥
+        ↓
+语义事件与安全实体句柄
+        ↓
+ExtensionHub
+├─ EventRegistry        # 一个事件，多个 JSON/Lua/C++/DLL 订阅者
+├─ CapabilityRegistry   # 一个版本化能力，一个权威 Provider
+├─ ConfigRegistry       # Schema、命名空间、来源和事务世代
+├─ PackageRegistry      # ownerId、依赖、启用和文件索引
+└─ CommandBuffer        # 统一延迟修改与重入保护
+```
+
+每个扩展拥有稳定 `ownerId + generation`。事件订阅带 `handlerId`、阶段、优先级、过滤器和 Token，按固定键排序并在派发时使用不可变快照；同一个 Lua 技能不会按场上实体数量重复注册全局处理器。Capability Provider 重名时事务失败，可叠加的修正必须显式进入 Modifier Pipeline，不能依赖 DLL/文件加载顺序覆盖。
+
+外部插件 ABI 只能交换定宽整数、长度明确的 UTF-8、POD 和 opaque handle，禁止跨模块传递 STL、C++ 异常或游戏裸指针。插件拥有原生进程权限，因此只能视为可信代码；Lua/JSON 永远不能获得任意读写内存、调用地址或安装 Hook 的万能接口。DLL 二进制更新要求重启，JSON/Lua 才允许在安全点切换完整扩展世代。
+
+未来实现应新增独立 `extension_package_registry`、`behavior_event_registry`、`capability_registry`、`json_micro_rule_runtime` 和 `native_plugin_host`，`pvz_hook.cpp` 仍只负责启动与模块安装。现有 `zombie_event_bus`、`elite_skill_registry` 通过适配器迁移，不一次性重写已经验证的 Hook。
+
 ## 动画制作器边界
 
 `PvZAnimationStudio` 是独立 WPF 工具，不链接或注入 `pvzmod.dll`。`Models` 保存可序列化工程；`RawReanimCodec`/`CompiledReanimCodec` 只做格式往返；`ReanimationRenderMath` 复现原版矩阵、左上注册点和资源子帧语义；`ActionCatalogService` 与 `ActionViewService` 分别负责动作识别和动作局部视图；`AnimationCurveService` 维护曲线关键点、Bezier 手柄、插值求值和向 PVZ 普通帧的烘焙；`EntityPreviewProfileService` 负责原版多 Reanimation 组合与普通僵尸可选装备过滤；`OriginalResourceService` 只索引图片并合成原版 JPG + 灰度透明蒙版；`ProjectFileService` 负责旧 JSON 和安全受限的 `.pvza` 单文件工程，保存时嵌入全部引用图片及子帧布局；`WorkspaceHostControl` 只维护可拆分区域树、比例和独立窗口，动画视图、时间轴、曲线编辑器、资源浏览器和属性检查器仍是独立控件；`EditHistoryService`/`ProjectCloneService` 保存会话级完整撤销与恢复；`TweenService` 只烘焙数值补间；`ProjectPackageService` 只生成分类资源、配置片段和安装合并。UI、工作区树、曲线数学、渲染数学、编解码、历史、补间、资源索引与打包禁止并入一个类。
