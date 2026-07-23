@@ -2,6 +2,8 @@
 
 `PvZAnimationStudio` 是面向 PC 版 `Plants vs. Zombies 1.0.0.1051` 的独立中文 WPF 编辑器。它用于制作、检查和打包分层 Reanimation，不向游戏进程注入编辑器代码。
 
+> 产品边界：本工具只负责动画制作、图片部件、动作/定位轨道和创建基础植物所必需的最小资产骨架。它不会增加 Lua 编辑/绑定/验证、DLL 管理、包依赖图或全局配置中心。当前 ZIP、JSONC 片段和一键安装属于已有兼容能力；规划中的默认流程会改为导出公开动画资产包，由独立 [`PvZModManager`](../PVZMOD_MANAGER_DESIGN.md) 管理安装，由独立 [`PvZLuaStudio`](../PVZLUA_STUDIO_DESIGN.md) 编写和验证 Lua。
+
 ## 当前可用能力
 
 - 新建植物、僵尸、UI 或其他动画工程；默认保存为单文件便携工程 `*.pvza`，动画、曲线关键点与手柄、动作、属性、工作区布局、图片与图片子帧信息全部嵌入，复制给别人不再依赖原图片绝对路径。旧 `*.pvza.json` 仍可读取。
@@ -57,7 +59,7 @@ dotnet run --project H:\pvz\modding\PvZAnimationStudio\PvZAnimationStudio.csproj
 5. 回到起点，点击“线性补间”或“平滑补间”。
 6. 添加或识别 `anim_idle`、`anim_attack`、`anim_blink`、`anim_die` 等动作。特殊动作只需使用新的 `anim_<动作ID>`，工具会完整保留和分类。
 7. 眨眼建议把眼皮/眼睛单独放入轨道，在 `anim_blink` 范围内用 `f=-1/0` 或图片切换控制显示；编辑器不会把眨眼硬编码到身体轨道。
-8. 保存 `.pvza` 便携工程，再导出 compiled 并在编辑器重新打开验证，最后生成 ZIP 或一键安装。
+8. 保存 `.pvza` 便携工程，再导出 compiled 并在编辑器重新打开验证。当前版本仍可生成 ZIP 或一键安装；目标流程是导出动画资产包和基础植物骨架，再交给 `PvZModManager` 安装。
 
 ## 工作区、拆分与独立窗口
 
@@ -102,7 +104,7 @@ pvzmod/config/plants/custom_plants.jsonc # 新植物配置
 pvzmod/config/zombies/                    # 生成的新僵尸配置
 ```
 
-ZIP 中使用 `generated/<id>/*.fragment.jsonc`，便于人工审查后合并；“一键安装”使用字符串 ID 更新对应数组，保留文件其他注释和条目。
+ZIP 中使用 `generated/<id>/*.fragment.jsonc`，便于人工审查后合并；“一键安装”使用字符串 ID 更新对应数组，保留文件其他注释和条目。这是当前兼容流程，不再向其中加入 Lua、DLL、依赖或全局配置管理；后续由 `PvZModManager` 接管最终合并、安装和回滚。
 
 ## Raw 与 compiled
 

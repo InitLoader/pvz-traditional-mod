@@ -28,7 +28,9 @@
 
 脚本只接收带实例世代校验的实体句柄和受控 `ctx`，不能取得 `Plant*`/`Zombie*`、读写任意内存、调用任意地址或安装 Hook。同步伤害/攻击事件只允许修改白名单字段；生成、删除和二次伤害等操作进入命令缓冲区，在原版调用退出后的安全点执行。脚本采用指令、时间、内存、事件和命令上限，热重载失败时保留上一有效世代。完整模块布局、Lua 示例、API 版本、存档边界和分阶段验收见 `modding/SCRIPTABLE_SKILLS_AND_BEHAVIORS.md`；当前基础在大量植物、僵尸、子弹、UI、资源和订阅下的实际瓶颈、容量模型与 P0/P1 改造见 `modding/EXTENSION_SCALE_ARCHITECTURE_AUDIT.md`。两者当前均为设计，尚未实现。
 
-脚本层采用渐进式学习：新手先用 `shoot/every/nearest_enemy/explode` 等配方函数，熟悉后再组合 `world/combat/animation/timer` 核心能力，只有缺少通用原语时才由原生开发者增加 Hook。开发包必须同步提供创建并绑定向导、Mock 实验场、中文错误、热重载、事件检查器、LuaLS 补全、60 分钟教程和分级示例，并以“1 小时能做原创小技能、10 小时熟悉、30 小时能独立做多阶段精英/Boss”验收脚本玩法层。
+脚本层采用渐进式学习：新手先用 `shoot/every/nearest_enemy/explode` 等配方函数，熟悉后再组合 `world/combat/animation/timer` 核心能力，只有缺少通用原语时才由原生开发者增加 Hook。独立 `PvZLuaStudio` 必须同步提供创建并绑定向导、Mock 实验场、中文错误、热重载、事件检查器、LuaLS 补全、60 分钟教程和分级示例，并以“1 小时能做原创小技能、10 小时熟悉、30 小时能独立做多阶段精英/Boss”验收脚本玩法层。
+
+桌面工具保持严格分工：`PvZAnimationStudio` 只做动画、图片部件和基础植物资产骨架；`PvZLuaStudio` 只做 Lua 创建、编辑、验证、绑定辅助和代码定位；`PvZModManager` 统一管理配置、包、Lua 资产元数据、DLL、图片/动画/音效、自定义内容、依赖、安装档案和回滚，但不能显示、验证或打开 Lua 代码。运行时 `pvzmod.dll` 对真正加载的 JSON/Lua/DLL 独立执行最终安全校验，不能信任桌面工具报告来跳过检查。详细边界见 `modding/PVZLUA_STUDIO_DESIGN.md` 与 `modding/PVZMOD_MANAGER_DESIGN.md`。
 
 所有扩展由统一 `ExtensionHub` 管理。Event 允许几十到上百个带所有者、阶段、优先级、过滤器和订阅 Token 的处理器；Capability 默认只有一个版本化 Provider，可叠加逻辑必须显式声明为 Modifier Pipeline。注册表按事件构建不可变快照，回调时不持全局锁；同一事件 100 个混合 JSON/Lua/DLL 订阅者进入压力测试。禁用包时按 `ownerId + generation` 一次撤销其配置、脚本、插件、订阅、能力和 Schema，禁止后加载覆盖与半注册状态。
 

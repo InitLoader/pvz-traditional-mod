@@ -43,10 +43,13 @@
 - `T06` — Mod 设置界面、可视化配置编辑器和游戏内调试面板。
 - `T07` — Mod 独立存档、版本迁移、精英图鉴、Boss 进度和自定义解锁状态。
 - `T08` — 自动打包 Release、安装器和多游戏版本适配。
+- `T09` — 独立 `PvZLuaStudio`：Lua 创建、编辑、绑定辅助、语法/API 校验、Mock、热重载诊断与错误跳转。
+- `T10` — 独立 `PvZModManager`：统一管理配置、包、Lua 资产元数据、DLL、图片/动画/音效、自定义内容、依赖、启用档案、安装和回滚；不显示、验证或打开 Lua 代码。
 
 详细设计和实现依据见 [`PVZ传统改版技术路线.md`](PVZ传统改版技术路线.md)。
 外部动作制作、配置和真正新增实体的分阶段契约见 [`modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`](modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md)。
 技能与后续自由行为采用三级扩展规划：有限 JSON 处理静态配置和“一事件一效果”的微型功能，Lua 处理有状态/组合玩法，可信 Win32 DLL 从固定插件目录加载并通过版本化 Host API 提供原生能力。JSON、Lua、内置代码和多个 DLL 共用事件、Capability、所有者和配置注册中心，并把“1 小时完成首个技能、10 小时熟悉常用能力、30 小时近乎掌握脚本玩法层”作为硬性验收目标；完整方案见 [`modding/SCRIPTABLE_SKILLS_AND_BEHAVIORS.md`](modding/SCRIPTABLE_SKILLS_AND_BEHAVIORS.md)。现有基础在大量植物、僵尸、子弹、UI、资源和订阅者下的具体风险、容量模型与 P0/P1 改造见 [`modding/EXTENSION_SCALE_ARCHITECTURE_AUDIT.md`](modding/EXTENSION_SCALE_ARCHITECTURE_AUDIT.md)。以上运行时目前仍是设计稿，尚未实现。
+工具侧拆成三个独立桌面应用：动画制作见 `PvZAnimationStudio`；Lua 编写、验证和代码跳转见规划中的 [`PvZLuaStudio`](modding/PVZLUA_STUDIO_DESIGN.md)；包、配置、DLL、资源、安装和回滚见规划中的 [`PvZModManager`](modding/PVZMOD_MANAGER_DESIGN.md)。Manager 只管理 Lua 路径、所有者、版本、哈希、绑定关系、启用状态和外部报告摘要，不内嵌 Lua 编辑器，也不验证或打开代码。
 动画制作器操作与边界见 [`modding/PvZAnimationStudio/README.md`](modding/PvZAnimationStudio/README.md)。
 原版 48 个独立植物动画与 38 个僵尸/僵尸效果动画的逐项审计见 [`modding/PvZAnimationStudio/ORIGINAL_ASSET_AUDIT.md`](modding/PvZAnimationStudio/ORIGINAL_ASSET_AUDIT.md)。
 原版植物 `SeedType 0–52`、可复用模板范围和动画资源映射见 [`modding/PvZAnimationStudio/PLANT_TEMPLATE_IDS.md`](modding/PvZAnimationStudio/PLANT_TEMPLATE_IDS.md)。
@@ -56,7 +59,7 @@
 - `modding/src`：按功能拆分的运行时 Hook 模块。
 - `modding/patcher`：仅支持已校验 `1.0.0.1051` 文件的补丁加载器。
 - `modding/tests`：配置与生成逻辑回归测试。
-- `modding/PvZAnimationStudio`：全中文 Reanimation 动画制作器和自动配置/打包器。
+- `modding/PvZAnimationStudio`：全中文 Reanimation 动画制作器；当前保留自动配置/打包兼容入口，目标边界收缩为动画资产和基础植物骨架导出。
 - `modding/PvZAnimationStudio.Tests`：Raw/compiled 往返、补间、JSONC 与打包自测。
 - `pvzmod/config`：按关卡、植物、僵尸、UI 和全局设置分类的配置示例。
 - `PVZ传统改版技术路线.md`：逆向结论、模块边界、配置规则与后续路线。
@@ -64,6 +67,8 @@
 - `modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`：外部 Reanimation 制作、解析、动作事件和独立实体方案。
 - `modding/SCRIPTABLE_SKILLS_AND_BEHAVIORS.md`：有限 JSON、Lua、原生 DLL 三级扩展，统一事件/Capability 管理、热重载和插件 ABI。
 - `modding/EXTENSION_SCALE_ARCHITECTURE_AUDIT.md`：当前基础架构的大规模扩展审计，覆盖植物、僵尸、子弹、UI、资源、事件热路径、32 位容量和演进优先级。
+- `modding/PVZLUA_STUDIO_DESIGN.md`：独立 Lua 编辑器、绑定向导、离线 Mock、诊断和 1/10/30 小时学习路线。
+- `modding/PVZMOD_MANAGER_DESIGN.md`：纯管理型大型工作台，覆盖包、配置、Lua 资产、DLL、资源、安装、档案和回滚。
 
 完整配置说明见 [`modding/README.md`](modding/README.md) 与 [`pvzmod/config/README.md`](pvzmod/config/README.md)。
 

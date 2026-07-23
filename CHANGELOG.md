@@ -12,6 +12,7 @@
 - 定义 `PvZModHostApiV1` 双向 C ABI、固定插件目录、manifest/PE32/hash/依赖校验、受限 DLL 搜索、共享 Capability 和不支持二进制热卸载的生命周期边界。
 - 把 1 小时完成首个技能、10 小时熟悉常用能力、30 小时近乎掌握脚本玩法层写为产品验收目标，并规划配方 API、Mock 实验场、LuaLS 补全、中文诊断和创建绑定向导。
 - 增加当前基础架构的大规模扩展审计：核对植物/精英/贴图/动画/选卡的现有限制，分析大量自定义植物、僵尸、子弹、UI 和事件订阅导致的 ID 冲突、热路径乘法、裸指针生命周期、32 位资源耗尽、热重载半世代和 UI Hook 竞争，并定义 `ContentCatalog`、预编译索引、资源预算、统一 `UiHost`、压力矩阵及开放 Lua/DLL 前的 P0/P1 门槛。
+- 把工具边界拆成 `PvZAnimationStudio`、独立 `PvZLuaStudio`、纯管理型 `PvZModManager` 和运行时 `pvzmod.dll`：LuaStudio 独占代码创建/编辑/验证/打开，Manager 只管理脚本资产元数据、包、配置、DLL、资源、安装和回滚。
 - 本节仅记录设计文档变化；当前 `pvzmod.dll` 尚未实现 JSON MicroRule、Lua 宿主或外部 DLL 插件加载。
 
 ### Added in animation-studio-dev

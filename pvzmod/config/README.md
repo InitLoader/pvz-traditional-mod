@@ -127,6 +127,8 @@ pvzmod/
 
 复杂技能、Boss 状态机和以后需要自由代码的功能不会继续扩张为大量 JSON 字段。规划采用有限 JSON、Lua、可信 DLL 三级扩展，并让它们共用 `pvzmod.dll` 的事件、Capability、命令、配置和所有者注册中心；以上目录和运行时目前都尚未实现，设计与迁移顺序见 `modding/SCRIPTABLE_SKILLS_AND_BEHAVIORS.md`。
 
+规划中的工具也严格分离：`PvZLuaStudio` 创建、编辑、绑定辅助并验证 Lua；`PvZModManager` 管理本目录、包、Lua 文件元数据、DLL、资源、启用档案、安装和回滚，但不显示、验证或打开 Lua 代码；`PvZAnimationStudio` 只输出动画资产与基础植物骨架。详见 `modding/PVZLUA_STUDIO_DESIGN.md` 和 `modding/PVZMOD_MANAGER_DESIGN.md`。
+
 `armorDefinitions` 和 `armorRolls` 是另一套“给任意兼容僵尸随机附加防具”的系统，使用独立 Mod ID。`chance` 为 0 时永不附加，为 100 时必定附加；同一种子和僵尸实例会得到相同结果。`zombies` 仍只稀疏覆盖本体生命、啃食攻击和随机装备规则，当前示例只覆盖普通僵尸 ID 0。
 
 视觉键当前支持 `cone`、`bucket`、`door`，以及仅适配普通僵尸 ID 0 的 `wallnutHead`。坚果头适配器复用原版 ID 27 的附着动画、裂纹和掉头清理流程。它与铁桶同属头盔槽；同槽多项同时抽中时先比较 `tier`，同级再选择较小的 Mod 防具 ID，因此单项 `chance=100` 不代表它一定压过同槽的更高优先级防具。

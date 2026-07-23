@@ -25,9 +25,15 @@ ExtensionHub
 
 未来实现应新增独立 `extension_package_registry`、`behavior_event_registry`、`capability_registry`、`json_micro_rule_runtime` 和 `native_plugin_host`，`pvz_hook.cpp` 仍只负责启动与模块安装。现有 `zombie_event_bus`、`elite_skill_registry` 通过适配器迁移，不一次性重写已经验证的 Hook。
 
+## 工具职责：动画、Lua 与 Mod 管理三套工具
+
+桌面侧必须保持三个独立应用：`PvZAnimationStudio` 负责 Reanimation、图片部件、动作/定位轨道、预览、Raw/compiled 和基础植物资产骨架；`PvZLuaStudio` 负责 Lua 创建、编辑、绑定辅助、语法/API 校验、Mock、热重载诊断和错误跳转；`PvZModManager` 负责包、JSONC、Lua 资产元数据、DLL manifest、资源目录、自定义内容、依赖、冲突、安装档案、启用状态和回滚。完整方案见 [`PVZLUA_STUDIO_DESIGN.md`](PVZLUA_STUDIO_DESIGN.md) 与 [`PVZMOD_MANAGER_DESIGN.md`](PVZMOD_MANAGER_DESIGN.md)。
+
+三个工具只共享公开的轻量 Contracts/Schema 和普通文件。管理器可以接收 AnimationStudio 的动画资产交换包和 LuaStudio 的 Lua/module/binding/报告产物，但不得复制时间轴、曲线、Reanimation 编码器、Lua 语言服务、Mock 或代码编辑控件；它对 Lua 只登记路径、所有者、版本、哈希、绑定关系、启用状态和外部报告摘要，不能显示、验证或打开代码。“创建 Lua + 写绑定 + 验证 + 打开待编辑位置”只存在于独立 LuaStudio。
+
 ## 动画制作器边界
 
-`PvZAnimationStudio` 是独立 WPF 工具，不链接或注入 `pvzmod.dll`。`Models` 保存可序列化工程；`RawReanimCodec`/`CompiledReanimCodec` 只做格式往返；`ReanimationRenderMath` 复现原版矩阵、左上注册点和资源子帧语义；`ActionCatalogService` 与 `ActionViewService` 分别负责动作识别和动作局部视图；`AnimationCurveService` 维护曲线关键点、Bezier 手柄、插值求值和向 PVZ 普通帧的烘焙；`EntityPreviewProfileService` 负责原版多 Reanimation 组合与普通僵尸可选装备过滤；`OriginalResourceService` 只索引图片并合成原版 JPG + 灰度透明蒙版；`ProjectFileService` 负责旧 JSON 和安全受限的 `.pvza` 单文件工程，保存时嵌入全部引用图片及子帧布局；`WorkspaceHostControl` 只维护可拆分区域树、比例和独立窗口，动画视图、时间轴、曲线编辑器、资源浏览器和属性检查器仍是独立控件；`EditHistoryService`/`ProjectCloneService` 保存会话级完整撤销与恢复；`TweenService` 只烘焙数值补间；`ProjectPackageService` 只生成分类资源、配置片段和安装合并。UI、工作区树、曲线数学、渲染数学、编解码、历史、补间、资源索引与打包禁止并入一个类。
+`PvZAnimationStudio` 是独立 WPF 工具，不链接或注入 `pvzmod.dll`。`Models` 保存可序列化工程；`RawReanimCodec`/`CompiledReanimCodec` 只做格式往返；`ReanimationRenderMath` 复现原版矩阵、左上注册点和资源子帧语义；`ActionCatalogService` 与 `ActionViewService` 分别负责动作识别和动作局部视图；`AnimationCurveService` 维护曲线关键点、Bezier 手柄、插值求值和向 PVZ 普通帧的烘焙；`EntityPreviewProfileService` 负责原版多 Reanimation 组合与普通僵尸可选装备过滤；`OriginalResourceService` 只索引图片并合成原版 JPG + 灰度透明蒙版；`ProjectFileService` 负责旧 JSON 和安全受限的 `.pvza` 单文件工程，保存时嵌入全部引用图片及子帧布局；`WorkspaceHostControl` 只维护可拆分区域树、比例和独立窗口，动画视图、时间轴、曲线编辑器、资源浏览器和属性检查器仍是独立控件；`EditHistoryService`/`ProjectCloneService` 保存会话级完整撤销与恢复；`TweenService` 只烘焙数值补间。当前 `ProjectPackageService` 已有 ZIP、配置片段和直接安装兼容能力，但 0.11.x 目标应把它收缩为动画资产包/基础植物骨架导出器，最终配置合并、包安装和回滚迁移到 `PvZModManager`。UI、工作区树、曲线数学、渲染数学、编解码、历史、补间和资产导出禁止并入一个类。
 
 `.pvza` 是 ZIP 容器，但只能包含根目录 `project.json` 和受限的 `assets/` 图片。读取端限制文件数量、单图大小、总大小并拒绝 `..` 和非 `assets/` 路径；图片解压到按工程路径、长度和修改时间散列出的本地缓存。保存端把原版 JPG+灰度遮罩先合成为带 Alpha 的 PNG，连同 `cols/rows` 一起写入工程。曲线关键点、属性值、插值类型及左右手柄保存在 schema 3 的 `project.json`；Raw/compiled 本身没有 Bezier 元数据，因此导出前使用已烘焙的逐帧值。工作区是可序列化的二叉拆分树；GridSplitter 只更新比例，区域类型、拆分、关闭和独立窗口不侵入动画模型。
 
