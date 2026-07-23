@@ -19,6 +19,8 @@ public sealed class ProjectCloneService
             GameRoot = source.GameRoot,
             ProjectPath = source.ProjectPath,
             SourceAnimationPath = source.SourceAnimationPath,
+            InitialActionId = source.InitialActionId,
+            HideTemplateAttachments = source.HideTemplateAttachments,
             NumericEntityId = source.NumericEntityId,
             TemplateEntityId = source.TemplateEntityId,
             Cost = source.Cost,
@@ -65,6 +67,7 @@ public sealed class ProjectCloneService
             Rate = source.Rate,
             BlendFrames = source.BlendFrames
         };
+        result.Replaces = new ObservableCollection<string>(source.Replaces);
         foreach (var item in source.Events)
         {
             result.Events.Add(new AnimationEventDefinition
@@ -72,7 +75,8 @@ public sealed class ProjectCloneService
                 Id = item.Id,
                 Frame = item.Frame,
                 NormalizedTime = item.NormalizedTime,
-                OncePerLoop = item.OncePerLoop
+                OncePerLoop = item.OncePerLoop,
+                TargetAction = item.TargetAction
             });
         }
         return result;

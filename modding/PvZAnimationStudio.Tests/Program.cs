@@ -757,7 +757,15 @@ try
         Animation = source,
         Actions = new ObservableCollection<ActionDefinition>
         {
-            new() { Id = "idle", DisplayName = "待机", Track = "anim_idle" }
+            new()
+            {
+                Id = "idle", DisplayName = "待机", Track = "anim_idle",
+                Replaces = new ObservableCollection<string> { "anim_head_idle" },
+                Events = new ObservableCollection<AnimationEventDefinition>
+                {
+                    new() { Id = "FIRE_PROJECTILE", Frame = 1, OncePerLoop = true }
+                }
+            }
         },
         ImageBindings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -771,6 +779,15 @@ try
         Assert(zip.Entries.Any(entry => entry.FullName.EndsWith("TEST_PLANT.reanim.compiled", StringComparison.Ordinal)), "包内缺少 compiled 动画");
         Assert(zip.Entries.Any(entry => entry.FullName.EndsWith("entity.fragment.jsonc", StringComparison.Ordinal)), "包内缺少实体配置片段");
         Assert(zip.Entries.Any(entry => entry.FullName.EndsWith("body.png", StringComparison.Ordinal)), "包内缺少图片");
+        var animationFragment = zip.Entries.Single(entry => entry.FullName.EndsWith("animations.fragment.jsonc", StringComparison.Ordinal));
+        using var reader = new StreamReader(animationFragment.Open());
+        var animationJson = System.Text.Json.Nodes.JsonNode.Parse(reader.ReadToEnd())!;
+        var generatedAnimation = animationJson["animations"]![0]!;
+        Assert(generatedAnimation["initialAction"]!.GetValue<string>() == "idle", "动画包没有写入初始动作");
+        Assert(generatedAnimation["actions"]!["idle"]!["replaces"]![0]!.GetValue<string>() == "anim_head_idle",
+            "动画包没有写入原版轨道替换映射");
+        Assert(generatedAnimation["actions"]!["idle"]!["events"]![0]!["frame"]!.GetValue<int>() == 1,
+            "动画包没有写入动作事件帧");
     }
 
     Console.WriteLine("PASS: Raw/compiled 往返、自动补间、JSONC 合并和 ZIP 打包全部通过。");

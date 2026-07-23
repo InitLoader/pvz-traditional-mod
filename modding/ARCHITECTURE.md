@@ -35,7 +35,7 @@ ExtensionHub
 
 `PvZAnimationStudio` 是独立 WPF 工具，不链接或注入 `pvzmod.dll`。`Models` 保存可序列化工程；`RawReanimCodec`/`CompiledReanimCodec` 只做格式往返；`ReanimationRenderMath` 复现原版矩阵、左上注册点和资源子帧语义；`ActionCatalogService` 与 `ActionViewService` 分别负责动作识别和动作局部视图；`AnimationCurveService` 维护曲线关键点、Bezier 手柄、插值求值和向 PVZ 普通帧的烘焙；`EntityPreviewProfileService` 负责原版多 Reanimation 组合与普通僵尸可选装备过滤；`OriginalResourceService` 只索引图片并合成原版 JPG + 灰度透明蒙版；`ProjectFileService` 负责旧 JSON 和安全受限的 `.pvza` 单文件工程，保存时嵌入全部引用图片及子帧布局；`WorkspaceHostControl` 只维护可拆分区域树、比例和独立窗口，动画视图、时间轴、曲线编辑器、资源浏览器和属性检查器仍是独立控件；`EditHistoryService`/`ProjectCloneService` 保存会话级完整撤销与恢复；`TweenService` 只烘焙数值补间。当前 `ProjectPackageService` 已有 ZIP、配置片段和直接安装兼容能力，但 0.11.x 目标应把它收缩为动画资产包/基础植物骨架导出器，最终配置合并、包安装和回滚迁移到 `PvZModManager`。UI、工作区树、曲线数学、渲染数学、编解码、历史、补间和资产导出禁止并入一个类。
 
-`.pvza` 是 ZIP 容器，但只能包含根目录 `project.json` 和受限的 `assets/` 图片。读取端限制文件数量、单图大小、总大小并拒绝 `..` 和非 `assets/` 路径；图片解压到按工程路径、长度和修改时间散列出的本地缓存。保存端把原版 JPG+灰度遮罩先合成为带 Alpha 的 PNG，连同 `cols/rows` 一起写入工程。曲线关键点、属性值、插值类型及左右手柄保存在 schema 3 的 `project.json`；Raw/compiled 本身没有 Bezier 元数据，因此导出前使用已烘焙的逐帧值。工作区是可序列化的二叉拆分树；GridSplitter 只更新比例，区域类型、拆分、关闭和独立窗口不侵入动画模型。
+`.pvza` 是 ZIP 容器，但只能包含根目录 `project.json` 和受限的 `assets/` 图片。读取端限制文件数量、单图大小、总大小并拒绝 `..` 和非 `assets/` 路径；图片解压到按工程路径、长度和修改时间散列出的本地缓存。保存端把原版 JPG+灰度遮罩先合成为带 Alpha 的 PNG，连同 `cols/rows` 一起写入工程。曲线关键点、属性值、插值类型及左右手柄保存在 schema 3 起的 `project.json`；schema 4 增加初始动作、原版轨道替换、动作事件目标和模板附件显示策略。Raw/compiled 本身没有这些编辑/运行时元数据，因此导出时同时生成 `animations.jsonc`/实体配置片段。工作区是可序列化的二叉拆分树；GridSplitter 只更新比例，区域类型、拆分、关闭和独立窗口不侵入动画模型。
 
 插入或删除整帧前，`AnimationCurveService.CaptureExplicitMotionCurves` 只从非动作轨道的 `x/y/kx/ky/sx/sy/a` 显式值补建缺失曲线；禁止自动为图片子帧 `f`、图片符号或动作标记建立平滑曲线。帧索引移动完成后，`BakeAllCurves` 重算所有已有曲线，使插入的空帧获得连续运动值。删除单个或框选的中间关键帧时也必须先捕获目标轨道，再清空帧并删除曲线关键点，使剩余相邻端点自动重新烘焙；顺序禁止颠倒，否则旧 compiled 会丢失待删帧以外的补间上下文并退回保持后跳变。设置 K 帧也必须立即烘焙关联曲线，不能只保存编辑器元数据而让预览继续继承上一帧。
 
@@ -57,7 +57,7 @@ ExtensionHub
 
 `external_animation_config` 只解析 `animations.jsonc` 元数据，`raw_reanim` 只负责受限 Raw XML、逐帧字段继承和结构校验，`external_animation_runtime` 只做启动时路径解析、贴图 ID/动作/事件/定位轨道交叉校验和只读注册。三者不得并回 `pvz_hook.cpp`；启动器仍只按顺序初始化贴图注册表和动画注册表。
 
-`0.10.2-dev` 不安装全局 `ReanimationInitializeType` Detour，也不扩大原版 `ReanimationType` 数组。`runtime_reanim_definition` 把已校验的 Raw/compiled 数据转换为 1.0.0.1051 的 16/12/44 字节 Definition/Track/Transform；`custom_plant_animation_runtime` 只在自定义植物首次更新时释放模板 body 的旧 TrackInstance，并在同一 Holder 对象内用外部 Definition 重新初始化。所有贴图和 Definition 在破坏旧 body 前准备完成，失败则保留模板动画。该垂直切片已支持模板状态机调用外部同名 `anim_*` 轨道，但附属头部、独立眨眼、多 Reanimation 组合、僵尸和动作事件仍需要独立适配器。完整格式和边界见 `EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`。
+`0.10.3-dev` 不安装全局 `ReanimationInitializeType` Detour，也不扩大原版 `ReanimationType` 数组。`runtime_reanim_definition` 把已校验的 Raw/compiled 数据转换为 1.0.0.1051 的 16/12/44 字节 Definition/Track/Transform；`custom_plant_animation_runtime` 只在自定义植物首次更新时释放模板 body 的旧 TrackInstance，并在同一 Holder 对象内用外部 Definition 重新初始化。所有贴图和 Definition 在破坏旧 body 前准备完成，失败则保留模板动画。`initialAction`、`replaces` 和动作事件已经进入配置模型与制作器，但运行时不再安装覆盖全游戏的 `Reanimation::SetFramesForLayer`/`GetFramesForLayer` 动作 Hook；后续必须从已确认的植物局部调用点接入。原版关卡存档不能识别未登记的外部 Definition，因此运行时启动时预构建自定义植物中唯一的 `animationId`，并在读取旧 Reanimation 指针为空时恢复同一持久 Definition；若配置中存在多个不同动画而无法判定，直接禁用外部 body 注入，避免生成下一次必崩的存档。完整格式和边界见 `EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`。
 
 ## 0.9.0 精英与通用外部贴图边界
 

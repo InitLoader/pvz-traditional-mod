@@ -27,6 +27,7 @@ public sealed class EditorViewModel : ObservableObject
     private EditorProject _project;
     private AnimationTrack? _selectedTrack;
     private ActionDefinition? _selectedAction;
+    private AnimationEventDefinition? _selectedEvent;
     private int _currentFrame;
     private bool _isPlaying;
     private string _status = "就绪";
@@ -74,6 +75,8 @@ public sealed class EditorViewModel : ObservableObject
     public string ProjectDisplayName { get => Project.DisplayName; set => SetProjectValue("修改中文名称", Project.DisplayName, value, item => Project.DisplayName = item); }
     public string ProjectDescription { get => Project.Description; set => SetProjectValue("修改介绍", Project.Description, value, item => Project.Description = item); }
     public string ProjectCarrierReanimation { get => Project.CarrierReanimation; set => SetProjectValue("修改载体动画", Project.CarrierReanimation, value, item => Project.CarrierReanimation = item); }
+    public string ProjectInitialActionId { get => Project.InitialActionId; set => SetProjectValue("修改初始动作", Project.InitialActionId, value, item => Project.InitialActionId = item); }
+    public bool ProjectHideTemplateAttachments { get => Project.HideTemplateAttachments; set => SetProjectValue("修改模板附件显示", Project.HideTemplateAttachments, value, item => Project.HideTemplateAttachments = item); }
     public AnimationOutputFormat ProjectOutputFormat { get => Project.OutputFormat; set => SetProjectValue("修改导出格式", Project.OutputFormat, value, item => Project.OutputFormat = item); }
     public string? ProjectGameRoot { get => Project.GameRoot; set => SetProjectValue("修改游戏目录", Project.GameRoot, value, item => Project.GameRoot = item); }
     public int ProjectNumericEntityId { get => Project.NumericEntityId; set => SetProjectValue("修改数字 ID", Project.NumericEntityId, value, item => Project.NumericEntityId = item); }
@@ -116,6 +119,65 @@ public sealed class EditorViewModel : ObservableObject
     public AnimationLoopMode? SelectedActionLoop { get => SelectedAction?.Loop; set => SetActionValue("修改动作循环", SelectedAction?.Loop, value, item => SelectedAction!.Loop = item ?? AnimationLoopMode.Loop); }
     public double? SelectedActionRate { get => SelectedAction?.Rate; set => SetActionValue("修改动作速度", SelectedAction?.Rate, value, item => SelectedAction!.Rate = item ?? Project.Animation.Fps); }
     public int? SelectedActionBlendFrames { get => SelectedAction?.BlendFrames; set => SetActionValue("修改动作混合帧", SelectedAction?.BlendFrames, value, item => SelectedAction!.BlendFrames = item ?? 0); }
+    public string SelectedActionReplacesCsv
+    {
+        get => SelectedAction is null ? string.Empty : string.Join(", ", SelectedAction.Replaces);
+        set
+        {
+            if (SelectedAction is null) return;
+            var replacements = (value ?? string.Empty)
+                .Split([',', ';', '\r', '\n', '\t', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            var normalized = string.Join(", ", replacements);
+            if (string.Equals(SelectedActionReplacesCsv, normalized, StringComparison.OrdinalIgnoreCase)) return;
+            RecordUndo("修改原版动作映射");
+            SelectedAction.Replaces = new ObservableCollection<string>(replacements);
+            RaiseActionProperties();
+        }
+    }
+
+    public ObservableCollection<AnimationEventDefinition>? SelectedActionEvents => SelectedAction?.Events;
+
+    public AnimationEventDefinition? SelectedEvent
+    {
+        get => _selectedEvent;
+        set
+        {
+            if (!SetField(ref _selectedEvent, value)) return;
+            RaiseEventProperties();
+        }
+    }
+
+    public string? SelectedEventId { get => SelectedEvent?.Id; set => SetEventValue("修改事件 ID", SelectedEvent?.Id, value, item => SelectedEvent!.Id = item ?? string.Empty); }
+    public int? SelectedEventFrame
+    {
+        get => SelectedEvent?.Frame;
+        set
+        {
+            if (SelectedEvent is null || SelectedEvent.Frame == value) return;
+            RecordUndo("修改事件帧");
+            SelectedEvent.Frame = value;
+            if (value.HasValue) SelectedEvent.NormalizedTime = null;
+            RaiseEventProperties();
+            RaisePropertyChanged(nameof(SelectedActionEvents));
+        }
+    }
+    public double? SelectedEventNormalizedTime
+    {
+        get => SelectedEvent?.NormalizedTime;
+        set
+        {
+            if (SelectedEvent is null || SelectedEvent.NormalizedTime == value) return;
+            RecordUndo("修改事件时间");
+            SelectedEvent.NormalizedTime = value;
+            if (value.HasValue) SelectedEvent.Frame = null;
+            RaiseEventProperties();
+            RaisePropertyChanged(nameof(SelectedActionEvents));
+        }
+    }
+    public bool? SelectedEventOncePerLoop { get => SelectedEvent?.OncePerLoop; set => SetEventValue("修改事件循环设置", SelectedEvent?.OncePerLoop, value, item => SelectedEvent!.OncePerLoop = item ?? true); }
+    public string? SelectedEventTargetAction { get => SelectedEvent?.TargetAction; set => SetEventValue("修改事件目标动作", SelectedEvent?.TargetAction, value, item => SelectedEvent!.TargetAction = item ?? string.Empty); }
 
     public AnimationTrack? SelectedTrack
     {
@@ -134,6 +196,7 @@ public sealed class EditorViewModel : ObservableObject
         set
         {
             if (!SetField(ref _selectedAction, value)) return;
+            _selectedEvent = value?.Events.FirstOrDefault();
             var range = ActiveRange;
             _currentFrame = range.Start;
             var visible = TimelineTracks;
@@ -142,6 +205,7 @@ public sealed class EditorViewModel : ObservableObject
             RaisePropertyChanged(nameof(CurrentFrame));
             RaisePropertyChanged(nameof(SelectedTrack));
             RaiseActionProperties();
+            RaiseEventProperties();
             RaiseTimelineProperties();
             RaiseFrameProperties();
             Status = value is null
@@ -226,6 +290,7 @@ public sealed class EditorViewModel : ObservableObject
         _selectedTrack = project.Animation.Tracks.FirstOrDefault(track => !track.IsActionTrack)
                          ?? project.Animation.Tracks.FirstOrDefault();
         _selectedAction = null;
+        _selectedEvent = null;
         IsPlaying = false;
         _history.Clear();
         RaisePropertyChanged(nameof(CurrentFrame));
@@ -245,6 +310,7 @@ public sealed class EditorViewModel : ObservableObject
         _selectedTrack = document.Tracks.FirstOrDefault(track => !track.IsActionTrack)
                          ?? document.Tracks.FirstOrDefault();
         _selectedAction = null;
+        _selectedEvent = null;
         _currentFrame = 0;
         _history.Clear();
         RaisePropertyChanged(nameof(SelectedTrack));
@@ -259,6 +325,7 @@ public sealed class EditorViewModel : ObservableObject
         RecordUndo("重新识别动作");
         Project.Actions = _actionCatalog.InferActions(Project.Animation, Project.Kind);
         _selectedAction = null;
+        _selectedEvent = null;
         RaisePropertyChanged(nameof(Actions));
         RaisePropertyChanged(nameof(SelectedAction));
         RaiseTimelineProperties();
@@ -293,6 +360,33 @@ public sealed class EditorViewModel : ObservableObject
         RecordUndo("删除动作");
         Project.Actions.Remove(SelectedAction);
         SelectedAction = null;
+    }
+
+    public void AddAnimationEvent()
+    {
+        if (SelectedAction is null) return;
+        RecordUndo("添加动作事件");
+        var animationEvent = new AnimationEventDefinition
+        {
+            Id = "FIRE_PROJECTILE",
+            Frame = Math.Max(0, CurrentFrame - ActiveRange.Start),
+            OncePerLoop = true
+        };
+        SelectedAction.Events.Add(animationEvent);
+        SelectedEvent = animationEvent;
+        RaisePropertyChanged(nameof(SelectedActionEvents));
+    }
+
+    public void RemoveSelectedAnimationEvent()
+    {
+        if (SelectedAction is null || SelectedEvent is null) return;
+        RecordUndo("删除动作事件");
+        var index = SelectedAction.Events.IndexOf(SelectedEvent);
+        SelectedAction.Events.Remove(SelectedEvent);
+        SelectedEvent = SelectedAction.Events.Count == 0
+            ? null
+            : SelectedAction.Events[Math.Clamp(index, 0, SelectedAction.Events.Count - 1)];
+        RaisePropertyChanged(nameof(SelectedActionEvents));
     }
 
     public void AddTrack(string name)
@@ -938,6 +1032,15 @@ public sealed class EditorViewModel : ObservableObject
         NotifyVisualChanged();
     }
 
+    private void SetEventValue<T>(string historyName, T current, T value, Action<T> setter)
+    {
+        if (SelectedEvent is null || EqualityComparer<T>.Default.Equals(current, value)) return;
+        RecordUndo(historyName);
+        setter(value);
+        RaiseEventProperties();
+        RaisePropertyChanged(nameof(SelectedActionEvents));
+    }
+
     private void RecordUndo(string name)
     {
         if (_editTransactionActive) return;
@@ -960,12 +1063,14 @@ public sealed class EditorViewModel : ObservableObject
         _selectedAction = snapshot.SelectedActionIndex >= 0 && snapshot.SelectedActionIndex < Project.Actions.Count
             ? Project.Actions[snapshot.SelectedActionIndex]
             : null;
+        _selectedEvent = _selectedAction?.Events.FirstOrDefault();
         var range = ActiveRange;
         _currentFrame = Math.Clamp(snapshot.CurrentFrame, range.Start, range.End);
         _editTransactionActive = false;
         RaisePropertyChanged(nameof(SelectedTrack));
         RaisePropertyChanged(nameof(SelectedAction));
         RaiseActionProperties();
+        RaiseEventProperties();
         RaiseAll();
         RaiseHistoryProperties();
         NotifyVisualChanged();
@@ -1007,7 +1112,8 @@ public sealed class EditorViewModel : ObservableObject
         foreach (var property in new[]
                  {
                      nameof(ProjectKind), nameof(ProjectId), nameof(ProjectDisplayName), nameof(ProjectDescription),
-                     nameof(ProjectCarrierReanimation), nameof(ProjectOutputFormat), nameof(ProjectGameRoot),
+                     nameof(ProjectCarrierReanimation), nameof(ProjectInitialActionId), nameof(ProjectHideTemplateAttachments),
+                     nameof(ProjectOutputFormat), nameof(ProjectGameRoot),
                      nameof(ProjectNumericEntityId), nameof(ProjectTemplateEntityId), nameof(ProjectTemplateSummary),
                      nameof(IsPlantProject), nameof(PlantTemplates), nameof(ProjectCost),
                      nameof(ProjectRechargeTime), nameof(ProjectHealth), nameof(ProjectLaunchRate),
@@ -1022,7 +1128,19 @@ public sealed class EditorViewModel : ObservableObject
         foreach (var property in new[]
                  {
                      nameof(SelectedActionId), nameof(SelectedActionDisplayName), nameof(SelectedActionTrack),
-                     nameof(SelectedActionLoop), nameof(SelectedActionRate), nameof(SelectedActionBlendFrames)
+                     nameof(SelectedActionLoop), nameof(SelectedActionRate), nameof(SelectedActionBlendFrames),
+                     nameof(SelectedActionReplacesCsv), nameof(SelectedActionEvents)
+                 })
+            RaisePropertyChanged(property);
+    }
+
+    private void RaiseEventProperties()
+    {
+        foreach (var property in new[]
+                 {
+                     nameof(SelectedEvent), nameof(SelectedEventId), nameof(SelectedEventFrame),
+                     nameof(SelectedEventNormalizedTime), nameof(SelectedEventOncePerLoop),
+                     nameof(SelectedEventTargetAction)
                  })
             RaisePropertyChanged(property);
     }
@@ -1034,6 +1152,7 @@ public sealed class EditorViewModel : ObservableObject
         RaisePropertyChanged(nameof(Actions));
         RaiseProjectEditProperties();
         RaiseActionProperties();
+        RaiseEventProperties();
         RaiseTimelineProperties();
         RaiseFrameProperties();
         RaiseHistoryProperties();

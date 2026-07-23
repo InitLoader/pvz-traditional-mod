@@ -648,11 +648,14 @@ void TestExternalAnimationConfigAndRawReanim() {
             "id":"PLANT_DEMO_01",
             "path":"pvzmod/animations/plants/demo/demo.reanim",
             "carrierReanimation":"REANIM_PEASHOOTER",
+            "initialAction":"idle",
             "images":{"IMAGE_REANIM_DEMO_BODY":"KILL"},
             "actions":{
               "idle":{"track":"anim_idle","loop":"loop","rate":1.25},
               "attack":{"track":"anim_attack","loop":"once_hold","blendFrames":3,
-                "events":[{"id":"FIRE_PROJECTILE","frame":1}]}
+                "replaces":["anim_shooting","anim_head_shooting"],
+                "events":[{"id":"FIRE_PROJECTILE","frame":1},
+                          {"id":"PLAY_ACTION","normalizedTime":0.9,"action":"idle"}]}
             },
             "locators":{"projectile":"locator_mouth"}
           }]
@@ -690,8 +693,10 @@ void TestExternalAnimationConfigAndRawReanim() {
                "animation image symbols should retain external texture ids");
         const auto* attack = animation == nullptr ? nullptr : animation->FindAction("attack");
         Expect(attack != nullptr && attack->loop == pvzmod::ExternalAnimationLoopMode::OnceHold &&
-                   attack->blendFrames == 3 && attack->events.size() == 1,
-               "animation action playback and event metadata should parse");
+                   attack->blendFrames == 3 && attack->events.size() == 2 &&
+                   attack->events[1].targetAction == "idle" &&
+                   animation->FindActionForTrack("ANIM_HEAD_SHOOTING") == attack,
+                "animation action playback and event metadata should parse");
     }
     Expect(raw.Ok() && raw.definition->FrameCount() == 4,
            "Raw reanimation tracks with equal frame counts should parse");
@@ -765,6 +770,26 @@ void TestExternalAnimationConfigRejectsUnsafeInput() {
     std::error_code error;
     std::filesystem::remove(path, error);
     Expect(!loaded.Ok(), "external animation traversal and ambiguous event times must be rejected");
+}
+
+void TestExternalAnimationConfigRejectsConflictingMappings() {
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "pvzmod_external_animation_conflict_test.jsonc";
+    {
+        std::ofstream output(path, std::ios::binary | std::ios::trunc);
+        output << R"({"schemaVersion":1,"animations":[{
+          "id":"BAD","path":"pvzmod/animations/plants/bad.reanim",
+          "carrierReanimation":"REANIM_PEASHOOTER","initialAction":"idle",
+          "actions":{
+            "idle":{"track":"anim_idle","replaces":["anim_shared"]},
+            "attack":{"track":"anim_attack","replaces":["ANIM_SHARED"]}
+          }
+        }]})";
+    }
+    const auto loaded = pvzmod::LoadExternalAnimationConfig(path);
+    std::error_code error;
+    std::filesystem::remove(path, error);
+    Expect(!loaded.Ok(), "multiple custom actions must not claim the same template track");
 }
 
 void TestRawReanimRejectsUnsafeOrMalformedInput() {
@@ -977,6 +1002,7 @@ int main() {
     TestExternalAnimationConfigAndRawReanim();
     TestRuntimeReanimDefinitionBuild();
     TestExternalAnimationConfigRejectsUnsafeInput();
+    TestExternalAnimationConfigRejectsConflictingMappings();
     TestRawReanimRejectsUnsafeOrMalformedInput();
     TestCompiledReanimDecoding();
     TestExternalAnimationConfigAcceptsCompiledPaths();

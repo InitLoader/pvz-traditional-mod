@@ -258,12 +258,24 @@ public sealed class AnimationDocument : ObservableObject
         Tracks.FirstOrDefault(track => string.Equals(track.Name, name, StringComparison.OrdinalIgnoreCase));
 }
 
-public sealed class AnimationEventDefinition
+public sealed class AnimationEventDefinition : ObservableObject
 {
-    public string Id { get; set; } = "EVENT";
-    public int? Frame { get; set; }
-    public double? NormalizedTime { get; set; }
-    public bool OncePerLoop { get; set; } = true;
+    private string _id = "FIRE_PROJECTILE";
+    private int? _frame;
+    private double? _normalizedTime;
+    private bool _oncePerLoop = true;
+    private string _targetAction = string.Empty;
+
+    public string Id { get => _id; set { if (SetField(ref _id, value)) RaisePropertyChanged(nameof(Summary)); } }
+    public int? Frame { get => _frame; set { if (SetField(ref _frame, value)) RaisePropertyChanged(nameof(Summary)); } }
+    public double? NormalizedTime { get => _normalizedTime; set { if (SetField(ref _normalizedTime, value)) RaisePropertyChanged(nameof(Summary)); } }
+    public bool OncePerLoop { get => _oncePerLoop; set => SetField(ref _oncePerLoop, value); }
+    public string TargetAction { get => _targetAction; set { if (SetField(ref _targetAction, value)) RaisePropertyChanged(nameof(Summary)); } }
+
+    [JsonIgnore]
+    public string Summary => Frame.HasValue
+        ? $"{Id} · 第 {Frame.Value + 1} 帧"
+        : $"{Id} · {NormalizedTime.GetValueOrDefault():0.###}";
 }
 
 public sealed class ActionDefinition : ObservableObject
@@ -308,6 +320,7 @@ public sealed class ActionDefinition : ObservableObject
     public AnimationLoopMode Loop { get => _loop; set => SetField(ref _loop, value); }
     public double Rate { get => _rate; set => SetField(ref _rate, value); }
     public int BlendFrames { get => _blendFrames; set => SetField(ref _blendFrames, value); }
+    public ObservableCollection<string> Replaces { get; set; } = [];
     public ObservableCollection<AnimationEventDefinition> Events { get; set; } = [];
 
     [JsonIgnore]
@@ -325,8 +338,10 @@ public sealed class EditorProject : ObservableObject
     private string? _gameRoot;
     private string? _projectPath;
     private string? _sourceAnimationPath;
+    private string _initialActionId = "idle";
+    private bool _hideTemplateAttachments = true;
 
-    public int SchemaVersion { get; set; } = 3;
+    public int SchemaVersion { get; set; } = 4;
     public string Id { get => _id; set => SetField(ref _id, value); }
     public string DisplayName { get => _displayName; set => SetField(ref _displayName, value); }
     public string Description { get => _description; set => SetField(ref _description, value); }
@@ -336,6 +351,8 @@ public sealed class EditorProject : ObservableObject
     public string? GameRoot { get => _gameRoot; set => SetField(ref _gameRoot, value); }
     public string? ProjectPath { get => _projectPath; set => SetField(ref _projectPath, value); }
     public string? SourceAnimationPath { get => _sourceAnimationPath; set => SetField(ref _sourceAnimationPath, value); }
+    public string InitialActionId { get => _initialActionId; set => SetField(ref _initialActionId, value); }
+    public bool HideTemplateAttachments { get => _hideTemplateAttachments; set => SetField(ref _hideTemplateAttachments, value); }
 
     public int NumericEntityId { get; set; } = 1000;
     public int TemplateEntityId { get; set; }

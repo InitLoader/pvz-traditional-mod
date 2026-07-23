@@ -157,14 +157,22 @@ public sealed class ProjectPackageService
                 ["rate"] = action.Rate,
                 ["blendFrames"] = action.BlendFrames
             };
+            if (action.Replaces.Count > 0)
+                actionJson["replaces"] = new JsonArray(
+                    action.Replaces.Select(value => (JsonNode?)JsonValue.Create(value)).ToArray());
             if (action.Events.Count > 0)
             {
-                actionJson["events"] = new JsonArray(action.Events.Select(item => new JsonObject
+                actionJson["events"] = new JsonArray(action.Events.Select(item =>
                 {
-                    ["id"] = item.Id,
-                    ["frame"] = item.Frame,
-                    ["normalizedTime"] = item.NormalizedTime,
-                    ["oncePerLoop"] = item.OncePerLoop
+                    var eventJson = new JsonObject
+                    {
+                        ["id"] = item.Id,
+                        ["oncePerLoop"] = item.OncePerLoop
+                    };
+                    if (item.Frame.HasValue) eventJson["frame"] = item.Frame.Value;
+                    else eventJson["normalizedTime"] = item.NormalizedTime;
+                    if (!string.IsNullOrWhiteSpace(item.TargetAction)) eventJson["action"] = item.TargetAction;
+                    return eventJson;
                 }).ToArray());
             }
             actions[action.Id] = actionJson;
@@ -174,6 +182,7 @@ public sealed class ProjectPackageService
             ["id"] = SanitizeResourceId(project.Id),
             ["path"] = relativeAnimation,
             ["carrierReanimation"] = project.CarrierReanimation,
+            ["initialAction"] = project.InitialActionId,
             ["images"] = images,
             ["actions"] = actions
         };
@@ -185,6 +194,7 @@ public sealed class ProjectPackageService
         ["name"] = project.DisplayName,
         ["description"] = project.Description,
         ["templatePlantId"] = project.TemplateEntityId,
+        ["hideTemplateAttachments"] = project.HideTemplateAttachments,
         ["unlocked"] = true,
         ["cost"] = project.Cost,
         ["rechargeTime"] = project.RechargeTime,
@@ -255,10 +265,26 @@ public sealed class ProjectPackageService
         }
         if (project.Animation.Tracks.Count == 0) throw new InvalidDataException("动画没有轨道。 ");
         if (project.Actions.Count == 0) throw new InvalidDataException("至少需要定义一个动作。 ");
+        if (!project.Actions.Any(action => string.Equals(action.Id, project.InitialActionId, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidDataException($"初始动作 {project.InitialActionId} 不存在。 ");
+        var claimedTracks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var action in project.Actions)
         {
             if (project.Animation.FindTrack(action.Track) is null)
                 throw new InvalidDataException($"动作 {action.Id} 引用了不存在的轨道 {action.Track}。 ");
+            foreach (var track in action.Replaces.Prepend(action.Track))
+            {
+                if (string.IsNullOrWhiteSpace(track) || !claimedTracks.Add(track))
+                    throw new InvalidDataException($"原版动作轨道 {track} 被重复映射或为空。 ");
+            }
+            foreach (var animationEvent in action.Events)
+            {
+                if (animationEvent.Frame.HasValue == animationEvent.NormalizedTime.HasValue)
+                    throw new InvalidDataException($"动作 {action.Id} 的事件 {animationEvent.Id} 必须只设置帧或归一化时间之一。 ");
+                if (animationEvent.Id == "PLAY_ACTION" &&
+                    !project.Actions.Any(candidate => string.Equals(candidate.Id, animationEvent.TargetAction, StringComparison.OrdinalIgnoreCase)))
+                    throw new InvalidDataException($"PLAY_ACTION 事件引用了不存在的动作 {animationEvent.TargetAction}。 ");
+            }
         }
     }
 }

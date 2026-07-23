@@ -4,7 +4,7 @@
 
 ## 1. 当前实现状态
 
-`0.10.2-dev` 已完成自定义植物主体动画垂直切片：
+`0.10.3-dev` 在稳定的自定义植物主体动画纵切上增加了动作元数据制作与存档恢复：
 
 - `pvzmod/config/resources/animations.jsonc` 外部动画注册表。
 - `pvzmod/animations/` 分类资源目录和安全路径限制。
@@ -16,9 +16,12 @@
 - 动画、动作轨道、事件帧、定位轨道和外部贴图 ID 的启动时交叉校验。
 - 只读运行时动画注册表和持久的 32 位 ABI Definition 缓存。
 - `custom_plants.jsonc.animationId` 到植物主体 Reanimation 的运行时注入。
-- 模板行为状态机继续负责攻击时机，但 `anim_idle`、`anim_shooting` 等同名动作从外部动画播放。
+- `initialAction` 已用于注入后首次播放；`actions[].replaces`、任意自定义动作和跨帧事件已进入 JSONC、`.pvza`、编辑器及打包校验。
+- 读取关卡存档时可把无法由原版枚举还原的空 Definition 恢复为启动时预构建的同一外部 Definition，已完成“放置 `NEW_PLANT`→关闭保存→重启→继续关卡”实机回归。
+- 当前只允许所有自定义植物共用一个唯一的非空 `animationId`；多个不同外部动画无法从原版存档中消歧时会禁用注入并回退模板动画。
+- `Plant::PlayBodyReanim`、全局 `Reanimation::SetFramesForLayer`/`GetFramesForLayer` 动作拦截原型已撤下；它们会影响全游戏动画，不能作为当前发布路径。
 
-当前不安装全局 `ReanimationInitializeType` Detour，也不把自定义 Definition 写入原版固定数组。运行时在自定义植物完成原版初始化后，只替换已有 body Holder 的 Definition 和 TrackInstance；构建或贴图加载失败时保留原模板动画。该路径尚不替换模板创建的附属头部、独立眨眼和其他 Reanimation，也尚未接入僵尸。
+当前不安装全局 `ReanimationInitializeType` Detour，也不把自定义 Definition 写入原版固定数组。运行时在自定义植物完成原版初始化后，只替换已有 body Holder 的 Definition 和 TrackInstance；构建、贴图加载或存档消歧失败时保留原模板动画。模板创建的附属头部、独立眨眼和其他 Reanimation 仍使用模板资源；如果一个新角色需要完整多部件外观，应先在制作器中合成为一个外部 body Definition。僵尸动画运行时尚未接入。
 
 ## 2. 原版动画模型
 
@@ -76,6 +79,7 @@ compiled/reanim/                            # 游戏本体已有的原版 compil
 
       // 以后只作为进入原版 ReanimationHolder 的安全载体。
       "carrierReanimation": "REANIM_PEASHOOTER",
+      "initialAction": "idle",
 
       // Raw .reanim 图片符号 -> textures.jsonc 的字符串 ID。
       "images": {
@@ -92,11 +96,13 @@ compiled/reanim/                            # 游戏本体已有的原版 compil
         },
         "attack": {
           "track": "anim_attack",
+          "replaces": ["anim_shooting", "anim_head_shooting"],
           "loop": "once_hold",
           "rate": 18,
           "blendFrames": 3,
           "events": [
-            { "id": "FIRE_PROJECTILE", "frame": 9, "oncePerLoop": true }
+            { "id": "FIRE_PROJECTILE", "frame": 9, "oncePerLoop": true },
+            { "id": "PLAY_ACTION", "normalizedTime": 0.95, "action": "idle" }
           ]
         }
       },
@@ -115,13 +121,16 @@ compiled/reanim/                            # 游戏本体已有的原版 compil
 - `id`：大小写敏感，匹配 `[A-Za-z0-9_]+`，长度 1–64。
 - `path`：支持 `pvzmod/animations/` 下的 `.reanim` 或 `.reanim.compiled`；也支持只读引用 `compiled/reanim/*.reanim.compiled` 原版资源。拒绝绝对路径、盘符、UNC 和 `..`。
 - `carrierReanimation`：稳定的原版动画符号名，只作为对象池载体，不代表复用其图片或动作。
+- `initialAction`：植物注入完成后立即播放的动作 ID；省略时为 `idle`，且必须引用已登记动作。
 - `images`：Raw 或自制 compiled Reanimation 中的图片符号到外部贴图 ID 的映射；贴图 ID 必须已经登记在 `textures.jsonc`。直接引用原版 compiled 时可以继续使用其原版图片符号。
 - `actions`：至少一个动作，动作 ID 匹配 `[A-Za-z0-9_]+`。
 - `loop`：`loop`、`once`、`once_hold`。
 - `rate`：大于 0 且不超过 120。
 - `blendFrames`：0–120。
+- `actions[].replaces`：该自定义动作接管的原版动作轨道名。每个动作自己的 `track` 也会隐式加入映射；匹配不区分大小写，同一原版轨道不能被两个动作同时声明。可映射 body 或隐藏附件发出的请求，例如 `anim_shooting1/2/3`。
 - `events[].frame`：动作范围内的相对帧。
 - `events[].normalizedTime`：0–1；与 `frame` 二选一。
+- `events[].action`：`PLAY_ACTION` 的目标动作 ID；其他事件可省略。
 - `locators`：逻辑挂点名到实际轨道名的映射，目标轨道必须存在。
 
 ## 5. Raw 与 compiled 安全边界
@@ -231,32 +240,32 @@ Plant*/Zombie* 原版对象池
 ```text
 runtime_reanim_definition   Raw 数据 -> ABI 兼容 Definition（已实现）
 external_texture_runtime    图片符号 -> Image*（已实现）
-custom_plant_animation_runtime 原位替换植物 body Definition（已实现）
+custom_plant_animation_runtime body 注入、初始动作和单 Definition 存档恢复（已实现）
 animation_instance_hook     通用 AddReanimation/附属实例接入
 custom_animation_runtime    通用动画实例创建、查找、销毁
-animation_controller        动作、混合、速率、循环
-animation_event_bus         发射、啃咬、爆炸等帧事件
+animation_controller        植物局部动作、混合、速率、循环（待安全接入）
+animation_event_bus         FIRE_PROJECTILE/PLAY_ACTION 等运行时事件（待接入）
 custom_plant_runtime        独立植物状态机
 custom_zombie_runtime       独立僵尸状态机
 custom_entity_save          Mod 存档和版本迁移
 custom_animation_preview    卡片、选卡、图鉴和预览
 ```
 
-植物 body 的当前实现先完成动画、动作、贴图和 ABI Definition 全部校验，再释放旧 TrackInstance，并在原 Holder 内调用原版初始化函数；失败发生在释放前，因此可安全保留模板动画。后续创建附属动画时再使用线程局部 `PendingCustomDefinition`：调用原版 `AddReanimation` 分配 Holder 实例，由窄范围初始化桥接选择外部 Definition，同时保留安全的原版载体 ReanimationType，不扩大 `NUM_REANIMS`。
+植物 body 的当前实现先完成动画、动作、贴图和 ABI Definition 全部校验，再释放旧 TrackInstance，并在原 Holder 内调用原版初始化函数；失败发生在释放前，因此可安全保留模板动画。读取关卡存档时，`Reanimation` 同步器可能把未登记的外部 Definition 解成空指针；兼容桥只在该空值点恢复启动时预构建且持久存活的唯一 Definition，不用 0 轨空壳，也不修改正常原版 Definition。后续动作替换应使用植物局部调用点；多个独立外部附件与多个可存档 Definition 需要版本化 Mod 存档元数据。
 
 ## 9. 动作事件
 
-动作事件不能直接在 JSON 中执行任意代码。有限 JSON 可以把一个动画事件映射到一个内置固定效果；复杂条件与组合转发给 Lua；缺少底层能力时由固定目录中的可信 DLL 通过版本化 Host API 注册共享 Capability。JSON、Lua、内置 C++ 和 DLL 使用同一事件中心、顺序、命令缓冲和所有者管理。Lua 不能取得裸指针或任意内存访问。完整方案见 `SCRIPTABLE_SKILLS_AND_BEHAVIORS.md`。首批事件计划：
+动作事件不能直接在 JSON 中执行任意代码。制作器、工程与配置加载器目前能保存和校验 `FIRE_PROJECTILE`、`PLAY_ACTION` 等事件元数据，但发布 DLL 尚未执行这些事件；安全的植物局部动作控制器落地后再接入。后续统一事件中心通过安全句柄适配给 JSON/Lua/DLL，当前不会提前嵌入 Lua。完整方案见 `SCRIPTABLE_SKILLS_AND_BEHAVIORS.md`。后续事件：
 
 - 植物：`FIRE_PROJECTILE`、`GENERATE_SUN`、`EXPLODE`、`SPAWN_CHILD`。
 - 僵尸：`BITE_HIT`、`THROW_OBJECT`、`SUMMON_ZOMBIE`、`DROP_ARMOR`。
 - 通用：`PLAY_SOUND`、`SPAWN_PARTICLE`、`ENABLE_HITBOX`、`DISABLE_HITBOX`。
 
-控制器需要记录每次循环已触发事件，使用原版等价的跨帧判定，避免掉帧时漏事件或同一帧重复发射。
+未来控制器需要记录动作世代、循环次数和每个事件的触发键，并在一帧跨越动作事件或循环边界时补发，避免漏发或重复执行。
 
 ## 10. 存档和热加载
 
-原版存档不能写入超出固定枚举的动画或实体 ID。Mod 存档保存：
+原版存档不能写入超出固定枚举的动画或实体 ID。当前兼容层只支持所有自定义植物共用一个唯一外部 `animationId`：保存时仍由原版写 TrackInstance，读取时把空 Definition 恢复到启动时预构建的同一持久对象。已经验证含 5 株 `NEW_PLANT` 的关卡完全退出并重启后可继续运行。若存在多个不同动画，运行时禁用外部 body 注入；完整 Mod 存档仍需保存：
 
 ```text
 custom entity id

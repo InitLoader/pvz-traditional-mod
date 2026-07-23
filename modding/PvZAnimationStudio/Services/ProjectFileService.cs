@@ -62,7 +62,7 @@ public sealed class ProjectFileService
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var temporaryPath = path + $".{Guid.NewGuid():N}.tmp";
         var portable = _clone.Clone(project);
-        portable.SchemaVersion = Math.Max(3, portable.SchemaVersion);
+        portable.SchemaVersion = Math.Max(4, portable.SchemaVersion);
         portable.ProjectPath = null;
         portable.ImageBindings.Clear();
         portable.ImageLayouts.Clear();
@@ -176,6 +176,13 @@ public sealed class ProjectFileService
             if (string.IsNullOrWhiteSpace(track.EditorId)) track.EditorId = Guid.NewGuid().ToString("N");
         }
         foreach (var curve in project.Curves) curve.Keys ??= [];
+        project.Actions ??= [];
+        foreach (var action in project.Actions)
+        {
+            action.Replaces ??= [];
+            action.Events ??= [];
+        }
+        if (string.IsNullOrWhiteSpace(project.InitialActionId)) project.InitialActionId = "idle";
         project.WorkspaceLayout ??= new WorkspaceLayoutPresetService().Create(WorkspacePreset.Animation);
     }
 

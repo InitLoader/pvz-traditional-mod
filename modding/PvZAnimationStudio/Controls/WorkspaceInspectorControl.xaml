@@ -37,6 +37,39 @@
           <TextBlock Grid.Row="5" Text="混合帧"/><TextBox Grid.Row="5" Grid.Column="1" Text="{Binding SelectedActionBlendFrames, UpdateSourceTrigger=LostFocus}"/>
         </Grid>
       </GroupBox>
+      <GroupBox Header="动作替换与触发器">
+        <StackPanel>
+          <TextBlock Text="替换原版轨道（逗号分隔）"/>
+          <TextBox Text="{Binding SelectedActionReplacesCsv, UpdateSourceTrigger=LostFocus}"
+                   ToolTip="例如 anim_shooting, anim_attack；身体、头部和附件发出的同名请求都会切换到当前自定义动作。"/>
+          <TextBlock Margin="0,7,0,2" Text="动作事件"/>
+          <ListBox Height="88" ItemsSource="{Binding SelectedActionEvents}"
+                   SelectedItem="{Binding SelectedEvent, Mode=TwoWay}" DisplayMemberPath="Summary"/>
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+            <Button Content="＋ 添加事件" Click="AddEvent_Click"/>
+            <Button Content="－ 删除事件" Click="RemoveEvent_Click"/>
+          </StackPanel>
+          <Grid Margin="0,4,0,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="115"/><ColumnDefinition Width="*" MinWidth="120"/></Grid.ColumnDefinitions>
+            <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+            <TextBlock Grid.Row="0" Text="事件 ID"/><TextBox Grid.Row="0" Grid.Column="1" Text="{Binding SelectedEventId, UpdateSourceTrigger=LostFocus}"/>
+            <TextBlock Grid.Row="1" Text="动作内帧（0 起）"/><TextBox Grid.Row="1" Grid.Column="1" Text="{Binding SelectedEventFrame, UpdateSourceTrigger=LostFocus}"/>
+            <TextBlock Grid.Row="2" Text="归一化时间"/><TextBox Grid.Row="2" Grid.Column="1" Text="{Binding SelectedEventNormalizedTime, UpdateSourceTrigger=LostFocus}" ToolTip="帧和归一化时间只填一个；归一化范围 0 到 1。"/>
+            <TextBlock Grid.Row="3" Text="目标动作"/><TextBox Grid.Row="3" Grid.Column="1" Text="{Binding SelectedEventTargetAction, UpdateSourceTrigger=LostFocus}" ToolTip="PLAY_ACTION 事件必填，例如 idle。"/>
+            <TextBlock Grid.Row="4" Text="每轮触发一次"/><CheckBox Grid.Row="4" Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding SelectedEventOncePerLoop, Mode=TwoWay}"/>
+          </Grid>
+          <TextBlock Margin="2,5" Foreground="#9FC3D8" TextWrapping="Wrap"
+                     Text="事件会保存并导出；当前 DLL 尚未执行 FIRE_PROJECTILE、PLAY_ACTION 或其他事件。"/>
+        </StackPanel>
+      </GroupBox>
+      <GroupBox Header="动画运行时">
+        <Grid>
+          <Grid.ColumnDefinitions><ColumnDefinition Width="115"/><ColumnDefinition Width="*" MinWidth="120"/></Grid.ColumnDefinitions>
+          <Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+          <TextBlock Grid.Row="0" Text="初始动作 ID"/><TextBox Grid.Row="0" Grid.Column="1" Text="{Binding ProjectInitialActionId, UpdateSourceTrigger=LostFocus}"/>
+          <TextBlock Grid.Row="1" Text="隐藏模板附件"/><CheckBox Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding ProjectHideTemplateAttachments, Mode=TwoWay}" ToolTip="保存并导出附件显示策略；当前 DLL 尚未执行此字段。"/>
+        </Grid>
+      </GroupBox>
       <GroupBox Header="植物 / 僵尸配置">
         <Grid>
           <Grid.ColumnDefinitions><ColumnDefinition Width="115"/><ColumnDefinition Width="*" MinWidth="120"/></Grid.ColumnDefinitions>

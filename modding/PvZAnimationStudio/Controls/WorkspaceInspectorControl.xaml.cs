@@ -23,4 +23,6 @@ public partial class WorkspaceInspectorControl : UserControl
 
     private void SetKey_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.SetKeyframe();
     private void ClearKey_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.ClearKeyframe();
+    private void AddEvent_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.AddAnimationEvent();
+    private void RemoveEvent_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.RemoveSelectedAnimationEvent();
 }
