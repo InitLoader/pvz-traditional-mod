@@ -2,7 +2,7 @@
 
 ## 0.11.x 规划：三级扩展宿主
 
-> 本节是设计契约，当前运行时尚未实现 JSON MicroRule、Lua 宿主或外部 DLL 插件加载。完整接口、目录、示例和阶段验收见 `SCRIPTABLE_SKILLS_AND_BEHAVIORS.md`。
+> 本节是设计契约，当前运行时尚未实现 JSON MicroRule、Lua 宿主或外部 DLL 插件加载。完整接口、目录、示例和阶段验收见 `SCRIPTABLE_SKILLS_AND_BEHAVIORS.md`；现有代码在大量植物、僵尸、子弹、UI、资源和事件订阅下的瓶颈与改造优先级见 `EXTENSION_SCALE_ARCHITECTURE_AUDIT.md`。
 
 后续扩展固定分为三级：有限 JSON 只处理静态配置和“一个事件 + 简单过滤 + 一个固定效果”；Lua 处理条件、计时、状态机和能力组合；可信 Win32 DLL 只从 `pvzmod/plugins/native/<plugin-id>/` 加载，通过 `PvZModHostApiV1` 调用核心并注册共享原生 Capability。三者不能分别建立事件总线、实体包装或命令系统。
 

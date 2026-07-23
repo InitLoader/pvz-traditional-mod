@@ -1,6 +1,8 @@
 # 三级可扩展技能与自由行为运行时方案（有限 JSON / Lua / DLL）
 
 > 状态：设计稿，尚未实现。目标版本暂定 `0.11.x`。本文只定义架构、接口和验收顺序，不表示当前 DLL 已经能够加载 Lua。
+>
+> 当前 `0.10.x` 基础在大量植物、僵尸、子弹、UI、资源与订阅者下的具体瓶颈、容量维度和前置改造见 [`EXTENSION_SCALE_ARCHITECTURE_AUDIT.md`](EXTENSION_SCALE_ARCHITECTURE_AUDIT.md)。该审计是本方案的规模化约束，不应只提高现有 JSON 数量上限后绕过。
 
 ## 1. 结论
 

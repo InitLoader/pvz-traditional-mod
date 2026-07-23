@@ -46,7 +46,7 @@
 
 详细设计和实现依据见 [`PVZ传统改版技术路线.md`](PVZ传统改版技术路线.md)。
 外部动作制作、配置和真正新增实体的分阶段契约见 [`modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`](modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md)。
-技能与后续自由行为采用三级扩展规划：有限 JSON 处理静态配置和“一事件一效果”的微型功能，Lua 处理有状态/组合玩法，可信 Win32 DLL 从固定插件目录加载并通过版本化 Host API 提供原生能力。JSON、Lua、内置代码和多个 DLL 共用事件、Capability、所有者和配置注册中心，并把“1 小时完成首个技能、10 小时熟悉常用能力、30 小时近乎掌握脚本玩法层”作为硬性验收目标；完整方案见 [`modding/SCRIPTABLE_SKILLS_AND_BEHAVIORS.md`](modding/SCRIPTABLE_SKILLS_AND_BEHAVIORS.md)。该运行时目前仍是设计稿，尚未实现。
+技能与后续自由行为采用三级扩展规划：有限 JSON 处理静态配置和“一事件一效果”的微型功能，Lua 处理有状态/组合玩法，可信 Win32 DLL 从固定插件目录加载并通过版本化 Host API 提供原生能力。JSON、Lua、内置代码和多个 DLL 共用事件、Capability、所有者和配置注册中心，并把“1 小时完成首个技能、10 小时熟悉常用能力、30 小时近乎掌握脚本玩法层”作为硬性验收目标；完整方案见 [`modding/SCRIPTABLE_SKILLS_AND_BEHAVIORS.md`](modding/SCRIPTABLE_SKILLS_AND_BEHAVIORS.md)。现有基础在大量植物、僵尸、子弹、UI、资源和订阅者下的具体风险、容量模型与 P0/P1 改造见 [`modding/EXTENSION_SCALE_ARCHITECTURE_AUDIT.md`](modding/EXTENSION_SCALE_ARCHITECTURE_AUDIT.md)。以上运行时目前仍是设计稿，尚未实现。
 动画制作器操作与边界见 [`modding/PvZAnimationStudio/README.md`](modding/PvZAnimationStudio/README.md)。
 原版 48 个独立植物动画与 38 个僵尸/僵尸效果动画的逐项审计见 [`modding/PvZAnimationStudio/ORIGINAL_ASSET_AUDIT.md`](modding/PvZAnimationStudio/ORIGINAL_ASSET_AUDIT.md)。
 原版植物 `SeedType 0–52`、可复用模板范围和动画资源映射见 [`modding/PvZAnimationStudio/PLANT_TEMPLATE_IDS.md`](modding/PvZAnimationStudio/PLANT_TEMPLATE_IDS.md)。
@@ -63,6 +63,7 @@
 - `modding/ARCHITECTURE.md`：代码架构和 Hook 接入说明。
 - `modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`：外部 Reanimation 制作、解析、动作事件和独立实体方案。
 - `modding/SCRIPTABLE_SKILLS_AND_BEHAVIORS.md`：有限 JSON、Lua、原生 DLL 三级扩展，统一事件/Capability 管理、热重载和插件 ABI。
+- `modding/EXTENSION_SCALE_ARCHITECTURE_AUDIT.md`：当前基础架构的大规模扩展审计，覆盖植物、僵尸、子弹、UI、资源、事件热路径、32 位容量和演进优先级。
 
 完整配置说明见 [`modding/README.md`](modding/README.md) 与 [`pvzmod/config/README.md`](pvzmod/config/README.md)。
 
