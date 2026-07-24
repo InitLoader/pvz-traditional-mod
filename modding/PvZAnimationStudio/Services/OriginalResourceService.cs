@@ -137,12 +137,20 @@ public sealed class OriginalResourceService
                      .Distinct(StringComparer.OrdinalIgnoreCase))
         {
             if (!IsOriginalGameSymbol(project, symbol)) continue;
+            var normalized = NormalizeSymbol(symbol);
+            if (!_symbolIndex.TryGetValue(normalized, out var originalPath) || !File.Exists(originalPath)) continue;
             if (preferOriginalResources)
             {
-                project.ImageBindings.Remove(symbol);
+                project.ImageBindings[symbol] = originalPath;
                 project.ImageLayouts.Remove(symbol);
+                project.OriginalImageReferences.Add(symbol);
+                continue;
             }
-            if (!project.ImageBindings.ContainsKey(symbol)) project.OriginalImageReferences.Add(symbol);
+            if (!project.ImageBindings.ContainsKey(symbol))
+            {
+                project.ImageBindings[symbol] = originalPath;
+                project.OriginalImageReferences.Add(symbol);
+            }
         }
     }
 

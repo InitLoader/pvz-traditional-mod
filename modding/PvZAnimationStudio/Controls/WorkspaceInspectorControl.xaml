@@ -42,7 +42,7 @@
           <Grid.ColumnDefinitions><ColumnDefinition Width="115"/><ColumnDefinition Width="*" MinWidth="120"/></Grid.ColumnDefinitions>
           <Grid.RowDefinitions>
             <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
-            <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+            <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition Height="Auto"/><RowDefinition/>
           </Grid.RowDefinitions>
           <TextBlock Grid.Row="0" Text="X 位移"/><TextBox Grid.Row="0" Grid.Column="1" Text="{Binding CurrentX, UpdateSourceTrigger=LostFocus}"/>
           <TextBlock Grid.Row="1" Text="Y 位移"/><TextBox Grid.Row="1" Grid.Column="1" Text="{Binding CurrentY, UpdateSourceTrigger=LostFocus}"/>
@@ -52,8 +52,10 @@
           <TextBlock Grid.Row="5" Text="Y 缩放"/><TextBox Grid.Row="5" Grid.Column="1" Text="{Binding CurrentScaleY, UpdateSourceTrigger=LostFocus}"/>
           <TextBlock Grid.Row="6" Text="图片子帧 f"/><TextBox Grid.Row="6" Grid.Column="1" Text="{Binding CurrentVisibilityFrame, UpdateSourceTrigger=LostFocus}"/>
           <TextBlock Grid.Row="7" Text="透明度"/><TextBox Grid.Row="7" Grid.Column="1" Text="{Binding CurrentAlpha, UpdateSourceTrigger=LostFocus}"/>
-          <TextBlock Grid.Row="8" Text="图片符号"/><TextBox Grid.Row="8" Grid.Column="1" Text="{Binding CurrentImage, UpdateSourceTrigger=LostFocus}"/>
-          <TextBlock Grid.Row="9" Text="文字"/><TextBox Grid.Row="9" Grid.Column="1" Text="{Binding CurrentText, UpdateSourceTrigger=LostFocus}"/>
+          <TextBlock Grid.Row="8" Text="图片符号（实际）"/><TextBox Grid.Row="8" Grid.Column="1" Text="{Binding CurrentImage, UpdateSourceTrigger=LostFocus}"/>
+          <TextBlock Grid.Row="9" Grid.Column="1" Margin="2,1,0,5" Foreground="#78C9EC"
+                     Text="{Binding CurrentImageValueSource}"/>
+          <TextBlock Grid.Row="10" Text="文字"/><TextBox Grid.Row="10" Grid.Column="1" Text="{Binding CurrentText, UpdateSourceTrigger=LostFocus}"/>
         </Grid>
       </GroupBox>
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">

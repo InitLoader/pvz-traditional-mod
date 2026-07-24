@@ -6,6 +6,12 @@ namespace PvZAnimationStudio.ViewModels;
 
 public readonly record struct TimelineKeySelection(string TrackId, int Frame);
 public readonly record struct CurveKeySelection(CurveChannel Channel, int Frame);
+public sealed record ProjectImageResourceItem(
+    string Symbol,
+    string SourcePath,
+    bool IsOriginal,
+    string OwnershipLabel,
+    System.Windows.Media.Imaging.BitmapSource? Thumbnail);
 
 public sealed class EditorViewModel : ObservableObject
 {
@@ -86,6 +92,39 @@ public sealed class EditorViewModel : ObservableObject
         new(EntityIntegrationMode.ReplaceOriginal, "替换原版动画"),
         new(EntityIntegrationMode.AddEntity, "新增实体")
     ];
+    public IReadOnlyList<ProjectImageResourceItem> ProjectImageResources
+    {
+        get
+        {
+            var symbols = Project.Animation.Tracks.SelectMany(track => track.Frames)
+                .Select(frame => frame.Image)
+                .Where(symbol => !string.IsNullOrWhiteSpace(symbol))
+                .Select(symbol => symbol!)
+                .Concat(Project.ImageBindings.Keys)
+                .Concat(Project.OriginalImageReferences)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(symbol => symbol, StringComparer.OrdinalIgnoreCase);
+            return symbols.Select(symbol =>
+            {
+                var isOriginal = Project.OriginalImageReferences.Contains(symbol);
+                var path = _resources.ResolvePath(Project, symbol) ?? "未找到图片文件";
+                return new ProjectImageResourceItem(
+                    symbol,
+                    path,
+                    isOriginal,
+                    isOriginal ? "原版引用 · 发布时复用" : "Mod 图片 · 发布时复制",
+                    _resources.ResolveThumbnail(Project, symbol));
+            }).ToArray();
+        }
+    }
+    public string ProjectImageResourcesSummary
+    {
+        get
+        {
+            var resources = ProjectImageResources;
+            return $"共 {resources.Count} 张 · 原版 {resources.Count(item => item.IsOriginal)} · Mod {resources.Count(item => !item.IsOriginal)}";
+        }
+    }
     public IReadOnlyList<AnimationTrack> TimelineTracks =>
         _timelineTracksCache ??= _actionView.GetTimelineTracks(Project.Animation, SelectedAction);
     public ActionFrameRange ActiveRange =>
@@ -358,7 +397,30 @@ public sealed class EditorViewModel : ObservableObject
     public float? CurrentScaleY { get => CurrentExplicitFrame?.ScaleY; set => SetFrameValue("修改 Y 缩放", CurveChannel.ScaleY, frame => frame.ScaleY = value); }
     public float? CurrentVisibilityFrame { get => CurrentExplicitFrame?.Frame; set => SetFrameValue("修改图片子帧", CurveChannel.Frame, frame => frame.Frame = value); }
     public float? CurrentAlpha { get => CurrentExplicitFrame?.Alpha; set => SetFrameValue("修改透明度", CurveChannel.Alpha, frame => frame.Alpha = value); }
-    public string? CurrentImage { get => CurrentExplicitFrame?.Image; set => SetFrameValue("修改图片符号", null, frame => frame.Image = value); }
+    public string? CurrentImage
+    {
+        get => CurrentExplicitFrame?.Image ?? CurrentResolvedFrame?.Image;
+        set
+        {
+            if (string.Equals(CurrentImage, value, StringComparison.Ordinal)) return;
+            SetFrameValue("修改图片符号", null, frame => frame.Image = value);
+        }
+    }
+    public string CurrentImageValueSource
+    {
+        get
+        {
+            var explicitImage = CurrentExplicitFrame?.Image;
+            var effectiveImage = CurrentResolvedFrame?.Image;
+            if (explicitImage is not null)
+                return explicitImage.Length == 0 ? "本帧显式隐藏图片" : "本帧显式图片符号";
+            if (string.IsNullOrWhiteSpace(effectiveImage)) return "当前帧没有图片";
+            var ownership = Project.OriginalImageReferences.Contains(effectiveImage)
+                ? "原版引用"
+                : "Mod 图片";
+            return $"继承自前一帧 · {ownership}";
+        }
+    }
     public string? CurrentText { get => CurrentExplicitFrame?.Text; set => SetFrameValue("修改文字", null, frame => frame.Text = value); }
 
     public ResolvedAnimationFrame? CurrentResolvedFrame => SelectedTrack?.ResolveFrame(CurrentFrame);
@@ -1659,7 +1721,7 @@ public sealed class EditorViewModel : ObservableObject
                  {
                      nameof(FrameLabel), nameof(CurrentHasKey), nameof(CurrentX), nameof(CurrentY),
                      nameof(CurrentSkewX), nameof(CurrentSkewY), nameof(CurrentScaleX), nameof(CurrentScaleY),
-                     nameof(CurrentVisibilityFrame), nameof(CurrentAlpha), nameof(CurrentImage), nameof(CurrentText),
+                     nameof(CurrentVisibilityFrame), nameof(CurrentAlpha), nameof(CurrentImage), nameof(CurrentImageValueSource), nameof(CurrentText),
                      nameof(CurrentResolvedFrame), nameof(SelectedTrackIsLocked), nameof(SelectedTrackIsAlwaysVisible), nameof(SelectedTrackThumbnail),
                      nameof(SelectedTrackImageSymbol), nameof(SelectedTrackImagePath), nameof(SelectedTrackImageLayout),
                      nameof(CurrentGroundAction), nameof(CurrentGroundMotion), nameof(HasGroundMotion), nameof(GroundMotionFrameText),
@@ -1716,6 +1778,8 @@ public sealed class EditorViewModel : ObservableObject
         RaisePropertyChanged(nameof(Project));
         RaisePropertyChanged(nameof(Tracks));
         RaisePropertyChanged(nameof(Actions));
+        RaisePropertyChanged(nameof(ProjectImageResources));
+        RaisePropertyChanged(nameof(ProjectImageResourcesSummary));
         RaiseProjectEditProperties();
         RaiseActionProperties();
         RaiseEventProperties();

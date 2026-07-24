@@ -144,6 +144,8 @@ public partial class MainWindow : Window
             _resources.RebuildIndex(gameRoot);
             var openedOriginalAnimation = IsOriginalGameAnimation(fileName, gameRoot);
             _resources.MarkOriginalReferences(_viewModel.Project, openedOriginalAnimation);
+            _viewModel.RefreshTrackThumbnails();
+            WorkspaceHost.RefreshImageBindings();
             if (openedOriginalAnimation)
             {
                 _viewModel.ProjectIntegrationMode = EntityIntegrationMode.ReplaceOriginal;
@@ -176,6 +178,8 @@ public partial class MainWindow : Window
         _viewModel.ReplaceProject(project);
         _resources.RebuildIndex(project.GameRoot);
         _resources.MarkOriginalReferences(_viewModel.Project);
+        _viewModel.RefreshTrackThumbnails();
+        WorkspaceHost.RefreshImageBindings();
         WorkspaceHost.ApplyLayout(project.WorkspaceLayout);
         SelectWorkspacePreset(WorkspacePreset.Custom);
         _viewModel.Status = $"已打开便携工程：{project.DisplayName}";
@@ -339,6 +343,8 @@ public partial class MainWindow : Window
         _viewModel.ProjectGameRoot = dialog.FolderName;
         _resources.RebuildIndex(dialog.FolderName);
         _resources.MarkOriginalReferences(_viewModel.Project);
+        _viewModel.RefreshTrackThumbnails();
+        WorkspaceHost.RefreshImageBindings();
         _viewModel.Status = $"已索引原版资源：{dialog.FolderName}";
         WorkspaceHost.FrameAllViews();
         return true;

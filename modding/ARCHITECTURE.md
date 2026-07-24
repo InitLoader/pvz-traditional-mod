@@ -37,6 +37,8 @@ ExtensionHub
 
 `.pvza` 是 ZIP 容器，但只能包含根目录 `project.json` 和受限的 `assets/` 图片。读取端限制文件数量、单图大小、总大小并拒绝 `..` 和非 `assets/` 路径；图片解压到按工程路径、长度和修改时间散列出的本地缓存。保存端把原版 JPG+灰度遮罩先合成为带 Alpha 的 PNG，连同 `cols/rows` 一起写入工程。曲线关键点、属性值、插值类型及左右手柄保存在 schema 3 起的 `project.json`；schema 4 增加初始动作、原版轨道替换、动作事件目标和模板附件显示策略；schema 5 增加 `integrationMode` 与 `originalImageReferences`。便携工程可以嵌入原版预览图，但发布时仍按来源排除原版图片；只有当前动画实际引用的 Mod 图片可进入 `pvzmod/images`、贴图注册和动画图片映射。Raw/compiled 本身没有这些编辑/运行时元数据，因此导出时同时生成 `animations.jsonc`/实体配置片段。工作区是可序列化的二叉拆分树；GridSplitter 只更新比例，区域类型、拆分、关闭和独立窗口不侵入动画模型。
 
+`ImageBindings` 是编辑器解析路径集合，不等于发布所有权集合：原版符号也必须登记可解析路径，才能出现在图片资源面板、轨道缩略图和属性检查器中；是否发布只由 `originalImageReferences` 与动画实际引用集合共同决定。Reanimation 省略的 `i` 字段使用前帧继承，属性检查器的 getter 必须显示 `ResolveFrame` 后的实际符号，同时保留显式空字符串“隐藏图片”的语义；未编辑的继承值不能因 TextBox 失焦写回当前帧。
+
 动画发布必须显式区分 `ReplaceOriginal` 与 `AddEntity`。前者的目标是已存在的原版 ID，只允许稀疏绑定主体 `animationId`；替换原版僵尸时不得把制作器数值写入 `bodyHealth`、`attackDamage` 或防具字段，也不得生成伪新增僵尸描述。后者才拥有新逻辑 ID、数值和未来状态机；当前新增植物仍是模板兼容路径，真正新增僵尸只能输出带 `runtimeStatus: planned` 的资产骨架并拒绝一键安装。原版植物替换在专用运行时接入前只允许保存工程或导出 Raw/compiled。完整契约见 [`ANIMATION_REPLACE_AND_ADD_MODES.md`](ANIMATION_REPLACE_AND_ADD_MODES.md)。
 
 插入或删除整帧前，`AnimationCurveService.CaptureExplicitMotionCurves` 只从非动作轨道的 `x/y/kx/ky/sx/sy/a` 显式值补建缺失曲线；禁止自动为图片子帧 `f`、图片符号或动作标记建立平滑曲线。帧索引移动完成后，`BakeAllCurves` 重算所有已有曲线，使插入的空帧获得连续运动值。删除单个或框选的中间关键帧时也必须先捕获目标轨道，再清空帧并删除曲线关键点，使剩余相邻端点自动重新烘焙；顺序禁止颠倒，否则旧 compiled 会丢失待删帧以外的补间上下文并退回保持后跳变。设置 K 帧也必须立即烘焙关联曲线，不能只保存编辑器元数据而让预览继续继承上一帧。

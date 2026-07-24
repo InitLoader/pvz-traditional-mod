@@ -27,9 +27,14 @@ public partial class WorkspaceBrowserControl : UserControl
     {
         _viewModel = viewModel;
         DataContext = viewModel;
+        RefreshImageBindings();
     }
 
-    public void RefreshImageBindings() => ImageBindingsList.Items.Refresh();
+    public void RefreshImageBindings()
+    {
+        if (_viewModel is null) return;
+        ImageResourcesList.ItemsSource = _viewModel.ProjectImageResources;
+    }
 
     private void AddTrack_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.AddTrack("新部件");
     private void RemoveTrack_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.RemoveSelectedTrack();
@@ -69,9 +74,9 @@ public partial class WorkspaceBrowserControl : UserControl
     private void ChooseGameRoot_Click(object sender, RoutedEventArgs eventArgs) =>
         ChooseGameRootRequested?.Invoke(this, EventArgs.Empty);
 
-    private void ImageBindingsList_MouseDoubleClick(object sender, MouseButtonEventArgs eventArgs)
+    private void ImageResourcesList_MouseDoubleClick(object sender, MouseButtonEventArgs eventArgs)
     {
-        if (_viewModel is not null && ImageBindingsList.SelectedItem is KeyValuePair<string, string> selected)
-            _viewModel.CurrentImage = selected.Key;
+        if (_viewModel is not null && ImageResourcesList.SelectedItem is ProjectImageResourceItem selected)
+            _viewModel.CurrentImage = selected.Symbol;
     }
 }

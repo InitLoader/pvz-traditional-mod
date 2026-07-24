@@ -114,6 +114,21 @@ try
     editorViewModel.SetTrackEditorLock(editableTrack, false);
     editorViewModel.CurrentX = 99;
     Assert(editableTrack.Frames[0].X == 99, "解锁轨道后没有恢复编辑");
+    var inheritedImageEditor = new EditorViewModel(new ActionCatalogService());
+    var inheritedImageTrack = inheritedImageEditor.SelectedTrack!;
+    inheritedImageTrack.Frames[0].Image = "IMAGE_REANIM_INHERITED_BODY";
+    inheritedImageEditor.CurrentFrame = 8;
+    Assert(inheritedImageTrack.Frames[8].Image is null &&
+           inheritedImageEditor.CurrentImage == "IMAGE_REANIM_INHERITED_BODY" &&
+           inheritedImageEditor.CurrentImageValueSource.Contains("继承自前一帧", StringComparison.Ordinal),
+        "属性栏没有显示当前帧继承后实际生效的图片符号");
+    inheritedImageEditor.CurrentImage = "IMAGE_REANIM_INHERITED_BODY";
+    Assert(inheritedImageTrack.Frames[8].Image is null && !inheritedImageEditor.CanUndo,
+        "未修改继承图片字段时错误写入了显式图片关键点或撤销记录");
+    inheritedImageEditor.CurrentImage = "IMAGE_REANIM_REPLACED_BODY";
+    Assert(inheritedImageTrack.Frames[8].Image == "IMAGE_REANIM_REPLACED_BODY" &&
+           inheritedImageEditor.CurrentImageValueSource == "本帧显式图片符号",
+        "属性栏修改实际图片符号时没有写入当前帧");
     Assert(editorViewModel.FrameLabel.Contains("秒", StringComparison.Ordinal), "帧状态没有显示秒数");
     editorViewModel.IsPlaying = true;
     var playbackStart = editorViewModel.CurrentFrame;
@@ -1039,7 +1054,10 @@ try
         "稀疏动画合并错误删除了原僵尸的生命或其他自定义字段");
 
     var fakePng = Path.Combine(root, "body.png");
-    File.WriteAllBytes(fakePng, [137, 80, 78, 71, 13, 10, 26, 10]);
+    SaveBitmap(
+        BitmapSource.Create(1, 1, 96, 96, PixelFormats.Bgra32, null, new byte[] { 0, 200, 0, 255 }, 4),
+        new PngBitmapEncoder(),
+        fakePng);
     var originalIndexRoot = Path.Combine(root, "original-index");
     Directory.CreateDirectory(Path.Combine(originalIndexRoot, "reanim"));
     File.Copy(fakePng, Path.Combine(originalIndexRoot, "reanim", "test_body.png"));
@@ -1056,8 +1074,17 @@ try
     directOriginalResources.RebuildIndex(originalIndexRoot);
     directOriginalResources.MarkOriginalReferences(directOriginalProject, preferOriginalResources: true);
     Assert(directOriginalProject.OriginalImageReferences.Contains("IMAGE_REANIM_TEST_BODY") &&
-           !directOriginalProject.ImageBindings.ContainsKey("IMAGE_REANIM_TEST_BODY"),
-        "直接打开原版动画时没有清除旧工程的同名外部绑定并恢复原版图片来源");
+           directOriginalProject.ImageBindings.TryGetValue("IMAGE_REANIM_TEST_BODY", out var indexedOriginalPath) &&
+           indexedOriginalPath.EndsWith(Path.Combine("reanim", "test_body.png"), StringComparison.OrdinalIgnoreCase),
+        "直接打开原版动画时没有把同名外部绑定恢复为可见的原版图片来源");
+    var directOriginalEditor = new EditorViewModel(new ActionCatalogService(), directOriginalResources);
+    directOriginalEditor.ReplaceProject(directOriginalProject);
+    var originalResourceItem = directOriginalEditor.ProjectImageResources.Single(item =>
+        item.Symbol == "IMAGE_REANIM_TEST_BODY");
+    Assert(originalResourceItem.IsOriginal &&
+           originalResourceItem.OwnershipLabel.Contains("发布时复用", StringComparison.Ordinal) &&
+           directOriginalEditor.ProjectImageResourcesSummary.Contains("原版 1", StringComparison.Ordinal),
+        "图片资源面板没有列出原版图片或没有标明发布时复用");
     var project = new EditorProject
     {
         Id = "TEST_PLANT",

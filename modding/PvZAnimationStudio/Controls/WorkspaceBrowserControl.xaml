@@ -61,8 +61,26 @@
     <TabItem Header="图片资源">
       <DockPanel Margin="5">
         <Button DockPanel.Dock="Bottom" Content="导入 PNG / JPG 图片" Click="ImportImages_Click" />
-        <ListBox x:Name="ImageBindingsList" ItemsSource="{Binding Project.ImageBindings}" DisplayMemberPath="Key"
-                 MouseDoubleClick="ImageBindingsList_MouseDoubleClick" />
+        <TextBlock DockPanel.Dock="Top" Margin="3,2,3,6" Foreground="#9FC3D8"
+                   Text="{Binding ProjectImageResourcesSummary}"/>
+        <ListBox x:Name="ImageResourcesList" MouseDoubleClick="ImageResourcesList_MouseDoubleClick">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <DockPanel Margin="2" LastChildFill="True" ToolTip="{Binding SourcePath}">
+                <Border DockPanel.Dock="Left" Width="42" Height="42" Margin="0,0,7,0"
+                        Background="#202832" BorderBrush="#536171" BorderThickness="1">
+                  <Image Source="{Binding Thumbnail}" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
+                </Border>
+                <StackPanel>
+                  <TextBlock Text="{Binding Symbol}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                  <TextBlock Text="{Binding OwnershipLabel}" Foreground="#78C9EC" FontSize="11"/>
+                  <TextBlock Text="{Binding SourcePath}" Foreground="#9EABB8" FontSize="10"
+                             TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+              </DockPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
       </DockPanel>
     </TabItem>
     <TabItem Header="工程">
