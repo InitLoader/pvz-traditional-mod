@@ -529,6 +529,9 @@ try
     try { replacementResources.ValidateImportImage(disguisedAvifPath); }
     catch (InvalidDataException) { rejectedDisguisedImage = true; }
     Assert(rejectedDisguisedImage, "伪装成 PNG 的 AVIF 没有在导入/更换图片时提前拒绝");
+    var movedDisguisedAvifPath = Path.Combine(root, "disguised-avif-moved.png");
+    File.Move(disguisedAvifPath, movedDisguisedAvifPath);
+    File.Move(movedDisguisedAvifPath, disguisedAvifPath);
 
     var deleteTrackEditor = new EditorViewModel(new ActionCatalogService());
     var deleteWholeTrack = deleteTrackEditor.SelectedTrack!;

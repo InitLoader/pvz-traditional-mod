@@ -279,10 +279,12 @@ public sealed class OriginalResourceService
 
     private static BitmapSource LoadBitmap(string path)
     {
+        using var stream = new FileStream(
+            path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
         var image = new BitmapImage();
         image.BeginInit();
         image.CacheOption = BitmapCacheOption.OnLoad;
-        image.UriSource = new Uri(path, UriKind.Absolute);
+        image.StreamSource = stream;
         image.EndInit();
         image.Freeze();
         return image;
