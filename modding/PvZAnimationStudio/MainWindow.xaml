@@ -32,6 +32,8 @@
         <MenuItem Header="粘贴到当前轨道" Click="PasteKeys_Click" InputGestureText="Ctrl+V" />
         <MenuItem Header="复制完整轨道和图片" Click="CopyWholeTrack_Click" InputGestureText="Ctrl+Shift+C" />
         <MenuItem Header="粘贴为新的完整轨道" Click="PasteWholeTrack_Click" InputGestureText="Ctrl+Shift+V" />
+        <MenuItem Header="更换当前轨道图片…" Click="ReplaceTrackImage_Click" />
+        <MenuItem Header="删除整个轨道" Click="RemoveTrack_Click" />
         <Separator />
         <MenuItem Header="设置关键帧" Click="SetKey_Click" InputGestureText="K" />
         <MenuItem Header="删除当前轨道关键帧" Click="ClearKey_Click" InputGestureText="Shift+K / Delete" />

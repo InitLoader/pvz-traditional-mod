@@ -23,6 +23,7 @@ public sealed class WorkspaceHostControl : Grid
     private WorkspaceLayoutState _layout;
 
     public event EventHandler? ImportImagesRequested;
+    public event EventHandler? ReplaceTrackImageRequested;
     public event EventHandler? ChooseGameRootRequested;
     public event EventHandler? LayoutChanged;
 
@@ -178,6 +179,7 @@ public sealed class WorkspaceHostControl : Grid
             case WorkspaceEditorKind.Timeline:
                 var timeline = new WorkspaceTimelineControl();
                 timeline.Bind(_viewModel);
+                timeline.ReplaceTrackImageRequested += (_, _) => ReplaceTrackImageRequested?.Invoke(this, EventArgs.Empty);
                 _timelines.Add(timeline);
                 return timeline;
             case WorkspaceEditorKind.GraphEditor:
@@ -189,6 +191,7 @@ public sealed class WorkspaceHostControl : Grid
                 var browser = new WorkspaceBrowserControl();
                 browser.Bind(_viewModel);
                 browser.ImportImagesRequested += (_, _) => ImportImagesRequested?.Invoke(this, EventArgs.Empty);
+                browser.ReplaceTrackImageRequested += (_, _) => ReplaceTrackImageRequested?.Invoke(this, EventArgs.Empty);
                 browser.ChooseGameRootRequested += (_, _) => ChooseGameRootRequested?.Invoke(this, EventArgs.Empty);
                 _browsers.Add(browser);
                 return browser;
@@ -296,6 +299,7 @@ public sealed class WorkspaceHostControl : Grid
         host.Bind(_viewModel, _resources);
         host.ApplyLayout(new WorkspaceLayoutState { Root = WorkspaceLayoutPresetService.Leaf(editor) });
         host.ImportImagesRequested += (_, _) => ImportImagesRequested?.Invoke(this, EventArgs.Empty);
+        host.ReplaceTrackImageRequested += (_, _) => ReplaceTrackImageRequested?.Invoke(this, EventArgs.Empty);
         host.ChooseGameRootRequested += (_, _) => ChooseGameRootRequested?.Invoke(this, EventArgs.Empty);
         var window = new Window
         {

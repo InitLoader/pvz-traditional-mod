@@ -600,19 +600,112 @@ public sealed class EditorViewModel : ObservableObject
         return track;
     }
 
+    public string? ReplaceSelectedTrackImage(string file)
+    {
+        var track = SelectedTrack;
+        if (track is null)
+        {
+            Status = "请先选择要更换图片的轨道。";
+            return null;
+        }
+        if (!EnsureTrackEditable(track, "更换图片")) return null;
+        if (track.IsGroundTrack || track.IsActionTrack)
+        {
+            Status = "_ground 和纯动作标记轨道没有可更换的图片。";
+            return null;
+        }
+
+        var oldSymbol = CurrentResolvedFrame?.Image ?? track.EditorImageSymbol ??
+                        track.Frames.Select(frame => frame.Image)
+                            .FirstOrDefault(symbol => !string.IsNullOrWhiteSpace(symbol));
+        if (string.IsNullOrWhiteSpace(oldSymbol))
+        {
+            Status = $"轨道 {track.Name} 还没有图片；请先导入图片或拖入图片创建视觉轨道。";
+            return null;
+        }
+        var matchingFrames = track.Frames
+            .Where(frame => string.Equals(frame.Image, oldSymbol, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (matchingFrames.Length == 0)
+        {
+            Status = $"轨道 {track.Name} 没有找到图片符号 {oldSymbol} 的显式图片关键点。";
+            return null;
+        }
+
+        _resources.ValidateImportImage(file);
+        RecordUndo("更换轨道图片");
+        var newSymbol = _resources.ImportImage(Project, file);
+        if (Project.ImageLayouts.TryGetValue(oldSymbol, out var oldLayout))
+        {
+            Project.ImageLayouts[newSymbol] = new ImageLayoutDefinition
+            {
+                Columns = Math.Max(1, oldLayout.Columns),
+                Rows = Math.Max(1, oldLayout.Rows)
+            };
+        }
+        foreach (var frame in matchingFrames) frame.Image = newSymbol;
+
+        var oldSymbolStillUsed = Project.Animation.Tracks
+            .SelectMany(item => item.Frames)
+            .Any(frame => string.Equals(frame.Image, oldSymbol, StringComparison.OrdinalIgnoreCase));
+        if (!oldSymbolStillUsed)
+        {
+            Project.ImageBindings.Remove(oldSymbol);
+            Project.ImageLayouts.Remove(oldSymbol);
+        }
+
+        RefreshTrackThumbnail(track);
+        RaiseFrameProperties();
+        RaiseTrackPresentationProperties();
+        ImageBindingsChanged?.Invoke(this, EventArgs.Empty);
+        NotifyVisualChanged();
+        Status = $"已将轨道 {track.Name} 的图片 {oldSymbol} 更换为 {newSymbol}；" +
+                 $"更新了 {matchingFrames.Length} 个图片关键点，帧、动作、变换和曲线均保持不变。";
+        return newSymbol;
+    }
+
     public void RemoveSelectedTrack()
     {
-        if (SelectedTrack is null || Project.Animation.Tracks.Count <= 1) return;
-        if (!EnsureTrackEditable(SelectedTrack, "删除")) return;
+        if (SelectedTrack is null)
+        {
+            Status = "请先选择要删除的轨道。";
+            return;
+        }
+        if (Project.Animation.Tracks.Count <= 1)
+        {
+            Status = "动画至少需要保留一条轨道，无法删除最后一条轨道。";
+            return;
+        }
+        if (!EnsureTrackEditable(SelectedTrack, "删除整个轨道")) return;
+        var removedTrack = SelectedTrack;
         RecordUndo("删除轨道");
-        var index = Project.Animation.Tracks.IndexOf(SelectedTrack);
-        foreach (var curve in Project.Curves.Where(curve => curve.TrackId == SelectedTrack.EditorId).ToArray())
+        var index = Project.Animation.Tracks.IndexOf(removedTrack);
+        var removedCurves = Project.Curves.Where(curve => curve.TrackId == removedTrack.EditorId).ToArray();
+        foreach (var curve in removedCurves)
             Project.Curves.Remove(curve);
-        Project.Animation.Tracks.Remove(SelectedTrack);
+        var removedActions = Project.Actions.Where(action =>
+            string.Equals(action.Track, removedTrack.Name, StringComparison.OrdinalIgnoreCase)).ToArray();
+        foreach (var action in removedActions) Project.Actions.Remove(action);
+        if (removedActions.Any(action => string.Equals(action.Id, Project.InitialActionId,
+                StringComparison.OrdinalIgnoreCase)))
+            Project.InitialActionId = Project.Actions.FirstOrDefault()?.Id ?? string.Empty;
+        if (_selectedAction is not null && removedActions.Contains(_selectedAction))
+        {
+            _selectedAction = Project.Actions.FirstOrDefault();
+            _selectedEvent = _selectedAction?.Events.FirstOrDefault();
+        }
+        Project.Animation.Tracks.Remove(removedTrack);
         SelectedTrack = Project.Animation.Tracks[Math.Clamp(index, 0, Project.Animation.Tracks.Count - 1)];
         RaisePropertyChanged(nameof(Tracks));
+        RaisePropertyChanged(nameof(Actions));
+        RaiseActionProperties();
+        RaiseEventProperties();
+        RaiseProjectEditProperties();
         RaiseTimelineProperties();
+        RaiseFrameProperties();
         NotifyVisualChanged();
+        Status = $"已删除整个轨道 {removedTrack.Name}、{removedCurves.Length} 条关联曲线和 " +
+                 $"{removedActions.Length} 个关联动作；可用 Ctrl+Z 完整恢复。";
     }
 
     public void SetTrackEditorVisibility(AnimationTrack track, bool visible)

@@ -37,6 +37,7 @@ public partial class MainWindow : Window
         WorkspaceHost.Bind(_viewModel, _resources);
         WorkspaceHost.ApplyLayout(_viewModel.Project.WorkspaceLayout);
         WorkspaceHost.ImportImagesRequested += (_, _) => ImportImages();
+        WorkspaceHost.ReplaceTrackImageRequested += (_, _) => ReplaceTrackImage();
         WorkspaceHost.ChooseGameRootRequested += (_, _) => ChooseGameRoot();
         _viewModel.ImageBindingsChanged += (_, _) => WorkspaceHost.RefreshImageBindings();
         WorkspaceHost.LayoutChanged += (_, _) =>
@@ -332,6 +333,24 @@ public partial class MainWindow : Window
     }
 
     private void ImportImages_Click(object sender, RoutedEventArgs eventArgs) => ImportImages();
+
+    private void ReplaceTrackImage_Click(object sender, RoutedEventArgs eventArgs) => ReplaceTrackImage();
+
+    private void ReplaceTrackImage()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "更换当前轨道图片（保留全部帧和动作）",
+            Filter = "支持的图片|*.png;*.jpg;*.jpeg|PNG 图片|*.png|JPEG 图片|*.jpg;*.jpeg",
+            Multiselect = false
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        RunGuarded(() =>
+        {
+            _viewModel.ReplaceSelectedTrackImage(dialog.FileName);
+            WorkspaceHost.RefreshImageBindings();
+        });
+    }
 
     private void ImportImages()
     {

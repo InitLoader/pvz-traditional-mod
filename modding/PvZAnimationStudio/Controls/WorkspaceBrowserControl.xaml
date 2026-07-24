@@ -4,10 +4,13 @@
   <TabControl>
     <TabItem Header="轨道">
       <DockPanel Margin="5">
-        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal">
+        <WrapPanel DockPanel.Dock="Bottom">
           <Button Content="＋ 轨道" Click="AddTrack_Click" />
-          <Button Content="－ 轨道" Click="RemoveTrack_Click" />
-        </StackPanel>
+          <Button Content="更换轨道图片" Click="ReplaceTrackImage_Click"
+                  ToolTip="只更换当前轨道所用图片，保留动作、帧、关键帧、变换和曲线" />
+          <Button Content="删除整个轨道" Click="RemoveTrack_Click"
+                  ToolTip="删除轨道及关联曲线/动作；可用 Ctrl+Z 恢复" />
+        </WrapPanel>
         <ListBox ItemsSource="{Binding Tracks}" SelectedItem="{Binding SelectedTrack, Mode=TwoWay}">
           <ListBox.ItemTemplate>
             <DataTemplate>

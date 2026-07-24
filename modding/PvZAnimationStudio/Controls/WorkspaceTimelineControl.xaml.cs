@@ -8,6 +8,8 @@ public partial class WorkspaceTimelineControl : UserControl
 {
     private EditorViewModel? _viewModel;
 
+    public event EventHandler? ReplaceTrackImageRequested;
+
     public WorkspaceTimelineControl() => InitializeComponent();
 
     public void Bind(EditorViewModel viewModel)
@@ -38,5 +40,8 @@ public partial class WorkspaceTimelineControl : UserControl
     private void PasteKeys_Click(object sender, RoutedEventArgs eventArgs) => Timeline.PasteCopiedKeyframes();
     private void CopyWholeTrack_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.CopySelectedWholeTrack();
     private void PasteWholeTrack_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.PasteWholeTrackAsNew();
+    private void ReplaceTrackImage_Click(object sender, RoutedEventArgs eventArgs) =>
+        ReplaceTrackImageRequested?.Invoke(this, EventArgs.Empty);
+    private void RemoveTrack_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.RemoveSelectedTrack();
     private void FullTimeline_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.ClearActionView();
 }

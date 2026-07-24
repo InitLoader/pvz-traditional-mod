@@ -447,6 +447,103 @@ try
            !dropEditor.Project.ImageBindings.ContainsKey(droppedSymbol),
         "拖入图片和新轨道没有作为同一个步骤撤销");
 
+    var replacementOldPath = Path.Combine(root, "replacement-old.png");
+    var replacementNewPath = Path.Combine(root, "replacement-new.png");
+    SaveBitmap(BitmapSource.Create(12, 8, 96, 96, PixelFormats.Bgra32, null,
+            Enumerable.Repeat((byte)90, 12 * 8 * 4).ToArray(), 48),
+        new PngBitmapEncoder(), replacementOldPath);
+    SaveBitmap(BitmapSource.Create(20, 10, 96, 96, PixelFormats.Bgra32, null,
+            Enumerable.Repeat((byte)210, 20 * 10 * 4).ToArray(), 80),
+        new PngBitmapEncoder(), replacementNewPath);
+    var replacementResources = new OriginalResourceService();
+    var replacementEditor = new EditorViewModel(new ActionCatalogService(), replacementResources);
+    var replacementTrack = replacementEditor.SelectedTrack!;
+    replacementTrack.Name = "replace_visual";
+    replacementTrack.Frames[0].Image = "IMAGE_REANIM_REPLACEMENT_OLD";
+    replacementTrack.Frames[7].Image = "IMAGE_REANIM_REPLACEMENT_OLD";
+    replacementTrack.Frames[12].Image = "IMAGE_REANIM_OTHER_PART";
+    replacementEditor.Project.ImageBindings["IMAGE_REANIM_REPLACEMENT_OLD"] = replacementOldPath;
+    replacementEditor.Project.ImageBindings["IMAGE_REANIM_OTHER_PART"] = replacementOldPath;
+    replacementEditor.Project.ImageLayouts["IMAGE_REANIM_REPLACEMENT_OLD"] =
+        new ImageLayoutDefinition { Columns = 3, Rows = 2 };
+    replacementEditor.CurrentFrame = 0;
+    replacementEditor.CurrentX = 12;
+    replacementEditor.CurrentSkewX = 15;
+    replacementEditor.CurrentFrame = 7;
+    replacementEditor.CurrentX = 48;
+    replacementEditor.CurrentScaleX = 1.5f;
+    replacementEditor.CurrentFrame = 0;
+    var replacementFrameCount = replacementTrack.Frames.Count;
+    var replacementCurveFrames = replacementEditor.Project.Curves
+        .Where(curve => curve.TrackId == replacementTrack.EditorId)
+        .SelectMany(curve => curve.Keys.Select(key => (curve.Channel, key.Frame)))
+        .OrderBy(item => item.Channel).ThenBy(item => item.Frame).ToArray();
+    var replacementSymbol = replacementEditor.ReplaceSelectedTrackImage(replacementNewPath);
+    Assert(!string.IsNullOrWhiteSpace(replacementSymbol) &&
+           replacementTrack.Frames[0].Image == replacementSymbol &&
+           replacementTrack.Frames[7].Image == replacementSymbol &&
+           replacementTrack.Frames[12].Image == "IMAGE_REANIM_OTHER_PART",
+        "更换轨道图片没有只替换当前轨道的目标图片符号");
+    Assert(replacementTrack.Frames.Count == replacementFrameCount &&
+           replacementTrack.Frames[0].X == 12 && replacementTrack.Frames[0].SkewX == 15 &&
+           replacementTrack.Frames[7].X == 48 && replacementTrack.Frames[7].ScaleX == 1.5f,
+        "更换轨道图片改变了帧数量、关键帧位置或变换属性");
+    Assert(replacementEditor.Project.Curves.Where(curve => curve.TrackId == replacementTrack.EditorId)
+            .SelectMany(curve => curve.Keys.Select(key => (curve.Channel, key.Frame)))
+            .OrderBy(item => item.Channel).ThenBy(item => item.Frame).SequenceEqual(replacementCurveFrames),
+        "更换轨道图片改变了原有曲线关键点");
+    Assert(replacementEditor.Project.ImageLayouts.TryGetValue(replacementSymbol!, out var replacementLayout) &&
+           replacementLayout.Columns == 3 && replacementLayout.Rows == 2,
+        "更换轨道图片没有继承原图片的精灵表行列设置");
+    replacementEditor.Undo();
+    replacementTrack = replacementEditor.Project.Animation.FindTrack("replace_visual")!;
+    Assert(replacementTrack.Frames[0].Image == "IMAGE_REANIM_REPLACEMENT_OLD" &&
+           replacementEditor.Project.ImageBindings.ContainsKey("IMAGE_REANIM_REPLACEMENT_OLD") &&
+           !replacementEditor.Project.ImageBindings.ContainsKey(replacementSymbol!),
+        "更换轨道图片没有作为一步操作完整撤销");
+    replacementEditor.Redo();
+    replacementTrack = replacementEditor.Project.Animation.FindTrack("replace_visual")!;
+    Assert(replacementTrack.Frames[0].Image == replacementSymbol,
+        "更换轨道图片没有按原顺序恢复");
+
+    var disguisedAvifPath = Path.Combine(root, "disguised-avif.png");
+    File.WriteAllBytes(disguisedAvifPath,
+        [0, 0, 0, 28, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66]);
+    var rejectedDisguisedImage = false;
+    try { replacementResources.ValidateImportImage(disguisedAvifPath); }
+    catch (InvalidDataException) { rejectedDisguisedImage = true; }
+    Assert(rejectedDisguisedImage, "伪装成 PNG 的 AVIF 没有在导入/更换图片时提前拒绝");
+
+    var deleteTrackEditor = new EditorViewModel(new ActionCatalogService());
+    var deleteWholeTrack = deleteTrackEditor.SelectedTrack!;
+    deleteWholeTrack.Name = "delete_whole_track";
+    deleteTrackEditor.CurrentFrame = 0;
+    deleteTrackEditor.CurrentX = 33;
+    deleteTrackEditor.Project.Actions.Add(new ActionDefinition
+    {
+        Id = "delete_action",
+        DisplayName = "待删除动作",
+        Track = deleteWholeTrack.Name
+    });
+    deleteTrackEditor.Project.InitialActionId = "delete_action";
+    var deleteTrackCount = deleteTrackEditor.Project.Animation.Tracks.Count;
+    deleteTrackEditor.RemoveSelectedTrack();
+    Assert(deleteTrackEditor.Project.Animation.Tracks.Count == deleteTrackCount - 1 &&
+           deleteTrackEditor.Project.Animation.FindTrack("delete_whole_track") is null,
+        "删除整个轨道没有移除选中轨道");
+    Assert(deleteTrackEditor.Project.Curves.All(curve => curve.TrackId != deleteWholeTrack.EditorId) &&
+           deleteTrackEditor.Project.Actions.All(action => action.Track != "delete_whole_track") &&
+           deleteTrackEditor.Project.InitialActionId != "delete_action",
+        "删除整个轨道没有清理关联曲线、动作或初始动作引用");
+    deleteTrackEditor.Undo();
+    Assert(deleteTrackEditor.Project.Animation.FindTrack("delete_whole_track") is not null &&
+           deleteTrackEditor.Project.Actions.Any(action => action.Id == "delete_action") &&
+           deleteTrackEditor.Project.InitialActionId == "delete_action",
+        "删除整个轨道没有完整撤销");
+    deleteTrackEditor.Redo();
+    Assert(deleteTrackEditor.Project.Animation.FindTrack("delete_whole_track") is null,
+        "删除整个轨道没有恢复");
+
     var visualAnimTrack = new AnimationTrack { Name = "anim_face" };
     visualAnimTrack.EnsureFrameCount(2);
     visualAnimTrack.Frames[0].Image = "IMAGE_REANIM_FACE";

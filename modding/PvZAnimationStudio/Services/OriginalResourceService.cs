@@ -62,6 +62,7 @@ public sealed class OriginalResourceService
 
     public string ImportImage(EditorProject project, string file)
     {
+        ValidateImportImage(file);
         var stem = NormalizeSymbol(Path.GetFileNameWithoutExtension(file));
         var symbol = stem.StartsWith("IMAGE_REANIM_", StringComparison.OrdinalIgnoreCase)
             ? stem
@@ -75,6 +76,27 @@ public sealed class OriginalResourceService
         _imageCache.Remove(candidate);
         _thumbnailCache.Remove(candidate);
         return candidate;
+    }
+
+    public void ValidateImportImage(string file)
+    {
+        if (string.IsNullOrWhiteSpace(file) || !File.Exists(file))
+            throw new FileNotFoundException("找不到要导入的图片。", file);
+        var extension = Path.GetExtension(file);
+        if (!extension.Equals(".png", StringComparison.OrdinalIgnoreCase) &&
+            !extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase) &&
+            !extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("只支持真正的 PNG、JPG 或 JPEG 图片。不能只修改文件扩展名。 ");
+        try
+        {
+            _ = LoadBitmap(Path.GetFullPath(file));
+        }
+        catch (Exception exception)
+        {
+            throw new InvalidDataException(
+                "图片内容无法解码。请用画图或图像软件真正另存为 PNG/JPG，不能把 AVIF、WebP 等文件直接改扩展名。",
+                exception);
+        }
     }
 
     public string? ResolvePath(EditorProject project, string? symbol)

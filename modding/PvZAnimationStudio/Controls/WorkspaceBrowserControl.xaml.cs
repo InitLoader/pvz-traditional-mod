@@ -12,6 +12,7 @@ public partial class WorkspaceBrowserControl : UserControl
     private EditorViewModel? _viewModel;
 
     public event EventHandler? ImportImagesRequested;
+    public event EventHandler? ReplaceTrackImageRequested;
     public event EventHandler? ChooseGameRootRequested;
 
     public WorkspaceBrowserControl()
@@ -32,6 +33,8 @@ public partial class WorkspaceBrowserControl : UserControl
 
     private void AddTrack_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.AddTrack("新部件");
     private void RemoveTrack_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.RemoveSelectedTrack();
+    private void ReplaceTrackImage_Click(object sender, RoutedEventArgs eventArgs) =>
+        ReplaceTrackImageRequested?.Invoke(this, EventArgs.Empty);
     private void TrackVisibility_Click(object sender, RoutedEventArgs eventArgs)
     {
         if (_viewModel is not null && sender is FrameworkElement { Tag: AnimationTrack track })
