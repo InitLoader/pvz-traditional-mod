@@ -120,7 +120,7 @@ ZIP 中使用 `generated/<id>/*.fragment.jsonc`，便于人工审查后合并；
 编辑器与格式打包器已经可用，自定义植物的主体 `ReanimatorDefinition` 也已接入游戏，但“文件可生成”仍不等于所有实体和动作都已支持。因此：
 
 - 可以安全编辑、重打包和登记原创动画资源。
-- 自定义植物填写 `animationId` 后会替换模板的主体动画；“替换原版轨道”、事件和目标动作会完整写入工程及导出 JSONC，但当前发布 DLL 只执行 `initialAction`，尚未启用影响全游戏的动作拦截原型。选择植物模板时编辑器仍会同步载体 Reanimation，避免模板 ID 与导出元数据错配。
+- 自定义植物填写 `animationId` 后会替换模板的主体动画；“替换原版轨道”、事件和目标动作会完整写入工程及导出 JSONC，但当前发布 DLL 只执行 `initialAction`，尚未启用影响全游戏的动作拦截原型。选择植物或僵尸模板时编辑器会同步真实载体 Reanimation，打包/一键安装阶段还会按模板 ID 再次强制校正，避免错误载体写入存档。
 - 僵尸工程一键安装后会把 `bodyHealth`、`attackDamage` 和 `animationId` 写到 `zombies.<templateZombieId>`；DLL 在该类僵尸完成原版初始化后替换主体 Definition。`carrierReanimation` 必须与模板实际主体一致，动作轨道必须沿用原版 AI 请求的 `anim_*` 名称。当前仍是原版 ZombieType 的动画/属性覆盖，不会创建新的僵尸逻辑 ID 或 AI。
 - 多头、独立眨眼和其他附属 Reanimation 当前仍由模板创建，尚不能驱动外部主体动作；制作完整新外观时应把可见部件合成进同一个 body Definition。多个真正独立外部附件 Definition 仍待后续运行时接入。
 - `FIRE_PROJECTILE`、`PLAY_ACTION` 可在编辑器中制作、校验和打包，但当前 DLL 不执行这些事件；它们等待安全的植物局部动作控制器，而不是通过全局 Reanimation Hook 强行接入。

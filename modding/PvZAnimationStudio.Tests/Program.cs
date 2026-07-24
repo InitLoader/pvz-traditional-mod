@@ -55,6 +55,11 @@ try
     Assert(PlantTemplateCatalog.Find(49)?.IsRuntimeTemplate == false &&
            PlantTemplateCatalog.Find(52)?.IsRuntimeTemplate == false,
         "模式专用植物被错误开放为普通模板");
+    Assert(ZombieTemplateCatalog.All.Count == 33 &&
+           ZombieTemplateCatalog.Find(0)?.CarrierReanimation == "REANIM_ZOMBIE" &&
+           ZombieTemplateCatalog.Find(3)?.CarrierReanimation == "REANIM_POLEVAULTER" &&
+           ZombieTemplateCatalog.Find(32)?.CarrierReanimation == "REANIM_GARGANTUAR",
+        "僵尸模板载体目录不完整或映射错误");
 
     var editorViewModel = new EditorViewModel(new ActionCatalogService());
     Assert(editorViewModel.PlantTemplates.Count == 49, "编辑器植物模板速选没有使用全局 0–48 目录");
@@ -774,6 +779,8 @@ try
     {
         Id = "TEST_PLANT",
         DisplayName = "测试植物",
+        TemplateEntityId = 43,
+        CarrierReanimation = "REANIM_PEASHOOTER",
         Animation = source,
         Actions = new ObservableCollection<ActionDefinition>
         {
@@ -803,6 +810,8 @@ try
         using var reader = new StreamReader(animationFragment.Open());
         var animationJson = System.Text.Json.Nodes.JsonNode.Parse(reader.ReadToEnd())!;
         var generatedAnimation = animationJson["animations"]![0]!;
+        Assert(generatedAnimation["carrierReanimation"]!.GetValue<string>() == "REANIM_CATTAIL",
+            "植物打包没有按 templatePlantId 强制写入真实载体");
         Assert(generatedAnimation["initialAction"]!.GetValue<string>() == "idle", "动画包没有写入初始动作");
         Assert(generatedAnimation["actions"]!["idle"]!["replaces"]![0]!.GetValue<string>() == "anim_head_idle",
             "动画包没有写入原版轨道替换映射");
@@ -826,7 +835,7 @@ try
         Id = "TEST_ZOMBIE",
         DisplayName = "测试僵尸",
         TemplateEntityId = 0,
-        CarrierReanimation = "REANIM_ZOMBIE",
+        CarrierReanimation = "REANIM_PEASHOOTER",
         Health = 360,
         Damage = 6,
         Animation = source,
@@ -847,6 +856,10 @@ try
     Assert(installedZombieText.Contains("\"0\"", StringComparison.Ordinal) &&
            installedZombieText.Contains("TEST_ZOMBIE", StringComparison.Ordinal),
         "僵尸工程一键安装没有写入实际生效的 attributes.jsonc");
+    var installedAnimations = System.Text.Json.Nodes.JsonNode.Parse(
+        File.ReadAllText(Path.Combine(root, "pvzmod", "config", "resources", "animations.jsonc")))!;
+    Assert(installedAnimations["animations"]![0]!["carrierReanimation"]!.GetValue<string>() == "REANIM_ZOMBIE",
+        "僵尸一键安装没有按 templateZombieId 强制写入真实载体");
     var zombieZipPath = Path.Combine(root, "zombie-package.zip");
     new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor()).CreatePackage(zombieProject, zombieZipPath);
     using (var zombieZip = ZipFile.OpenRead(zombieZipPath))

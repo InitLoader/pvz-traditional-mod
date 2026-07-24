@@ -70,7 +70,19 @@ public sealed class EditorViewModel : ObservableObject
     public string UndoLabel => _history.UndoName is null ? "撤销" : $"撤销：{_history.UndoName}";
     public string RedoLabel => _history.RedoName is null ? "重做" : $"重做：{_history.RedoName}";
 
-    public EntityKind ProjectKind { get => Project.Kind; set => SetProjectValue("修改实体类型", Project.Kind, value, item => Project.Kind = item); }
+    public EntityKind ProjectKind
+    {
+        get => Project.Kind;
+        set
+        {
+            if (Project.Kind == value) return;
+            RecordUndo("修改实体类型");
+            Project.Kind = value;
+            SynchronizeTemplateCarrier();
+            RaiseProjectEditProperties();
+            NotifyVisualChanged();
+        }
+    }
     public string ProjectId { get => Project.Id; set => SetProjectValue("修改字符串 ID", Project.Id, value, item => Project.Id = item); }
     public string ProjectDisplayName { get => Project.DisplayName; set => SetProjectValue("修改中文名称", Project.DisplayName, value, item => Project.DisplayName = item); }
     public string ProjectDescription { get => Project.Description; set => SetProjectValue("修改介绍", Project.Description, value, item => Project.Description = item); }
@@ -88,9 +100,7 @@ public sealed class EditorViewModel : ObservableObject
             if (Project.TemplateEntityId == value) return;
             RecordUndo("修改模板 ID");
             Project.TemplateEntityId = value;
-            if (Project.Kind == EntityKind.Plant &&
-                PlantTemplateCatalog.Find(value) is { IsRuntimeTemplate: true } template)
-                Project.CarrierReanimation = template.CarrierReanimation;
+            SynchronizeTemplateCarrier();
             RaiseProjectEditProperties();
             NotifyVisualChanged();
         }
@@ -99,9 +109,17 @@ public sealed class EditorViewModel : ObservableObject
     {
         get
         {
-            if (!IsPlantProject) return "僵尸、UI 和其他工程不使用植物模板目录。";
-            var definition = PlantTemplateCatalog.Find(ProjectTemplateEntityId);
-            return definition?.Summary ?? $"未知植物模板 ID：{ProjectTemplateEntityId}。";
+            if (Project.Kind == EntityKind.Plant)
+            {
+                var plant = PlantTemplateCatalog.Find(ProjectTemplateEntityId);
+                return plant?.Summary ?? $"未知植物模板 ID：{ProjectTemplateEntityId}。";
+            }
+            if (Project.Kind == EntityKind.Zombie)
+            {
+                var zombie = ZombieTemplateCatalog.Find(ProjectTemplateEntityId);
+                return zombie?.Summary ?? $"未知僵尸模板 ID：{ProjectTemplateEntityId}。";
+            }
+            return "UI 和其他工程不使用实体模板目录。";
         }
     }
     public int ProjectCost { get => Project.Cost; set => SetProjectValue("修改阳光", Project.Cost, value, item => Project.Cost = item); }
@@ -1159,6 +1177,16 @@ public sealed class EditorViewModel : ObservableObject
     }
 
     private void NotifyVisualChanged() => VisualStateChanged?.Invoke(this, EventArgs.Empty);
+
+    private void SynchronizeTemplateCarrier()
+    {
+        if (Project.Kind == EntityKind.Plant &&
+            PlantTemplateCatalog.Find(Project.TemplateEntityId) is { IsRuntimeTemplate: true } plant)
+            Project.CarrierReanimation = plant.CarrierReanimation;
+        else if (Project.Kind == EntityKind.Zombie &&
+                 ZombieTemplateCatalog.Find(Project.TemplateEntityId) is { } zombie)
+            Project.CarrierReanimation = zombie.CarrierReanimation;
+    }
 
     private EditorProject CreateDefaultProject(EntityKind kind)
     {

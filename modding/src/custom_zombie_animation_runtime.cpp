@@ -2,6 +2,7 @@
 
 #include "external_body_animation_runtime.h"
 #include "logger.h"
+#include "reanimation_carrier_catalog.h"
 #include "zombie_config_runtime_access.h"
 #include "zombie_event_bus.h"
 
@@ -51,9 +52,14 @@ bool InstallCustomZombieAnimationRuntime(std::uint8_t*) {
         });
         for (const auto& [zombieType, override] : overrides) {
             if (!override->animationId.has_value()) continue;
-            if (!RegisterExternalBodyAnimation(*override->animationId)) {
+            const int carrier = ResolveZombieTypeCarrierReanimationType(zombieType);
+            if (carrier < 0 ||
+                !RegisterExternalBodyAnimationForCarrier(*override->animationId, carrier)) {
                 LogWarning("Zombie type " + std::to_string(zombieType) + " animationId '" +
                            *override->animationId + "' is inactive; its original body animation will be kept.");
+            }
+            else {
+                static_cast<void>(RegisterExternalBodyAnimation(*override->animationId));
             }
         }
     }

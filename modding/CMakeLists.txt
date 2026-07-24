@@ -60,6 +60,7 @@ add_library(pvz_wave_core STATIC
     src/global_config.cpp
     src/plant_attack_config.cpp
     src/raw_reanim.cpp
+    src/reanimation_carrier_catalog.cpp
     src/reanim_loader.cpp
     src/runtime_reanim_definition.cpp
     src/seed_ui_config.cpp

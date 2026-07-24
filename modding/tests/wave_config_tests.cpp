@@ -6,6 +6,7 @@
 #include "external_texture_config.h"
 #include "plant_attack_config.h"
 #include "raw_reanim.h"
+#include "reanimation_carrier_catalog.h"
 #include "reanim_loader.h"
 #include "runtime_reanim_definition.h"
 #include "seed_ui_config.h"
@@ -994,6 +995,20 @@ void TestEliteZombieConfigAndPriority() {
            "advanced track validation should accept original names and reject traversal-like input");
 }
 
+void TestReanimationCarrierCatalog() {
+    Expect(pvzmod::ResolveCarrierReanimationType("REANIM_CATTAIL") == 81,
+           "Cattail carrier symbol should resolve to ReanimationType 81");
+    Expect(pvzmod::ResolvePlantTemplateCarrierReanimationType(43) == 81,
+           "plant template 43 must use the Cattail carrier for saved games");
+    Expect(pvzmod::ResolveZombieTypeCarrierReanimationType(0) == 21 &&
+           pvzmod::ResolveZombieTypeCarrierReanimationType(3) == 54 &&
+           pvzmod::ResolveZombieTypeCarrierReanimationType(32) == 56,
+           "zombie template carriers should cover ordinary, pole-vaulter and red-eye bodies");
+    Expect(pvzmod::ResolvePlantTemplateCarrierReanimationType(49) == -1 &&
+           pvzmod::ResolveZombieTypeCarrierReanimationType(33) == -1,
+           "unsupported template IDs must not silently select a carrier");
+}
+
 }  // namespace
 
 int main() {
@@ -1025,6 +1040,7 @@ int main() {
     TestExternalAnimationConfigAcceptsCompiledPaths();
     TestRepositoryExternalAnimationExample();
     TestEliteZombieConfigAndPriority();
+    TestReanimationCarrierCatalog();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " test(s) failed.\n";

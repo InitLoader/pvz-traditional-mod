@@ -11,6 +11,9 @@ namespace pvzmod {
 // vanilla save loader can restore the correct persistent external Definition.
 [[nodiscard]] bool InitializeExternalBodyAnimationRuntime(std::uint8_t* moduleBase);
 [[nodiscard]] bool RegisterExternalBodyAnimation(std::string_view animationId);
+[[nodiscard]] bool RegisterExternalBodyAnimationForCarrier(
+    std::string_view animationId,
+    int carrierReanimationType);
 
 // Replaces one already-created body Reanimation in place. All validation,
 // texture resolution and save-restore registration must succeed before the
@@ -21,8 +24,5 @@ namespace pvzmod {
     std::ptrdiff_t bodyReanimationIdOffset,
     std::string_view animationId,
     std::string_view ownerLabel);
-
-// Public for deterministic parser/unit tests and editor validation.
-[[nodiscard]] int ResolveCarrierReanimationType(std::string_view symbol);
 
 }  // namespace pvzmod

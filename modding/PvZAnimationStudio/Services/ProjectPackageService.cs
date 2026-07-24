@@ -181,7 +181,7 @@ public sealed class ProjectPackageService
         {
             ["id"] = SanitizeResourceId(project.Id),
             ["path"] = relativeAnimation,
-            ["carrierReanimation"] = project.CarrierReanimation,
+            ["carrierReanimation"] = ResolveCarrierReanimation(project),
             ["initialAction"] = project.InitialActionId,
             ["images"] = images,
             ["actions"] = actions
@@ -266,6 +266,15 @@ public sealed class ProjectPackageService
         _ => "other"
     };
 
+    private static string ResolveCarrierReanimation(EditorProject project) => project.Kind switch
+    {
+        EntityKind.Plant => PlantTemplateCatalog.Find(project.TemplateEntityId)?.CarrierReanimation
+                            ?? project.CarrierReanimation,
+        EntityKind.Zombie => ZombieTemplateCatalog.Find(project.TemplateEntityId)?.CarrierReanimation
+                             ?? project.CarrierReanimation,
+        _ => project.CarrierReanimation
+    };
+
     private static string SafePathSegment(string value)
     {
         var safe = new string(value.Where(character => char.IsAsciiLetterOrDigit(character) || character is '_' or '-').ToArray());
@@ -292,6 +301,9 @@ public sealed class ProjectPackageService
                 ? $"未知植物模板 ID {project.TemplateEntityId}；当前支持 0–{PlantTemplateCatalog.LastRuntimeTemplateId}。"
                 : $"植物 ID {known.Id}（{known.ChineseName}）是原版模式专用类型，不能作为 templatePlantId；请选择 0–{PlantTemplateCatalog.LastRuntimeTemplateId}。 ");
         }
+        if (project.Kind == EntityKind.Zombie && ZombieTemplateCatalog.Find(project.TemplateEntityId) is null)
+            throw new InvalidDataException(
+                $"未知僵尸模板 ID {project.TemplateEntityId}；当前支持 {ZombieTemplateCatalog.FirstZombieId}–{ZombieTemplateCatalog.LastZombieId}。");
         if (project.Animation.Tracks.Count == 0) throw new InvalidDataException("动画没有轨道。 ");
         if (project.Actions.Count == 0) throw new InvalidDataException("至少需要定义一个动作。 ");
         if (!project.Actions.Any(action => string.Equals(action.Id, project.InitialActionId, StringComparison.OrdinalIgnoreCase)))

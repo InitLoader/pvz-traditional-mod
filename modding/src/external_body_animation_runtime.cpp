@@ -3,8 +3,8 @@
 #include "external_animation_runtime.h"
 #include "hook_utils.h"
 #include "logger.h"
+#include "reanimation_carrier_catalog.h"
 
-#include <array>
 #include <cstdint>
 #include <limits>
 #include <mutex>
@@ -43,37 +43,6 @@ constexpr std::ptrdiff_t kReanimationRateOffset = 0x08;
 constexpr std::ptrdiff_t kReanimationLoopTypeOffset = 0x10;
 constexpr std::ptrdiff_t kReanimationLoopCountOffset = 0x5C;
 
-// Exact 1.0.0.1051 ReanimationType values used by playable plant and zombie
-// carriers. UI/effect-only definitions are intentionally not accepted as body
-// carriers until their object families have a dedicated runtime path.
-constexpr std::pair<std::string_view, int> kBodyCarrierTypes[] = {
-    {"REANIM_PEASHOOTER", 4}, {"REANIM_WALLNUT", 5}, {"REANIM_LILYPAD", 6},
-    {"REANIM_SUNFLOWER", 7}, {"REANIM_CHERRYBOMB", 10}, {"REANIM_SQUASH", 11},
-    {"REANIM_DOOMSHROOM", 12}, {"REANIM_SNOWPEA", 13}, {"REANIM_REPEATER", 14},
-    {"REANIM_SUNSHROOM", 15}, {"REANIM_TALLNUT", 16}, {"REANIM_FUMESHROOM", 17},
-    {"REANIM_PUFFSHROOM", 18}, {"REANIM_HYPNOSHROOM", 19}, {"REANIM_CHOMPER", 20},
-    {"REANIM_ZOMBIE", 21}, {"REANIM_POTATOMINE", 23}, {"REANIM_SPIKEWEED", 24},
-    {"REANIM_SPIKEROCK", 25}, {"REANIM_THREEPEATER", 26}, {"REANIM_MARIGOLD", 27},
-    {"REANIM_ICESHROOM", 28}, {"REANIM_ZOMBIE_FOOTBALL", 29},
-    {"REANIM_ZOMBIE_NEWSPAPER", 30}, {"REANIM_ZOMBIE_ZAMBONI", 31},
-    {"REANIM_JALAPENO", 33}, {"REANIM_SCRAREYSHROOM", 42}, {"REANIM_PUMPKIN", 43},
-    {"REANIM_PLANTERN", 44}, {"REANIM_TORCHWOOD", 45}, {"REANIM_SPLITPEA", 46},
-    {"REANIM_SEASHROOM", 47}, {"REANIM_BLOVER", 48}, {"REANIM_FLOWER_POT", 49},
-    {"REANIM_CACTUS", 50}, {"REANIM_TANGLEKELP", 51}, {"REANIM_STARFRUIT", 52},
-    {"REANIM_POLEVAULTER", 53}, {"REANIM_BALLOON", 54}, {"REANIM_GARGANTUAR", 55},
-    {"REANIM_IMP", 56}, {"REANIM_DIGGER", 57}, {"REANIM_ZOMBIE_DOLPHINRIDER", 59},
-    {"REANIM_POGO", 60}, {"REANIM_BOBSLED", 61}, {"REANIM_JACKINTHEBOX", 62},
-    {"REANIM_SNORKEL", 63}, {"REANIM_BUNGEE", 64}, {"REANIM_CATAPULT", 65},
-    {"REANIM_LADDER", 66}, {"REANIM_GRAVE_BUSTER", 69}, {"REANIM_MAGNETSHROOM", 71},
-    {"REANIM_BOSS", 72}, {"REANIM_CABBAGEPULT", 73}, {"REANIM_KERNELPULT", 74},
-    {"REANIM_MELONPULT", 75}, {"REANIM_COFFEEBEAN", 76}, {"REANIM_UMBRELLALEAF", 77},
-    {"REANIM_GATLINGPEA", 78}, {"REANIM_CATTAIL", 79}, {"REANIM_GLOOMSHROOM", 80},
-    {"REANIM_COBCANNON", 83}, {"REANIM_GARLIC", 84}, {"REANIM_GOLD_MAGNET", 85},
-    {"REANIM_WINTER_MELON", 86}, {"REANIM_TWIN_SUNFLOWER", 87},
-    {"REANIM_IMITATER", 91}, {"REANIM_YETI", 92}, {"REANIM_DANCER", 141},
-    {"REANIM_BACKUP_DANCER", 142},
-};
-
 struct RegisteredDefinition {
     std::string animationId;
     RuntimeReanimatorDefinition* definition = nullptr;
@@ -82,7 +51,6 @@ struct RegisteredDefinition {
 std::uint8_t* g_moduleBase = nullptr;
 std::mutex g_runtimeMutex;
 std::unordered_map<int, RegisteredDefinition> g_definitionsByCarrier;
-std::unordered_set<std::string> g_registeredAnimationIds;
 std::unordered_set<std::string> g_loggedMessages;
 
 template <typename T>
@@ -157,13 +125,6 @@ int ToGameLoopType(const ExternalAnimationLoopMode loop) {
 
 }  // namespace
 
-int ResolveCarrierReanimationType(const std::string_view symbol) {
-    for (const auto& [name, value] : kBodyCarrierTypes) {
-        if (name == symbol) return value;
-    }
-    return -1;
-}
-
 bool InitializeExternalBodyAnimationRuntime(std::uint8_t* moduleBase) {
     if (moduleBase == nullptr) return false;
     if (!VerifyHookTarget(moduleBase, kLawnAppReanimationTryToGetRva,
@@ -192,10 +153,6 @@ bool InitializeExternalBodyAnimationRuntime(std::uint8_t* moduleBase) {
 
 bool RegisterExternalBodyAnimation(const std::string_view animationId) {
     if (animationId.empty() || g_moduleBase == nullptr) return false;
-    {
-        std::lock_guard lock(g_runtimeMutex);
-        if (g_registeredAnimationIds.contains(std::string(animationId))) return true;
-    }
     const std::shared_ptr<const LoadedExternalAnimation> animation = FindExternalAnimation(animationId);
     if (!animation) {
         LogOnce("missing-registration:" + std::string(animationId), true,
@@ -209,23 +166,51 @@ bool RegisterExternalBodyAnimation(const std::string_view animationId) {
             animation->config.carrierReanimation + "'.");
         return false;
     }
+    return RegisterExternalBodyAnimationForCarrier(animationId, carrier);
+}
+
+bool RegisterExternalBodyAnimationForCarrier(
+    const std::string_view animationId, const int carrierReanimationType) {
+    if (animationId.empty() || g_moduleBase == nullptr) return false;
+    if (!IsBodyCarrierReanimationType(carrierReanimationType)) {
+        LogOnce("unsupported-carrier-type:" + std::to_string(carrierReanimationType), true,
+            "External animation '" + std::string(animationId) +
+            "' cannot use unsupported body ReanimationType " +
+            std::to_string(carrierReanimationType) + ".");
+        return false;
+    }
+    const std::shared_ptr<const LoadedExternalAnimation> animation = FindExternalAnimation(animationId);
+    if (!animation) {
+        LogOnce("missing-registration:" + std::string(animationId), true,
+            "External body animation '" + std::string(animationId) + "' is not registered.");
+        return false;
+    }
+    {
+        std::lock_guard lock(g_runtimeMutex);
+        const auto existing = g_definitionsByCarrier.find(carrierReanimationType);
+        if (existing != g_definitionsByCarrier.end()) {
+            if (existing->second.animationId == animationId) return true;
+            LogWarning("External animation '" + std::string(animationId) +
+                       "' was disabled because ReanimationType " +
+                       std::to_string(carrierReanimationType) + " is already used by '" +
+                       existing->second.animationId +
+                       "'; saved games require one Definition per carrier.");
+            return false;
+        }
+    }
     void* lawnApp = *reinterpret_cast<void**>(g_moduleBase + kLawnAppGlobalRva);
     RuntimeReanimatorDefinition* definition =
         PrepareExternalReanimationDefinition(animationId, lawnApp);
     if (definition == nullptr) return false;
 
     std::lock_guard lock(g_runtimeMutex);
-    const auto existing = g_definitionsByCarrier.find(carrier);
-    if (existing != g_definitionsByCarrier.end() && existing->second.animationId != animationId) {
-        LogWarning("External animation '" + std::string(animationId) + "' was disabled because carrier '" +
-                   animation->config.carrierReanimation + "' is already used by '" +
-                   existing->second.animationId + "'; saved games require one Definition per carrier.");
-        return false;
-    }
-    g_definitionsByCarrier[carrier] = RegisteredDefinition{std::string(animationId), definition};
-    g_registeredAnimationIds.emplace(animationId);
-    LogInfo("Registered saved-game body Definition '" + std::string(animationId) + "' for carrier '" +
-            animation->config.carrierReanimation + "'.");
+    const auto [entry, inserted] = g_definitionsByCarrier.emplace(
+        carrierReanimationType,
+        RegisteredDefinition{std::string(animationId), definition});
+    if (!inserted && entry->second.animationId != animationId) return false;
+    entry->second.definition = definition;
+    LogInfo("Registered saved-game body Definition '" + std::string(animationId) +
+            "' for ReanimationType " + std::to_string(carrierReanimationType) + ".");
     return true;
 }
 
@@ -236,7 +221,6 @@ bool ApplyExternalBodyAnimation(
     const std::string_view animationId,
     const std::string_view ownerLabel) {
     if (owner == nullptr || animationId.empty()) return true;
-    if (!RegisterExternalBodyAnimation(animationId)) return false;
     const std::shared_ptr<const LoadedExternalAnimation> animation = FindExternalAnimation(animationId);
     if (!animation) return false;
     const ExternalAnimationActionDefinition* initialAction =
@@ -247,11 +231,8 @@ bool ApplyExternalBodyAnimation(
             "' has no usable initial action; the original body animation was kept.");
         return false;
     }
-    void* lawnApp = Field<void*>(owner, lawnAppOffset);
-    RuntimeReanimatorDefinition* runtimeDefinition =
-        PrepareExternalReanimationDefinition(animationId, lawnApp);
     void* body = ResolveBodyReanimation(owner, lawnAppOffset, bodyReanimationIdOffset);
-    if (runtimeDefinition == nullptr || body == nullptr) {
+    if (body == nullptr) {
         LogOnce("prepare:" + std::string(animationId), true,
             "External animation '" + std::string(animationId) +
             "' could not prepare its body Reanimation; the original animation was kept.");
@@ -259,11 +240,21 @@ bool ApplyExternalBodyAnimation(
     }
     const int expectedCarrier = ResolveCarrierReanimationType(animation->config.carrierReanimation);
     const int actualCarrier = Field<int>(body, 0x00);
-    if (expectedCarrier < 0 || actualCarrier != expectedCarrier) {
+    if (expectedCarrier != actualCarrier) {
         LogOnce("carrier-mismatch:" + std::string(ownerLabel) + ":" + std::string(animationId), true,
-            "External animation '" + std::string(animationId) + "' expects carrier '" +
-            animation->config.carrierReanimation + "' but " + std::string(ownerLabel) +
-            " owns ReanimationType " + std::to_string(actualCarrier) + "; the original body was kept.");
+            "External animation '" + std::string(animationId) + "' declares carrier '" +
+            animation->config.carrierReanimation + "', but " + std::string(ownerLabel) +
+            " owns ReanimationType " + std::to_string(actualCarrier) +
+            "; the actual template carrier is used for save compatibility.");
+    }
+    if (!RegisterExternalBodyAnimationForCarrier(animationId, actualCarrier)) return false;
+    void* lawnApp = Field<void*>(owner, lawnAppOffset);
+    RuntimeReanimatorDefinition* runtimeDefinition =
+        PrepareExternalReanimationDefinition(animationId, lawnApp);
+    if (runtimeDefinition == nullptr) {
+        LogOnce("prepare-definition:" + std::string(animationId), true,
+            "External animation '" + std::string(animationId) +
+            "' could not prepare its Definition; the original body was kept.");
         return false;
     }
 
@@ -283,9 +274,20 @@ bool ApplyExternalBodyAnimation(
 
 extern "C" pvzmod::RuntimeReanimatorDefinition* __stdcall
 ResolveSavedExternalReanimationDefinition(const int reanimationType) {
-    std::lock_guard lock(pvzmod::g_runtimeMutex);
-    const auto found = pvzmod::g_definitionsByCarrier.find(reanimationType);
-    return found == pvzmod::g_definitionsByCarrier.end() ? nullptr : found->second.definition;
+    pvzmod::RuntimeReanimatorDefinition* definition = nullptr;
+    {
+        std::lock_guard lock(pvzmod::g_runtimeMutex);
+        const auto found = pvzmod::g_definitionsByCarrier.find(reanimationType);
+        if (found != pvzmod::g_definitionsByCarrier.end()) definition = found->second.definition;
+    }
+    if (definition == nullptr) {
+        pvzmod::LogOnce(
+            "missing-saved-definition:" + std::to_string(reanimationType),
+            true,
+            "Saved Reanimation has a null Definition and no external mapping for ReanimationType " +
+                std::to_string(reanimationType) + ".");
+    }
+    return definition;
 }
 
 extern "C" void __declspec(naked) ReanimationDefinitionSyncNullGuard() {

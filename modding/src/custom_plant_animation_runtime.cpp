@@ -3,6 +3,7 @@
 #include "external_body_animation_runtime.h"
 #include "logger.h"
 #include "plant_catalog_runtime.h"
+#include "reanimation_carrier_catalog.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -21,7 +22,16 @@ bool InitializeCustomPlantAnimationRuntime(std::uint8_t*) {
     for (int index = 0; index < CustomChooserPlantCount(); ++index) {
         const CustomPlantDefinition* plant = CustomPlantAt(index);
         if (plant == nullptr || plant->animationId.empty()) continue;
-        if (!RegisterExternalBodyAnimation(plant->animationId)) success = false;
+        const int carrier = ResolvePlantTemplateCarrierReanimationType(plant->templatePlantId);
+        if (carrier < 0 ||
+            !RegisterExternalBodyAnimationForCarrier(plant->animationId, carrier)) success = false;
+        else {
+            // Older editor builds could write a different metadata carrier and
+            // saves made with those builds may contain either value. Keep that
+            // declaration as a best-effort migration alias while the actual
+            // template carrier remains authoritative for new instances.
+            static_cast<void>(RegisterExternalBodyAnimation(plant->animationId));
+        }
     }
     if (success) {
         LogInfo("Registered custom-plant body animations without global action hooks.");

@@ -18,7 +18,7 @@
 - `custom_plants.jsonc.animationId` 到植物主体 Reanimation 的运行时注入。
 - `zombies/attributes.jsonc` 按原版僵尸 ID 稀疏填写 `animationId`，在僵尸完成原版初始化后替换其主体 Reanimation；未填写的僵尸完全保持原版。
 - `initialAction` 已用于注入后首次播放；`actions[].replaces`、任意自定义动作和跨帧事件已进入 JSONC、`.pvza`、编辑器及打包校验。
-- 读取关卡存档时根据 Reanimation 原始结构中保存的 `mReanimationType`，把原版无法枚举还原的空 Definition 恢复为对应 `carrierReanimation` 的持久外部 Definition。植物和僵尸可以同时使用不同载体；同一载体仍只能登记一个外部 Definition。
+- 读取关卡存档时根据 Reanimation 原始结构中保存的 `mReanimationType`，把原版无法枚举还原的空 Definition 恢复为持久外部 Definition。启动时会用 `templatePlantId`/原版僵尸 ID 的真实载体预登记，而不是盲信 JSON 声明；旧编辑器写出的错误 `carrierReanimation` 还会作为迁移别名登记，因此同一存档中模板从豌豆改成香蒲前后的实例都能恢复。植物和僵尸可以同时使用不同载体；同一载体仍只能登记一个外部 Definition。
 - `Plant::PlayBodyReanim`、全局 `Reanimation::SetFramesForLayer`/`GetFramesForLayer` 动作拦截原型已撤下；它们会影响全游戏动画，不能作为当前发布路径。
 
 当前不安装全局 `ReanimationInitializeType` Detour，也不把自定义 Definition 写入原版固定数组。运行时在实体完成原版初始化后，只替换已有 body Holder 的 Definition 和 TrackInstance；构建、贴图加载、载体不匹配或存档消歧失败时保留原模板动画。模板创建的附属头部、独立眨眼和其他 Reanimation 仍使用模板资源；如果一个新角色需要完整多部件外观，应先在制作器中合成为一个外部 body Definition。该功能是“原版僵尸类型的主体动画覆盖”，还不是真正新增独立 ZombieType、AI 或动作状态机。
@@ -120,7 +120,7 @@ compiled/reanim/                            # 游戏本体已有的原版 compil
 
 - `id`：大小写敏感，匹配 `[A-Za-z0-9_]+`，长度 1–64。
 - `path`：支持 `pvzmod/animations/` 下的 `.reanim` 或 `.reanim.compiled`；也支持只读引用 `compiled/reanim/*.reanim.compiled` 原版资源。拒绝绝对路径、盘符、UNC 和 `..`。
-- `carrierReanimation`：稳定的原版动画符号名，只作为对象池载体，不代表复用其图片或动作。
+- `carrierReanimation`：稳定的原版动画符号名，只作为对象池载体，不代表复用其图片或动作。动画制作器会按植物/僵尸模板 ID 自动覆盖为真实载体；手写错误值时运行时也会以实体实际 `mReanimationType` 为准并写警告。
 - `initialAction`：植物注入完成后立即播放的动作 ID；省略时为 `idle`，且必须引用已登记动作。
 - `images`：Raw 或自制 compiled Reanimation 中的图片符号到外部贴图 ID 的映射；贴图 ID 必须已经登记在 `textures.jsonc`。直接引用原版 compiled 时可以继续使用其原版图片符号。
 - `actions`：至少一个动作，动作 ID 匹配 `[A-Za-z0-9_]+`。
