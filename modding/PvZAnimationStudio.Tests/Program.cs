@@ -24,6 +24,12 @@ if (args.Length > 1 && string.Equals(args[0], "--timeline-scroll-screenshot", St
     return;
 }
 
+if (args.Length > 1 && string.Equals(args[0], "--publish-confirmation-screenshot", StringComparison.OrdinalIgnoreCase))
+{
+    RenderPublishConfirmationScreenshot(args[1]);
+    return;
+}
+
 if (args.Length > 1 && string.Equals(args[0], "--audit", StringComparison.OrdinalIgnoreCase))
 {
     RunAnimationAudit(args[1]);
@@ -53,6 +59,13 @@ try
     var compiled = new CompiledReanimCodec();
 
     var plantCatalog = PlantTemplateCatalog.All;
+    var overlongResourceId = "IMAGE_REANIM_74B002C6107984CE002A17E710E75F88427DB588_JPG_240W_240H_1C_1S__WEB_AVATAR_NAV";
+    var normalizedResourceId = ProjectPackageService.NormalizeResourceId(overlongResourceId);
+    Assert(normalizedResourceId.Length <= 64 && normalizedResourceId.All(character =>
+               char.IsAsciiLetterOrDigit(character) || character == '_'),
+        "超长或含特殊字符的图片 ID 没有转换为 DLL 可接受的 1–64 位资源 ID");
+    Assert(normalizedResourceId == ProjectPackageService.NormalizeResourceId(overlongResourceId),
+        "图片资源 ID 的缩短结果不稳定，重复安装会生成不同 ID");
     Assert(plantCatalog.Count == 53, "植物全局目录必须完整覆盖 SeedType 0–52");
     Assert(plantCatalog.Select(definition => definition.Id).SequenceEqual(Enumerable.Range(0, 53)),
         "植物全局目录 ID 不连续或顺序错误");
@@ -181,6 +194,36 @@ try
         specialTemplateRejected = true;
     }
     Assert(specialTemplateRejected, "模式专用植物 ID 49 没有在打包阶段被拒绝");
+
+    var zombieBodyDocument = CreateDocument();
+    zombieBodyDocument.Tracks.Add(new AnimationTrack { Name = "Zombie_body" });
+    var mismatchedProject = new EditorProject
+    {
+        Kind = EntityKind.Plant,
+        Id = "MISMATCHED_BODY",
+        DisplayName = "误设植物的僵尸主体",
+        TemplateEntityId = 0,
+        Animation = zombieBodyDocument,
+        Actions = new ObservableCollection<ActionDefinition>
+        {
+            new() { Id = "idle", DisplayName = "待机", Track = "anim_idle" }
+        }
+    };
+    var mismatchedDraft = PublishProjectDraft.FromProject(mismatchedProject);
+    Assert(new PublishConfirmationService().Validate(
+            mismatchedDraft, mismatchedProject, PublishOperation.Install)
+        .Any(message => message.Contains("僵尸主体轨道", StringComparison.Ordinal)),
+        "发布确认没有拦截被误设为植物的僵尸主体工程");
+    var plantNamedZombieDraft = mismatchedDraft with
+    {
+        Kind = EntityKind.Zombie,
+        Id = "NEW_PLANT",
+        DisplayName = "新植物"
+    };
+    Assert(new PublishConfirmationService().Validate(
+            plantNamedZombieDraft, mismatchedProject, PublishOperation.Install)
+        .Any(message => message.Contains("PLANT/植物", StringComparison.Ordinal)),
+        "发布确认没有拦截仍使用植物 ID/名称的僵尸工程");
 
     raw.Save(source, rawPath);
     var rawLoaded = raw.Load(rawPath);
@@ -953,7 +996,7 @@ try
     var zombieProject = new EditorProject
     {
         Kind = EntityKind.Zombie,
-        Id = "TEST_ZOMBIE",
+        Id = "SHARED_ENTITY",
         DisplayName = "测试僵尸",
         TemplateEntityId = 0,
         CarrierReanimation = "REANIM_PEASHOOTER",
@@ -975,12 +1018,40 @@ try
            installedZombieText.Contains("\"2\"", StringComparison.Ordinal),
         "僵尸工程一键安装覆盖了原有稀疏条目或注释");
     Assert(installedZombieText.Contains("\"0\"", StringComparison.Ordinal) &&
-           installedZombieText.Contains("TEST_ZOMBIE", StringComparison.Ordinal),
+           installedZombieText.Contains("SHARED_ENTITY", StringComparison.Ordinal),
         "僵尸工程一键安装没有写入实际生效的 attributes.jsonc");
     var installedAnimations = System.Text.Json.Nodes.JsonNode.Parse(
         File.ReadAllText(Path.Combine(root, "pvzmod", "config", "resources", "animations.jsonc")))!;
     Assert(installedAnimations["animations"]![0]!["carrierReanimation"]!.GetValue<string>() == "REANIM_ZOMBIE",
         "僵尸一键安装没有按 templateZombieId 强制写入真实载体");
+    var installedAnimationTextBeforeCollision = File.ReadAllText(
+        Path.Combine(root, "pvzmod", "config", "resources", "animations.jsonc"));
+    var conflictingPlantProject = new EditorProject
+    {
+        Kind = EntityKind.Plant,
+        Id = "SHARED_ENTITY",
+        DisplayName = "冲突植物",
+        TemplateEntityId = 0,
+        Animation = source,
+        Actions = new ObservableCollection<ActionDefinition>
+        {
+            new() { Id = "idle", DisplayName = "待机", Track = "anim_idle" }
+        }
+    };
+    var crossKindCollisionRejected = false;
+    try
+    {
+        new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor())
+            .InstallToGame(conflictingPlantProject, root);
+    }
+    catch (InvalidDataException exception) when (exception.Message.Contains("禁止跨植物/僵尸覆盖", StringComparison.Ordinal))
+    {
+        crossKindCollisionRejected = true;
+    }
+    Assert(crossKindCollisionRejected, "植物/僵尸使用同一动画 ID 时，一键安装没有在写入前拒绝冲突");
+    Assert(File.ReadAllText(Path.Combine(root, "pvzmod", "config", "resources", "animations.jsonc")) ==
+           installedAnimationTextBeforeCollision,
+        "跨实体类型冲突被拒绝后仍改写了 animations.jsonc");
     var zombieZipPath = Path.Combine(root, "zombie-package.zip");
     new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor()).CreatePackage(zombieProject, zombieZipPath);
     using (var zombieZip = ZipFile.OpenRead(zombieZipPath))
@@ -989,9 +1060,50 @@ try
             entry.FullName.EndsWith("entity.fragment.jsonc", StringComparison.Ordinal));
         using var reader = new StreamReader(entityFragment.Open());
         var entityJson = System.Text.Json.Nodes.JsonNode.Parse(reader.ReadToEnd())!;
-        Assert(entityJson["zombies"]!["0"]!["animationId"]!.GetValue<string>() == "TEST_ZOMBIE",
+        Assert(entityJson["zombies"]!["0"]!["animationId"]!.GetValue<string>() == "SHARED_ENTITY",
             "僵尸 ZIP 没有生成可合并到 attributes.jsonc 的稀疏覆盖片段");
     }
+
+    var rollbackRoot = Path.Combine(root, "rollback-game");
+    Directory.CreateDirectory(Path.Combine(rollbackRoot, "pvzmod", "config", "resources"));
+    Directory.CreateDirectory(Path.Combine(rollbackRoot, "pvzmod", "config", "zombies"));
+    File.WriteAllBytes(Path.Combine(rollbackRoot, "PlantsVsZombies.exe"), [0]);
+    var rollbackTextureConfig = Path.Combine(rollbackRoot, "pvzmod", "config", "resources", "textures.jsonc");
+    var rollbackAnimationConfig = Path.Combine(rollbackRoot, "pvzmod", "config", "resources", "animations.jsonc");
+    var rollbackZombieConfig = Path.Combine(rollbackRoot, "pvzmod", "config", "zombies", "attributes.jsonc");
+    File.WriteAllText(rollbackTextureConfig,
+        $"{{\n  \"schemaVersion\": 1,\n  \"textures\": [{{ \"id\": \"{new string('A', 65)}\", \"path\": \"pvzmod/images/bad.png\" }}]\n}}\n");
+    File.WriteAllText(rollbackAnimationConfig, "{\n  \"schemaVersion\": 1,\n  \"animations\": []\n}\n");
+    File.WriteAllText(rollbackZombieConfig, "{\n  \"schemaVersion\": 1,\n  \"zombies\": {}\n}\n");
+    var animationBeforeRollback = File.ReadAllText(rollbackAnimationConfig);
+    var zombieBeforeRollback = File.ReadAllText(rollbackZombieConfig);
+    var rollbackProject = new EditorProject
+    {
+        Kind = EntityKind.Zombie,
+        Id = "ROLLBACK_ZOMBIE",
+        DisplayName = "回滚测试僵尸",
+        TemplateEntityId = 0,
+        Animation = source,
+        Actions = new ObservableCollection<ActionDefinition>
+        {
+            new() { Id = "idle", DisplayName = "待机", Track = "anim_idle" }
+        }
+    };
+    var installRolledBack = false;
+    try
+    {
+        new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor())
+            .InstallToGame(rollbackProject, rollbackRoot);
+    }
+    catch (InvalidDataException exception) when (exception.Message.Contains("已恢复安装前的文件", StringComparison.Ordinal))
+    {
+        installRolledBack = true;
+    }
+    Assert(installRolledBack, "安装后完整配置校验失败时没有执行事务回滚");
+    Assert(File.ReadAllText(rollbackAnimationConfig) == animationBeforeRollback &&
+           File.ReadAllText(rollbackZombieConfig) == zombieBeforeRollback &&
+           !File.Exists(Path.Combine(rollbackRoot, "pvzmod", "animations", "zombies", "rollback_zombie", "ROLLBACK_ZOMBIE.reanim.compiled")),
+        "事务回滚没有恢复配置或删除本次新建的动画文件");
 
     Console.WriteLine("PASS: Raw/compiled 往返、自动补间、JSONC 合并和 ZIP 打包全部通过。");
 }
@@ -1232,6 +1344,66 @@ static void RenderTimelineScrollScreenshot(string path)
     thread.Join();
     if (failure is not null) throw failure;
     Console.WriteLine($"PASS: 时间轴滚动到底部且固定时间尺后已渲染到 {Path.GetFullPath(path)}");
+}
+
+static void RenderPublishConfirmationScreenshot(string path)
+{
+    Exception? failure = null;
+    var thread = new Thread(() =>
+    {
+        try
+        {
+            var application = new App();
+            application.InitializeComponent();
+            var project = new EditorProject
+            {
+                Kind = EntityKind.Zombie,
+                Id = "NEW_zb",
+                DisplayName = "自定义普通僵尸",
+                Description = "最终确认窗口可以在安装前修改必填属性。",
+                NumericEntityId = 1000,
+                TemplateEntityId = 0,
+                InitialActionId = "idle",
+                Health = 540,
+                Damage = 8,
+                GameRoot = @"H:\pvz",
+                Animation = CreateDocument(),
+                Actions = new ObservableCollection<ActionDefinition>
+                {
+                    new() { Id = "idle", DisplayName = "待机", Track = "anim_idle" }
+                }
+            };
+            project.Animation.Tracks.Add(new AnimationTrack { Name = "Zombie_body" });
+            var window = new PublishConfirmationDialog(project, PublishOperation.Install, @"H:\pvz")
+            {
+                Width = 760,
+                Height = 790,
+                Left = -10000,
+                Top = -10000,
+                ShowActivated = false,
+                WindowStyle = WindowStyle.None
+            };
+            window.Show();
+            window.UpdateLayout();
+            System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(
+                () => window.UpdateLayout(), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            var bitmap = new RenderTargetBitmap(760, 790, 96, 96, PixelFormats.Pbgra32);
+            bitmap.Render(window);
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+            SaveBitmap(bitmap, new PngBitmapEncoder(), Path.GetFullPath(path));
+            window.Close();
+            application.Shutdown();
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
+        }
+    });
+    thread.SetApartmentState(ApartmentState.STA);
+    thread.Start();
+    thread.Join();
+    if (failure is not null) throw failure;
+    Console.WriteLine($"PASS: 导出/安装确认窗口已渲染到 {Path.GetFullPath(path)}");
 }
 
 static AnimationDocument CreateCompositePreviewDocument()

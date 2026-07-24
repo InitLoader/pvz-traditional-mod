@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -41,50 +42,69 @@ public sealed class ProjectPackageService
 
     public void InstallToGame(EditorProject project, string gameRoot)
     {
-        Validate(project);
         gameRoot = Path.GetFullPath(gameRoot);
         if (!File.Exists(Path.Combine(gameRoot, "PlantsVsZombies.exe")))
             throw new InvalidDataException("选择的目录不是 Plants vs. Zombies 游戏根目录。 ");
+        ValidateForPublish(project, gameRoot);
 
         var kindDirectory = GetKindDirectory(project.Kind);
         var entityDirectory = SafePathSegment(project.Id).ToLowerInvariant();
         var extension = project.OutputFormat == AnimationOutputFormat.Compiled ? ".reanim.compiled" : ".reanim";
         var relativeAnimation = Path.Combine("pvzmod", "animations", kindDirectory, entityDirectory, project.Id + extension);
         var absoluteAnimation = Path.Combine(gameRoot, relativeAnimation);
-        _codec.Save(project.Animation, absoluteAnimation);
-
-        var textureItems = CopyImagesAndCreateTextureItems(project, gameRoot, kindDirectory, entityDirectory);
-        var animationItem = CreateAnimationJson(project, relativeAnimation.Replace('\\', '/'));
-
         var textureConfig = Path.Combine(gameRoot, "pvzmod", "config", "resources", "textures.jsonc");
-        foreach (var texture in textureItems)
-            _jsoncEditor.Upsert(textureConfig, "textures", "id", texture);
-        _jsoncEditor.Upsert(
-            Path.Combine(gameRoot, "pvzmod", "config", "resources", "animations.jsonc"),
-            "animations", "id", animationItem);
+        var animationConfig = Path.Combine(gameRoot, "pvzmod", "config", "resources", "animations.jsonc");
+        var entityConfig = project.Kind == EntityKind.Plant
+            ? Path.Combine(gameRoot, "pvzmod", "config", "plants", "custom_plants.jsonc")
+            : Path.Combine(gameRoot, "pvzmod", "config", "zombies", "attributes.jsonc");
+        var generatedPath = Path.Combine(gameRoot, "pvzmod", "config", "zombies", "custom_zombies.generated.jsonc");
+        var transactionTargets = new List<string> { absoluteAnimation, textureConfig, animationConfig, entityConfig };
+        if (project.Kind == EntityKind.Zombie) transactionTargets.Add(generatedPath);
+        transactionTargets.AddRange(project.ImageBindings.Values.Select(source =>
+            Path.Combine(gameRoot, "pvzmod", "images", kindDirectory, entityDirectory, Path.GetFileName(source))));
+        var transaction = new InstallFileTransaction(transactionTargets);
+        try
+        {
+            _codec.Save(project.Animation, absoluteAnimation);
+            var textureItems = CopyImagesAndCreateTextureItems(project, gameRoot, kindDirectory, entityDirectory);
+            var animationItem = CreateAnimationJson(project, relativeAnimation.Replace('\\', '/'));
+            foreach (var texture in textureItems)
+                _jsoncEditor.Upsert(textureConfig, "textures", "id", texture);
+            _jsoncEditor.Upsert(animationConfig, "animations", "id", animationItem);
 
-        if (project.Kind == EntityKind.Plant)
-        {
-            _jsoncEditor.Upsert(
-                Path.Combine(gameRoot, "pvzmod", "config", "plants", "custom_plants.jsonc"),
-                "plants", "id", CreatePlantJson(project));
-        }
-        else if (project.Kind == EntityKind.Zombie)
-        {
-            _jsoncEditor.UpsertObjectProperty(
-                Path.Combine(gameRoot, "pvzmod", "config", "zombies", "attributes.jsonc"),
-                "zombies",
-                project.TemplateEntityId.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                CreateZombieRuntimeOverrideJson(project));
-            var generatedPath = Path.Combine(gameRoot, "pvzmod", "config", "zombies", "custom_zombies.generated.jsonc");
-            var root = new JsonObject
+            if (project.Kind == EntityKind.Plant)
             {
-                ["schemaVersion"] = 1,
-                ["note"] = "由 PvZ 动画制作器生成；自定义僵尸运行时模块接入后直接使用。",
-                ["zombie"] = CreateZombieJson(project)
-            };
-            File.WriteAllText(generatedPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), new UTF8Encoding(false));
+                _jsoncEditor.Upsert(entityConfig, "plants", "id", CreatePlantJson(project));
+            }
+            else
+            {
+                _jsoncEditor.UpsertObjectProperty(
+                    entityConfig,
+                    "zombies",
+                    project.TemplateEntityId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    CreateZombieRuntimeOverrideJson(project));
+                var root = new JsonObject
+                {
+                    ["schemaVersion"] = 1,
+                    ["note"] = "由 PvZ 动画制作器生成；自定义僵尸运行时模块接入后直接使用。",
+                    ["zombie"] = CreateZombieJson(project)
+                };
+                File.WriteAllText(generatedPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), new UTF8Encoding(false));
+            }
+            ValidateInstalledResourceConfigs(textureConfig, animationConfig);
+            transaction.Commit();
         }
+        catch (Exception exception)
+        {
+            transaction.Rollback();
+            throw new InvalidDataException($"安装失败，已恢复安装前的文件：{exception.Message}", exception);
+        }
+    }
+
+    public void ValidateForPublish(EditorProject project, string? gameRoot = null)
+    {
+        Validate(project);
+        if (!string.IsNullOrWhiteSpace(gameRoot)) ValidateInstallCollisions(project, Path.GetFullPath(gameRoot));
     }
 
     private void WritePackageTree(EditorProject project, string staging)
@@ -130,7 +150,7 @@ public sealed class ProjectPackageService
             File.Copy(source, destination, true);
             result.Add(new JsonObject
             {
-                ["id"] = SanitizeResourceId(symbol),
+                ["id"] = NormalizeResourceId(symbol),
                 ["path"] = relative.Replace('\\', '/')
             });
         }
@@ -141,7 +161,7 @@ public sealed class ProjectPackageService
     {
         var images = new JsonObject();
         foreach (var symbol in project.ImageBindings.Keys.OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
-            images[symbol] = SanitizeResourceId(symbol);
+            images[symbol] = NormalizeResourceId(symbol);
         var actions = new JsonObject();
         foreach (var action in project.Actions)
         {
@@ -179,7 +199,7 @@ public sealed class ProjectPackageService
         }
         return new JsonObject
         {
-            ["id"] = SanitizeResourceId(project.Id),
+            ["id"] = NormalizeResourceId(project.Id),
             ["path"] = relativeAnimation,
             ["carrierReanimation"] = ResolveCarrierReanimation(project),
             ["initialAction"] = project.InitialActionId,
@@ -209,7 +229,7 @@ public sealed class ProjectPackageService
             ["shotsPerAttack"] = project.ShotsPerAttack,
             ["damageRangeFlags"] = -1
         },
-        ["animationId"] = SanitizeResourceId(project.Id)
+        ["animationId"] = NormalizeResourceId(project.Id)
     };
 
     private static JsonObject CreateZombieJson(EditorProject project) => new()
@@ -220,14 +240,14 @@ public sealed class ProjectPackageService
         ["templateZombieId"] = project.TemplateEntityId,
         ["health"] = project.Health,
         ["attackDamage"] = project.Damage,
-        ["animationId"] = SanitizeResourceId(project.Id)
+        ["animationId"] = NormalizeResourceId(project.Id)
     };
 
     private static JsonObject CreateZombieRuntimeOverrideJson(EditorProject project) => new()
     {
         ["bodyHealth"] = project.Health,
         ["attackDamage"] = project.Damage,
-        ["animationId"] = SanitizeResourceId(project.Id)
+        ["animationId"] = NormalizeResourceId(project.Id)
     };
 
     private static JsonObject CreateEntityFragment(EditorProject project)
@@ -283,17 +303,131 @@ public sealed class ProjectPackageService
         return safe;
     }
 
-    private static string SanitizeResourceId(string value)
+    public static string NormalizeResourceId(string value)
     {
         var safe = new string(value.Select(character =>
             char.IsAsciiLetterOrDigit(character) || character == '_' ? character : '_').ToArray());
         if (string.IsNullOrWhiteSpace(safe)) throw new InvalidDataException("资源 ID 不能为空。 ");
-        return safe;
+        if (safe == value && safe.Length <= 64) return safe;
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)))[..10];
+        var prefixLength = 64 - hash.Length - 1;
+        if (safe.Length > prefixLength) safe = safe[..prefixLength];
+        return $"{safe}_{hash}";
     }
+
+    private static void ValidateInstallCollisions(EditorProject project, string gameRoot)
+    {
+        var expectedCarrier = ResolveCarrierReanimation(project);
+        var animationConfig = ReadJsoncObject(
+            Path.Combine(gameRoot, "pvzmod", "config", "resources", "animations.jsonc"));
+        if (animationConfig?["animations"] is JsonArray animations)
+        {
+            foreach (var existing in animations.OfType<JsonObject>())
+            {
+                if (!string.Equals(existing["id"]?.GetValue<string>(), project.Id,
+                        StringComparison.OrdinalIgnoreCase)) continue;
+                var existingCarrier = existing["carrierReanimation"]?.GetValue<string>() ?? string.Empty;
+                if (!string.Equals(existingCarrier, expectedCarrier, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException(
+                        $"动画 ID {project.Id} 已被载体 {existingCarrier} 使用；当前{KindName(project.Kind)}需要 {expectedCarrier}。" +
+                        "请在确认窗口改用新的字符串 ID，禁止跨植物/僵尸覆盖同名动画。");
+            }
+        }
+
+        if (project.Kind == EntityKind.Zombie)
+        {
+            var plants = ReadJsoncObject(
+                Path.Combine(gameRoot, "pvzmod", "config", "plants", "custom_plants.jsonc"));
+            if (plants?["plants"] is JsonArray plantArray && plantArray.OfType<JsonObject>().Any(item =>
+                    string.Equals(item["animationId"]?.GetValue<string>(), project.Id,
+                        StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidDataException(
+                    $"字符串 ID {project.Id} 已由自定义植物使用；请给僵尸设置独立 ID，不能覆盖植物存档映射。");
+        }
+        else if (project.Kind == EntityKind.Plant)
+        {
+            var zombieConfig = ReadJsoncObject(
+                Path.Combine(gameRoot, "pvzmod", "config", "zombies", "attributes.jsonc"));
+            if (zombieConfig?["zombies"] is JsonObject zombies && zombies.Any(pair =>
+                    pair.Value is JsonObject item &&
+                    string.Equals(item["animationId"]?.GetValue<string>(), project.Id,
+                        StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidDataException(
+                    $"字符串 ID {project.Id} 已由自定义僵尸使用；请给植物设置独立 ID，不能覆盖僵尸存档映射。");
+        }
+    }
+
+    private static void ValidateInstalledResourceConfigs(string textureConfigPath, string animationConfigPath)
+    {
+        var textures = ReadJsoncObject(textureConfigPath)?["textures"] as JsonArray
+                       ?? throw new InvalidDataException("textures.jsonc 缺少 textures 数组。");
+        var textureIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var texture in textures.OfType<JsonObject>())
+        {
+            var id = texture["id"]?.GetValue<string>() ?? string.Empty;
+            if (!IsResourceId(id)) throw new InvalidDataException($"贴图 ID {id} 不符合 1–64 位资源 ID 规则。");
+            if (!textureIds.Add(id)) throw new InvalidDataException($"贴图 ID {id} 重复。");
+        }
+
+        var animations = ReadJsoncObject(animationConfigPath)?["animations"] as JsonArray
+                         ?? throw new InvalidDataException("animations.jsonc 缺少 animations 数组。");
+        var animationIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var animation in animations.OfType<JsonObject>())
+        {
+            var id = animation["id"]?.GetValue<string>() ?? string.Empty;
+            if (!IsResourceId(id)) throw new InvalidDataException($"动画 ID {id} 不符合 1–64 位资源 ID 规则。");
+            if (!animationIds.Add(id)) throw new InvalidDataException($"动画 ID {id} 重复。");
+            if (animation["images"] is not JsonObject images) continue;
+            foreach (var image in images)
+            {
+                var textureId = image.Value?.GetValue<string>() ?? string.Empty;
+                if (!IsResourceId(textureId))
+                    throw new InvalidDataException($"动画 {id} 的贴图映射 {image.Key} 使用了非法 ID {textureId}。");
+            }
+        }
+    }
+
+    private static JsonObject? ReadJsoncObject(string path)
+    {
+        if (!File.Exists(path)) return null;
+        return JsonNode.Parse(
+            File.ReadAllText(path, Encoding.UTF8),
+            documentOptions: new JsonDocumentOptions
+            {
+                AllowTrailingCommas = true,
+                CommentHandling = JsonCommentHandling.Skip
+            }) as JsonObject;
+    }
+
+    private static bool IsResourceId(string value) =>
+        value.Length is >= 1 and <= 64 && value.All(character =>
+            char.IsAsciiLetterOrDigit(character) || character == '_');
+
+    private static string KindName(EntityKind kind) => kind switch
+    {
+        EntityKind.Plant => "植物",
+        EntityKind.Zombie => "僵尸",
+        EntityKind.Ui => "UI",
+        _ => "其他实体"
+    };
 
     private static void Validate(EditorProject project)
     {
         _ = SafePathSegment(project.Id);
+        if (NormalizeResourceId(project.Id) != project.Id)
+            throw new InvalidDataException("字符串 ID 必须为 1–64 位，只能包含英文字母、数字和下划线。");
+        if (string.IsNullOrWhiteSpace(project.DisplayName))
+            throw new InvalidDataException("中文名称不能为空。");
+        if (PublishConfirmationService.LooksLikeZombieBody(project) && project.Kind != EntityKind.Zombie)
+            throw new InvalidDataException("检测到僵尸主体轨道，实体类型必须选择“僵尸”。");
+        if (project.Kind == EntityKind.Zombie &&
+            (project.Id.Contains("PLANT", StringComparison.OrdinalIgnoreCase) ||
+             project.DisplayName.Contains("植物", StringComparison.Ordinal)))
+            throw new InvalidDataException("僵尸工程的字符串 ID 或名称仍包含“PLANT/植物”，请在确认窗口修正。");
+        if (project.Kind == EntityKind.Plant &&
+            (project.Id.Contains("ZOMBIE", StringComparison.OrdinalIgnoreCase) ||
+             project.DisplayName.Contains("僵尸", StringComparison.Ordinal)))
+            throw new InvalidDataException("植物工程的字符串 ID 或名称仍包含“ZOMBIE/僵尸”，请在确认窗口修正。");
         if (project.Kind == EntityKind.Plant && !PlantTemplateCatalog.IsRuntimeTemplate(project.TemplateEntityId))
         {
             var known = PlantTemplateCatalog.Find(project.TemplateEntityId);
@@ -325,6 +459,49 @@ public sealed class ProjectPackageService
                 if (animationEvent.Id == "PLAY_ACTION" &&
                     !project.Actions.Any(candidate => string.Equals(candidate.Id, animationEvent.TargetAction, StringComparison.OrdinalIgnoreCase)))
                     throw new InvalidDataException($"PLAY_ACTION 事件引用了不存在的动作 {animationEvent.TargetAction}。 ");
+            }
+        }
+    }
+
+    private sealed class InstallFileTransaction
+    {
+        private sealed record Snapshot(string Path, bool Existed, byte[]? Content);
+
+        private readonly IReadOnlyList<Snapshot> _snapshots;
+        private bool _committed;
+
+        public InstallFileTransaction(IEnumerable<string> paths)
+        {
+            _snapshots = paths
+                .Select(Path.GetFullPath)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(path => new Snapshot(path, File.Exists(path), File.Exists(path) ? File.ReadAllBytes(path) : null))
+                .ToArray();
+        }
+
+        public void Commit() => _committed = true;
+
+        public void Rollback()
+        {
+            if (_committed) return;
+            foreach (var snapshot in _snapshots.Reverse())
+            {
+                try
+                {
+                    if (snapshot.Existed)
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(snapshot.Path)!);
+                        File.WriteAllBytes(snapshot.Path, snapshot.Content!);
+                    }
+                    else if (File.Exists(snapshot.Path))
+                    {
+                        File.Delete(snapshot.Path);
+                    }
+                }
+                catch
+                {
+                    // Preserve the original install failure. Files that can be restored are still rolled back.
+                }
             }
         }
     }

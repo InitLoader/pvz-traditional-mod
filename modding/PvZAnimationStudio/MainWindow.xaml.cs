@@ -215,6 +215,7 @@ public partial class MainWindow : Window
     private void Export(AnimationOutputFormat format)
     {
         var compiled = format == AnimationOutputFormat.Compiled;
+        if (!ConfirmPublish(compiled ? PublishOperation.ExportCompiled : PublishOperation.ExportRaw)) return;
         var dialog = new SaveFileDialog
         {
             Title = compiled ? "导出 compiled Reanimation" : "导出 Raw Reanimation",
@@ -228,6 +229,7 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog(this) != true) return;
         RunGuarded(() =>
         {
+            _packages.ValidateForPublish(_viewModel.Project);
             var outputPath = _codec.Save(_viewModel.Project.Animation, dialog.FileName, format);
             _lastFileDirectory = Path.GetDirectoryName(Path.GetFullPath(outputPath));
             _viewModel.Status = $"已导出，可直接重新打开：{outputPath}";
@@ -236,6 +238,7 @@ public partial class MainWindow : Window
 
     private void Package_Click(object sender, RoutedEventArgs eventArgs)
     {
+        if (!ConfirmPublish(PublishOperation.Package)) return;
         var dialog = new SaveFileDialog
         {
             Title = "打包 PvZ Mod",
@@ -258,6 +261,7 @@ public partial class MainWindow : Window
         {
             if (!ChooseGameRoot()) return;
         }
+        if (!ConfirmPublish(PublishOperation.Install, _viewModel.Project.GameRoot)) return;
         RunGuarded(() =>
         {
             _packages.InstallToGame(_viewModel.Project, _viewModel.Project.GameRoot!);
@@ -266,6 +270,43 @@ public partial class MainWindow : Window
                 "安装完成。\n\n动画、图片和配置已写入游戏目录；首次修改的 JSONC 已保存 .pvzstudio.bak。\n请完全退出游戏后重新启动。",
                 "安装完成", MessageBoxButton.OK, MessageBoxImage.Information);
         });
+    }
+
+    private bool ConfirmPublish(PublishOperation operation, string? targetPath = null)
+    {
+        var dialog = new PublishConfirmationDialog(_viewModel.Project, operation, targetPath)
+        {
+            Owner = this
+        };
+        if (dialog.ShowDialog() != true || dialog.Result is null) return false;
+        var draft = dialog.Result;
+        _viewModel.BeginEditTransaction("确认导出/安装属性");
+        try
+        {
+            _viewModel.ProjectKind = draft.Kind;
+            _viewModel.ProjectId = draft.Id;
+            _viewModel.ProjectDisplayName = draft.DisplayName;
+            _viewModel.ProjectDescription = draft.Description;
+            _viewModel.ProjectNumericEntityId = draft.NumericEntityId;
+            _viewModel.ProjectTemplateEntityId = draft.TemplateEntityId;
+            _viewModel.ProjectInitialActionId = draft.InitialActionId;
+            _viewModel.ProjectHealth = draft.Health;
+            _viewModel.ProjectDamage = draft.Damage;
+            _viewModel.ProjectCost = draft.Cost;
+            _viewModel.ProjectRechargeTime = draft.RechargeTime;
+            _viewModel.ProjectLaunchRate = draft.LaunchRate;
+            _viewModel.ProjectProjectileType = draft.ProjectileType;
+            _viewModel.ProjectShotsPerAttack = draft.ShotsPerAttack;
+            if (operation == PublishOperation.ExportRaw)
+                _viewModel.ProjectOutputFormat = AnimationOutputFormat.Raw;
+            else if (operation == PublishOperation.ExportCompiled)
+                _viewModel.ProjectOutputFormat = AnimationOutputFormat.Compiled;
+        }
+        finally
+        {
+            _viewModel.EndEditTransaction();
+        }
+        return true;
     }
 
     private void ChooseGameRoot_Click(object sender, RoutedEventArgs eventArgs) => ChooseGameRoot();

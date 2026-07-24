@@ -95,8 +95,10 @@
     "0": {
       "bodyHealth": 540,  // 原版普通僵尸本体 270
       "attackDamage": 8,  // 原版每次有效啃食 4
+      "animationId": "NEW_zb",
+      "carrierReanimation": "REANIM_ZOMBIE",
       "armorRolls": [
-        { "armorId": 1001, "chance": 0 }, // 0=不出现，100=必出现
+        { "armorId": 1001, "chance": 0 },
         { "armorId": 1002, "chance": 0 },
         { "armorId": 1003, "chance": 0 },
         { "armorId": 1004, "chance": 0 },
