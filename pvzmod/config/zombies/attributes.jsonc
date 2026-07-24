@@ -90,26 +90,6 @@
     }
   },
 
-  // 稀疏覆盖：这里只有僵尸 ID 0（普通僵尸），其他僵尸全部保持原版。
-  "zombies": {
-    "0": {
-      "bodyHealth": 540,  // 原版普通僵尸本体 270
-      "attackDamage": 8,  // 原版每次有效啃食 4
-      "animationId": "NEW_zb",
-      "carrierReanimation": "REANIM_ZOMBIE",
-      "armorRolls": [
-        { "armorId": 1001, "chance": 0 },
-        { "armorId": 1002, "chance": 0 },
-        { "armorId": 1003, "chance": 0 },
-        { "armorId": 1004, "chance": 0 },
-        { "armorId": 1005, "chance": 0 },
-        { "armorId": 2001, "chance": 0 },
-        { "armorId": 4001, "chance": 0 },
-        { "armorId": 5001, "chance": 0 },
-        { "armorId": 3001, "chance": 0 },
-        { "armorId": 3002, "chance": 0 },
-        { "armorId": 6001, "chance": 0 }
-      ]
-    }
-  }
+  // 当前没有僵尸属性覆盖；重新生成后只写入新僵尸需要覆盖的字段。
+  "zombies": {}
 }
