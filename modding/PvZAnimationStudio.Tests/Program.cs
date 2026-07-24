@@ -88,7 +88,9 @@ try
         "僵尸模板载体目录不完整或映射错误");
 
     var editorViewModel = new EditorViewModel(new ActionCatalogService());
-    Assert(editorViewModel.PlantTemplates.Count == 49, "编辑器植物模板速选没有使用全局 0–48 目录");
+    Assert(editorViewModel.EntityTemplates.Count == 49 && editorViewModel.HasEntityTemplates &&
+           editorViewModel.ProjectTemplatePickerLabel == "植物模板速选",
+        "编辑器植物模板速选没有使用全局 0–48 目录");
     editorViewModel.ProjectTemplateEntityId = 21;
     Assert(editorViewModel.ProjectTemplateSummary.Contains("Caltrop.reanim.compiled", StringComparison.Ordinal),
         "编辑器没有根据全局目录解释当前植物模板");
@@ -97,6 +99,21 @@ try
     editorViewModel.ProjectTemplateEntityId = 49;
     Assert(editorViewModel.ProjectTemplateSummary.Contains("模式专用", StringComparison.Ordinal),
         "编辑器没有识别特殊植物 ID");
+    editorViewModel.ProjectKind = EntityKind.Zombie;
+    Assert(editorViewModel.EntityTemplates.Count == 33 && editorViewModel.HasEntityTemplates &&
+           editorViewModel.ProjectTemplatePickerLabel == "僵尸模板速选" &&
+           editorViewModel.EntityTemplates[5].DisplayLabel.Contains("读报僵尸", StringComparison.Ordinal),
+        "编辑器切换到僵尸后没有提供全局 0–32 僵尸模板速选");
+    editorViewModel.ProjectTemplateEntityId = 5;
+    Assert(editorViewModel.ProjectTemplateSummary.Contains("ZOMBIE_NEWSPAPER", StringComparison.Ordinal) &&
+           editorViewModel.ProjectCarrierReanimation == "REANIM_ZOMBIE_NEWSPAPER",
+        "僵尸模板速选没有同步模板摘要和载体 Reanimation");
+    editorViewModel.ProjectKind = EntityKind.Ui;
+    Assert(!editorViewModel.HasEntityTemplates && editorViewModel.EntityTemplates.Count == 0 &&
+           editorViewModel.ProjectTemplatePickerLabel == "实体模板速选",
+        "UI/其他动画不应显示植物或僵尸模板列表");
+    editorViewModel.ProjectKind = EntityKind.Plant;
+    editorViewModel.ProjectTemplateEntityId = 0;
 
     var editableTrack = editorViewModel.SelectedTrack!;
     editableTrack.Frames[0].X = 3;

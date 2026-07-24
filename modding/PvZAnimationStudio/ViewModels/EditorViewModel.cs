@@ -12,6 +12,7 @@ public sealed record ProjectImageResourceItem(
     bool IsOriginal,
     string OwnershipLabel,
     System.Windows.Media.Imaging.BitmapSource? Thumbnail);
+public sealed record EntityTemplateOption(int Id, string DisplayLabel);
 
 public sealed class EditorViewModel : ObservableObject
 {
@@ -37,6 +38,18 @@ public sealed class EditorViewModel : ObservableObject
         IReadOnlyList<CopiedTrackImage> Images);
 
     private static WholeTrackClipboard? s_wholeTrackClipboard;
+
+    private static readonly IReadOnlyList<EntityTemplateOption> PlantTemplateOptions =
+        PlantTemplateCatalog.RuntimeTemplates
+            .Select(template => new EntityTemplateOption(template.Id, template.DisplayLabel))
+            .ToArray();
+
+    private static readonly IReadOnlyList<EntityTemplateOption> ZombieTemplateOptions =
+        ZombieTemplateCatalog.All
+            .Select(template => new EntityTemplateOption(
+                template.Id,
+                $"{template.Id:D2} · {template.ChineseName}（{template.InternalName}）"))
+            .ToArray();
 
     private readonly ActionCatalogService _actionCatalog;
     private readonly TweenService _tweenService = new();
@@ -86,7 +99,12 @@ public sealed class EditorViewModel : ObservableObject
     public ObservableCollection<AnimationTrack> Tracks => Project.Animation.Tracks;
     public ObservableCollection<ActionDefinition> Actions => Project.Actions;
     public IReadOnlyList<ActionTemplate> ActionTemplates => _actionCatalog.Templates;
-    public IReadOnlyList<PlantTemplateDefinition> PlantTemplates => PlantTemplateCatalog.RuntimeTemplates;
+    public IReadOnlyList<EntityTemplateOption> EntityTemplates => Project.Kind switch
+    {
+        EntityKind.Plant => PlantTemplateOptions,
+        EntityKind.Zombie => ZombieTemplateOptions,
+        _ => []
+    };
     public IReadOnlyList<IntegrationModeOption> IntegrationModes { get; } =
     [
         new(EntityIntegrationMode.ReplaceOriginal, "替换原版动画"),
@@ -135,7 +153,19 @@ public sealed class EditorViewModel : ObservableObject
     public bool IsActionView => SelectedAction is not null;
     public bool CanUndo => _history.CanUndo;
     public bool CanRedo => _history.CanRedo;
-    public bool IsPlantProject => Project.Kind == EntityKind.Plant;
+    public bool HasEntityTemplates => Project.Kind is EntityKind.Plant or EntityKind.Zombie;
+    public string ProjectTemplatePickerLabel => Project.Kind switch
+    {
+        EntityKind.Plant => "植物模板速选",
+        EntityKind.Zombie => "僵尸模板速选",
+        _ => "实体模板速选"
+    };
+    public string ProjectTemplatePickerHelp => Project.Kind switch
+    {
+        EntityKind.Plant => "全局植物目录 0–48；选择后同步模板 ID 与载体 Reanimation",
+        EntityKind.Zombie => "全局僵尸目录 0–32；选择后同步模板 ID 与载体 Reanimation",
+        _ => "UI 和其他动画不使用植物或僵尸模板"
+    };
     public string UndoLabel => _history.UndoName is null ? "撤销" : $"撤销：{_history.UndoName}";
     public string RedoLabel => _history.RedoName is null ? "重做" : $"重做：{_history.RedoName}";
 
@@ -1739,7 +1769,8 @@ public sealed class EditorViewModel : ObservableObject
                      nameof(ProjectCarrierReanimation), nameof(ProjectInitialActionId), nameof(ProjectHideTemplateAttachments),
                      nameof(ProjectOutputFormat), nameof(ProjectGameRoot),
                      nameof(ProjectNumericEntityId), nameof(ProjectTemplateEntityId), nameof(ProjectTemplateSummary),
-                     nameof(IsPlantProject), nameof(PlantTemplates), nameof(ProjectCost),
+                     nameof(HasEntityTemplates), nameof(EntityTemplates), nameof(ProjectTemplatePickerLabel),
+                     nameof(ProjectTemplatePickerHelp), nameof(ProjectCost),
                      nameof(ProjectRechargeTime), nameof(ProjectHealth), nameof(ProjectLaunchRate),
                      nameof(ProjectProjectileType), nameof(ProjectDamage), nameof(ProjectShotsPerAttack),
                      nameof(AnimationFps), nameof(EffectivePlaybackRate), nameof(FrameLabel),

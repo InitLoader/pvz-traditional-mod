@@ -127,14 +127,14 @@
           </Grid.RowDefinitions>
           <TextBlock Grid.Row="0" Text="数字 ID"/><TextBox Grid.Row="0" Grid.Column="1" Text="{Binding ProjectNumericEntityId}"/>
           <TextBlock Grid.Row="1" Text="模板 ID"/><TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ProjectTemplateEntityId}"/>
-          <TextBlock Grid.Row="2" Text="植物模板速选"/>
+          <TextBlock Grid.Row="2" Text="{Binding ProjectTemplatePickerLabel}"/>
           <ComboBox Grid.Row="2" Grid.Column="1"
-                    ItemsSource="{Binding PlantTemplates}"
+                    ItemsSource="{Binding EntityTemplates}"
                     DisplayMemberPath="DisplayLabel"
                     SelectedValuePath="Id"
                     SelectedValue="{Binding ProjectTemplateEntityId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                    IsEnabled="{Binding IsPlantProject}"
-                    ToolTip="全局目录中的 0–48 为当前 DLL 可复用模板"/>
+                    IsEnabled="{Binding HasEntityTemplates}"
+                    ToolTip="{Binding ProjectTemplatePickerHelp}"/>
           <TextBlock Grid.Row="3" Grid.ColumnSpan="2" Margin="3,4,3,7"
                      Foreground="#9FC3D8" TextWrapping="Wrap"
                      Text="{Binding ProjectTemplateSummary}"/>
