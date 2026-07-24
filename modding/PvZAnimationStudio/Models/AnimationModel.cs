@@ -214,7 +214,14 @@ public sealed class AnimationTrack : ObservableObject
     public string Name
     {
         get => _name;
-        set => SetField(ref _name, value);
+        set
+        {
+            if (!SetField(ref _name, value)) return;
+            RaisePropertyChanged(nameof(IsActionTrack));
+            RaisePropertyChanged(nameof(IsGroundTrack));
+            RaisePropertyChanged(nameof(EditorDisplayName));
+            RaisePropertyChanged(nameof(EditorFallbackGlyph));
+        }
     }
 
     public ObservableCollection<AnimationFrame> Frames
@@ -283,6 +290,15 @@ public sealed class AnimationTrack : ObservableObject
     [JsonIgnore]
     public bool IsActionTrack =>
         Name.StartsWith("anim_", StringComparison.OrdinalIgnoreCase) && !HasRenderableContent;
+
+    [JsonIgnore]
+    public bool IsGroundTrack => string.Equals(Name, "_ground", StringComparison.OrdinalIgnoreCase);
+
+    [JsonIgnore]
+    public string EditorDisplayName => IsGroundTrack ? "地面位移 / 速度  _ground" : Name;
+
+    [JsonIgnore]
+    public string EditorFallbackGlyph => IsGroundTrack ? "↔" : string.Empty;
 
     public void EnsureFrameCount(int count)
     {

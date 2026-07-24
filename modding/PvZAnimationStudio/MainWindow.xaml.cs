@@ -88,7 +88,7 @@ public partial class MainWindow : Window
 
     private void UpdatePlaybackInterval()
     {
-        var fps = Math.Clamp(_viewModel.Project.Animation.Fps, 0.1f, 120f);
+        var fps = _viewModel.EffectivePlaybackRate;
         _playTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(500.0 / fps, 8.0, 33.0));
     }
 
@@ -97,7 +97,7 @@ public partial class MainWindow : Window
         if (!_viewModel.IsPlaying) return;
         var elapsed = _playbackClock.Elapsed.TotalSeconds;
         _playbackClock.Restart();
-        _playbackFrameBudget += elapsed * Math.Clamp(_viewModel.Project.Animation.Fps, 0.1f, 120f);
+        _playbackFrameBudget += elapsed * _viewModel.EffectivePlaybackRate;
         var frames = (int)Math.Floor(_playbackFrameBudget);
         if (frames <= 0) return;
         _playbackFrameBudget -= frames;

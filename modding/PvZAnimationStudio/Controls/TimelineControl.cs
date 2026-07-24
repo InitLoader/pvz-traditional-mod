@@ -104,7 +104,7 @@ public sealed class TimelineControl : FrameworkElement
                 new SolidColorBrush(Color.FromRgb(180, 193, 205)), dpi);
             context.DrawText(rulerTitle, new Point(8, 7));
         }
-        var fps = Math.Max(0.1f, _viewModel.AnimationFps);
+        var fps = _viewModel.EffectivePlaybackRate;
         for (var localFrame = firstLocalFrame; localFrame <= lastLocalFrame; localFrame++)
         {
             var x = HeaderWidth + localFrame * CellWidth;
@@ -144,14 +144,16 @@ public sealed class TimelineControl : FrameworkElement
             DrawLockIcon(context, new Point(45, y + RowHeight / 2), track.IsLockedInEditor);
             if (track.EditorThumbnail is not null)
                 context.DrawImage(track.EditorThumbnail, new Rect(62, y + 2, 22, 22));
+            else if (track.IsGroundTrack)
+                DrawGroundIcon(context, new Point(72, y + RowHeight / 2));
             else
                 context.DrawRectangle(new SolidColorBrush(Color.FromRgb(45, 52, 61)), gridPen,
                     new Rect(62, y + 3, 20, 20));
             var label = new FormattedText(
-                track.IsActionTrack ? $"动作范围  {track.Name}" : track.Name,
+                track.IsActionTrack ? $"动作范围  {track.Name}" : track.EditorDisplayName,
                 CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
                 new Typeface("Microsoft YaHei UI"), 11,
-                track.IsActionTrack ? Brushes.Plum : Brushes.White, dpi)
+                track.IsActionTrack ? Brushes.Plum : track.IsGroundTrack ? Brushes.DeepSkyBlue : Brushes.White, dpi)
             { MaxTextWidth = HeaderWidth - 96, Trimming = TextTrimming.CharacterEllipsis };
             context.DrawText(label, new Point(91, y + 5));
             context.DrawLine(gridPen, new Point(viewport.Left, y + RowHeight), new Point(viewport.Right, y + RowHeight));
@@ -188,6 +190,17 @@ public sealed class TimelineControl : FrameworkElement
         }
         geometry.Freeze();
         context.DrawGeometry(fill, null, geometry);
+    }
+
+    private static void DrawGroundIcon(DrawingContext context, Point center)
+    {
+        var brush = new SolidColorBrush(Color.FromRgb(77, 200, 255));
+        var pen = new Pen(brush, 1.8);
+        context.DrawLine(pen, new Point(center.X - 9, center.Y), new Point(center.X + 9, center.Y));
+        context.DrawLine(pen, new Point(center.X - 9, center.Y), new Point(center.X - 5, center.Y - 4));
+        context.DrawLine(pen, new Point(center.X - 9, center.Y), new Point(center.X - 5, center.Y + 4));
+        context.DrawLine(pen, new Point(center.X + 9, center.Y), new Point(center.X + 5, center.Y - 4));
+        context.DrawLine(pen, new Point(center.X + 9, center.Y), new Point(center.X + 5, center.Y + 4));
     }
 
     private static void DrawVisibilityIcon(DrawingContext context, Point center, bool visible)

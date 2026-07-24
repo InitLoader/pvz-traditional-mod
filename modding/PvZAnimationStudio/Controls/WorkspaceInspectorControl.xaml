@@ -7,7 +7,11 @@
         <Grid Margin="3">
           <Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition Width="*" MinWidth="150"/></Grid.ColumnDefinitions>
           <Border Width="64" Height="64" Background="#202832" BorderBrush="#5C6B7B" BorderThickness="1">
-            <Image Source="{Binding SelectedTrackThumbnail}" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
+            <Grid>
+              <TextBlock Text="{Binding SelectedTrack.EditorFallbackGlyph}" Foreground="#4DC8FF" FontSize="34"
+                         FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              <Image Source="{Binding SelectedTrackThumbnail}" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
+            </Grid>
           </Border>
           <StackPanel Grid.Column="1" Margin="8,0,0,0">
             <CheckBox Content="锁定轨道（禁止编辑）" IsChecked="{Binding SelectedTrackIsLocked, Mode=TwoWay}"/>
@@ -17,6 +21,19 @@
                        TextWrapping="Wrap" ToolTip="{Binding SelectedTrackImagePath}"/>
           </StackPanel>
         </Grid>
+      </GroupBox>
+      <GroupBox Header="_ground 原版位移 / 速度">
+        <StackPanel Margin="3">
+          <TextBlock Text="{Binding GroundMotionFrameText}" TextWrapping="Wrap"/>
+          <TextBlock Margin="0,5,0,0" Text="{Binding GroundMotionVelocityText}" Foreground="#6DD3FF"
+                     FontWeight="SemiBold" TextWrapping="Wrap"/>
+          <TextBlock Margin="0,4,0,0" Text="{Binding GroundMotionAverageText}" Foreground="#B9DDED"
+                     TextWrapping="Wrap"/>
+          <TextBlock Margin="0,4,0,0" Text="{Binding GroundMotionDistanceText}" Foreground="#9EABB8"
+                     TextWrapping="Wrap"/>
+          <TextBlock Margin="0,6,0,0" Foreground="#9FC3D8" TextWrapping="Wrap"
+                     Text="青色虚线是 _ground 的 X/Y 运动路径，箭头表示当前帧到下一帧的方向。选中青色定位点后可直接拖动；速度与游戏 GetTrackVelocity 使用同一公式。"/>
+        </StackPanel>
       </GroupBox>
       <GroupBox Header="当前关键帧属性">
         <Grid>

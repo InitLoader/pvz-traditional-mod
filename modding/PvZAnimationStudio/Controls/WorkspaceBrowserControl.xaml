@@ -23,9 +23,13 @@
                 <Border DockPanel.Dock="Left" Width="24" Height="24" Margin="0,0,6,0"
                         Background="#222B34" BorderBrush="#536171" BorderThickness="1"
                         ToolTip="{Binding EditorImageSymbol}">
-                  <Image Source="{Binding EditorThumbnail}" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
+                  <Grid>
+                    <TextBlock Text="{Binding EditorFallbackGlyph}" Foreground="#4DC8FF" FontSize="17"
+                               FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <Image Source="{Binding EditorThumbnail}" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
+                  </Grid>
                 </Border>
-                <TextBlock Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding EditorDisplayName}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
               </DockPanel>
             </DataTemplate>
           </ListBox.ItemTemplate>

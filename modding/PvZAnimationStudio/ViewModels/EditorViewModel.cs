@@ -35,6 +35,7 @@ public sealed class EditorViewModel : ObservableObject
     private readonly ProjectCloneService _cloneService = new();
     private readonly EditHistoryService _history = new();
     private readonly AnimationCurveService _curveService = new();
+    private readonly GroundMotionService _groundMotion = new();
     private readonly OriginalResourceService _resources;
     private EditorProject _project;
     private AnimationTrack? _selectedTrack;
@@ -151,6 +152,7 @@ public sealed class EditorViewModel : ObservableObject
     public int ProjectDamage { get => Project.Damage; set => SetProjectValue("修改伤害", Project.Damage, value, item => Project.Damage = item); }
     public int ProjectShotsPerAttack { get => Project.ShotsPerAttack; set => SetProjectValue("修改每次发射数", Project.ShotsPerAttack, value, item => Project.ShotsPerAttack = item); }
     public float AnimationFps { get => Project.Animation.Fps; set => SetProjectValue("修改 FPS", Project.Animation.Fps, value, item => Project.Animation.Fps = item); }
+    public double EffectivePlaybackRate => Math.Clamp(SelectedAction?.Rate ?? AnimationFps, 0.1, 120.0);
 
     public string? SelectedActionId { get => SelectedAction?.Id; set => SetActionValue("修改动作 ID", SelectedAction?.Id, value, item => SelectedAction!.Id = item ?? string.Empty); }
     public string? SelectedActionDisplayName { get => SelectedAction?.DisplayName; set => SetActionValue("修改动作中文名", SelectedAction?.DisplayName, value, item => SelectedAction!.DisplayName = item ?? string.Empty); }
@@ -312,7 +314,7 @@ public sealed class EditorViewModel : ObservableObject
     {
         get
         {
-            var fps = Math.Max(0.1f, AnimationFps);
+            var fps = EffectivePlaybackRate;
             var localFrame = IsActionView ? CurrentFrame - ActiveRange.Start : CurrentFrame;
             var count = IsActionView ? ActiveRange.Count : Math.Max(1, Project.Animation.FrameCount);
             var seconds = localFrame / fps;
@@ -336,6 +338,62 @@ public sealed class EditorViewModel : ObservableObject
     public string? CurrentText { get => CurrentExplicitFrame?.Text; set => SetFrameValue("修改文字", null, frame => frame.Text = value); }
 
     public ResolvedAnimationFrame? CurrentResolvedFrame => SelectedTrack?.ResolveFrame(CurrentFrame);
+    public ActionDefinition? CurrentGroundAction
+    {
+        get
+        {
+            if (SelectedAction is not null) return SelectedAction;
+            return Actions.FirstOrDefault(action =>
+            {
+                var range = _actionView.GetRange(Project.Animation, action);
+                return CurrentFrame >= range.Start && CurrentFrame <= range.End;
+            });
+        }
+    }
+    public GroundMotionSample? CurrentGroundMotion =>
+        _groundMotion.Sample(Project.Animation, CurrentGroundAction, CurrentFrame);
+    public bool HasGroundMotion => CurrentGroundMotion is not null;
+    public string GroundMotionFrameText
+    {
+        get
+        {
+            var sample = CurrentGroundMotion;
+            if (sample is null) return "当前动画没有 _ground 轨道；原版不会从动画读取行走位移。";
+            return sample.Frame == sample.NextFrame
+                ? $"{CurrentGroundAction?.DisplayName ?? "当前范围"} · 原始帧 {sample.Frame + 1}：动作末帧，原版相邻帧速度为 0"
+                : $"{CurrentGroundAction?.DisplayName ?? "当前范围"} · 原始帧 {sample.Frame + 1} → {sample.NextFrame + 1}：ΔX {sample.DeltaX:+0.###;-0.###;0}，ΔY {sample.DeltaY:+0.###;-0.###;0}";
+        }
+    }
+    public string GroundMotionVelocityText
+    {
+        get
+        {
+            var sample = CurrentGroundMotion;
+            return sample is null
+                ? "GetTrackVelocity：不可用"
+                : $"GetTrackVelocity：{sample.PixelsPerUpdate:+0.###;-0.###;0} 像素/更新（{sample.PixelsPerSecond:+0.###;-0.###;0} 像素/秒）";
+        }
+    }
+    public string GroundMotionAverageText
+    {
+        get
+        {
+            var sample = CurrentGroundMotion;
+            return sample is null
+                ? "选择或创建名为 _ground 的轨道后可视化。"
+                : $"动作平均：{sample.AveragePixelsPerUpdate:+0.###;-0.###;0} 像素/更新（{sample.AveragePixelsPerSecond:+0.###;-0.###;0} 像素/秒） · rate {sample.AnimationRate:0.###}";
+        }
+    }
+    public string GroundMotionDistanceText
+    {
+        get
+        {
+            var sample = CurrentGroundMotion;
+            return sample is null
+                ? "公式：相邻帧 ΔX × 0.01 × 动作 rate"
+                : $"动作累计：X {sample.TotalDeltaX:+0.###;-0.###;0}，Y {sample.TotalDeltaY:+0.###;-0.###;0} · 原版每秒 100 次更新";
+        }
+    }
     public bool SelectedTrackIsLocked
     {
         get => SelectedTrack?.IsLockedInEditor ?? false;
@@ -344,15 +402,21 @@ public sealed class EditorViewModel : ObservableObject
             if (SelectedTrack is not null) SetTrackEditorLock(SelectedTrack, value);
         }
     }
-    public string SelectedTrackImageSymbol => CurrentResolvedFrame?.Image ?? SelectedTrack?.EditorImageSymbol ?? "无图片";
-    public string SelectedTrackImagePath => _resources.ResolvePath(Project, CurrentResolvedFrame?.Image ?? SelectedTrack?.EditorImageSymbol) ?? "未找到图片文件";
+    public string SelectedTrackImageSymbol => SelectedTrack?.IsGroundTrack == true
+        ? "_ground（定位/速度轨道，无贴图）"
+        : CurrentResolvedFrame?.Image ?? SelectedTrack?.EditorImageSymbol ?? "无图片";
+    public string SelectedTrackImagePath => SelectedTrack?.IsGroundTrack == true
+        ? "运行时读取 X 位移差，不需要图片资源"
+        : _resources.ResolvePath(Project, CurrentResolvedFrame?.Image ?? SelectedTrack?.EditorImageSymbol) ?? "未找到图片文件";
     public string SelectedTrackImageLayout
     {
         get
         {
             var image = CurrentResolvedFrame?.Image ?? SelectedTrack?.EditorImageSymbol;
             var resource = _resources.ResolveImage(Project, image);
-            return resource is null ? "无可用布局" : $"{resource.SafeColumns} 列 × {resource.SafeRows} 行";
+            return SelectedTrack?.IsGroundTrack == true
+                ? "原版特殊轨道"
+                : resource is null ? "无可用布局" : $"{resource.SafeColumns} 列 × {resource.SafeRows} 行";
         }
     }
     public System.Windows.Media.Imaging.BitmapSource? SelectedTrackThumbnail =>
@@ -1236,7 +1300,7 @@ public sealed class EditorViewModel : ObservableObject
     public void AdvancePlayback(double elapsedSeconds)
     {
         if (!IsPlaying || Project.Animation.FrameCount == 0 || elapsedSeconds <= 0) return;
-        var steps = Math.Max(1, (int)Math.Floor(elapsedSeconds * Math.Max(0.1f, AnimationFps)));
+        var steps = Math.Max(1, (int)Math.Floor(elapsedSeconds * EffectivePlaybackRate));
         AdvancePlaybackFrames(steps);
     }
 
@@ -1450,7 +1514,9 @@ public sealed class EditorViewModel : ObservableObject
                      nameof(CurrentSkewX), nameof(CurrentSkewY), nameof(CurrentScaleX), nameof(CurrentScaleY),
                      nameof(CurrentVisibilityFrame), nameof(CurrentAlpha), nameof(CurrentImage), nameof(CurrentText),
                      nameof(CurrentResolvedFrame), nameof(SelectedTrackIsLocked), nameof(SelectedTrackThumbnail),
-                     nameof(SelectedTrackImageSymbol), nameof(SelectedTrackImagePath), nameof(SelectedTrackImageLayout)
+                     nameof(SelectedTrackImageSymbol), nameof(SelectedTrackImagePath), nameof(SelectedTrackImageLayout),
+                     nameof(CurrentGroundAction), nameof(CurrentGroundMotion), nameof(HasGroundMotion), nameof(GroundMotionFrameText),
+                     nameof(GroundMotionVelocityText), nameof(GroundMotionAverageText), nameof(GroundMotionDistanceText)
                  })
             RaisePropertyChanged(property);
     }
@@ -1466,7 +1532,9 @@ public sealed class EditorViewModel : ObservableObject
                      nameof(IsPlantProject), nameof(PlantTemplates), nameof(ProjectCost),
                      nameof(ProjectRechargeTime), nameof(ProjectHealth), nameof(ProjectLaunchRate),
                      nameof(ProjectProjectileType), nameof(ProjectDamage), nameof(ProjectShotsPerAttack),
-                     nameof(AnimationFps), nameof(FrameLabel)
+                     nameof(AnimationFps), nameof(EffectivePlaybackRate), nameof(FrameLabel),
+                     nameof(CurrentGroundAction), nameof(CurrentGroundMotion), nameof(GroundMotionVelocityText), nameof(GroundMotionAverageText),
+                     nameof(GroundMotionDistanceText)
                  })
             RaisePropertyChanged(property);
     }
@@ -1477,7 +1545,9 @@ public sealed class EditorViewModel : ObservableObject
                  {
                      nameof(SelectedActionId), nameof(SelectedActionDisplayName), nameof(SelectedActionTrack),
                      nameof(SelectedActionLoop), nameof(SelectedActionRate), nameof(SelectedActionBlendFrames),
-                     nameof(SelectedActionReplacesCsv), nameof(SelectedActionEvents)
+                     nameof(SelectedActionReplacesCsv), nameof(SelectedActionEvents),
+                     nameof(EffectivePlaybackRate), nameof(CurrentGroundAction), nameof(CurrentGroundMotion), nameof(GroundMotionFrameText),
+                     nameof(GroundMotionVelocityText), nameof(GroundMotionAverageText), nameof(GroundMotionDistanceText)
                  })
             RaisePropertyChanged(property);
     }

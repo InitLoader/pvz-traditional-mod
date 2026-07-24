@@ -20,6 +20,7 @@ public sealed class AnimationPreviewControl : FrameworkElement
 
     private readonly List<RenderedPart> _renderedParts = [];
     private readonly EntityPreviewProfileService _entityProfiles = new();
+    private readonly GroundMotionService _groundMotion = new();
     private EditorViewModel? _viewModel;
     private OriginalResourceService? _resources;
     private Point _lastMouse;
@@ -123,13 +124,14 @@ public sealed class AnimationPreviewControl : FrameworkElement
         var origin = GetOrigin();
         foreach (var previewFrame in GetPreviewFrames())
             DrawAnimationFrame(context, origin, previewFrame);
+        DrawGroundMotion(context, origin);
 
         var selected = _renderedParts.LastOrDefault(part => ReferenceEquals(part.Track, _viewModel.SelectedTrack));
         if (selected is not null)
         {
             _selectedPivot = selected.Pivot;
             _selectedLocalCenter = new Point(selected.LocalBounds.Width / 2, selected.LocalBounds.Height / 2);
-            DrawGizmo(context, selected.Pivot, _viewModel.ActiveTool);
+            DrawGizmo(context, selected.Pivot, GetEffectiveTool());
         }
 
         var originPen = new Pen(new SolidColorBrush(Color.FromArgb(190, 105, 230, 110)), 1.5);
@@ -191,7 +193,77 @@ public sealed class AnimationPreviewControl : FrameworkElement
         return result;
     }
 
+    private void DrawGroundMotion(DrawingContext context, Point origin)
+    {
+        if (_viewModel is null) return;
+        var sample = _groundMotion.Sample(
+            _viewModel.Project.Animation, _viewModel.CurrentGroundAction, _viewModel.CurrentFrame);
+        if (sample is null || !sample.Track.IsVisibleInEditor) return;
+        var points = _groundMotion.GetPath(_viewModel.Project.Animation, _viewModel.CurrentGroundAction);
+        if (points.Count == 0) return;
+
+        Point ScreenPoint(GroundMotionPoint point) =>
+            new(origin.X + point.X * _zoom, origin.Y + point.Y * _zoom);
+
+        var pathPen = new Pen(new SolidColorBrush(Color.FromArgb(190, 77, 200, 255)), 1.7)
+        {
+            DashStyle = DashStyles.Dash
+        };
+        if (points.Count > 1)
+        {
+            var geometry = new StreamGeometry();
+            using (var writer = geometry.Open())
+            {
+                writer.BeginFigure(ScreenPoint(points[0]), false, false);
+                foreach (var point in points.Skip(1)) writer.LineTo(ScreenPoint(point), true, false);
+            }
+            geometry.Freeze();
+            context.DrawGeometry(null, pathPen, geometry);
+        }
+
+        var current = new Point(origin.X + sample.X * _zoom, origin.Y + sample.Y * _zoom);
+        var next = new Point(current.X + sample.DeltaX * _zoom, current.Y + sample.DeltaY * _zoom);
+        var direction = next - current;
+        if (direction.Length > 0.001)
+        {
+            if (direction.Length < 28)
+            {
+                direction.Normalize();
+                next = current + direction * 28;
+            }
+            DrawArrow(context, current, next,
+                new Pen(new SolidColorBrush(Color.FromRgb(77, 200, 255)), 2.5),
+                new SolidColorBrush(Color.FromRgb(77, 200, 255)));
+        }
+
+        var selected = ReferenceEquals(sample.Track, _viewModel.SelectedTrack);
+        context.DrawEllipse(
+            selected ? Brushes.Gold : new SolidColorBrush(Color.FromRgb(77, 200, 255)),
+            new Pen(Brushes.Black, 1.5), current, selected ? 7 : 6, selected ? 7 : 6);
+        context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(180, 77, 200, 255)), 1),
+            new Point(current.X, current.Y - 15), new Point(current.X, current.Y + 15));
+        context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(180, 77, 200, 255)), 1),
+            new Point(current.X - 15, current.Y), new Point(current.X + 15, current.Y));
+
+        _renderedParts.Add(new RenderedPart(
+            sample.Track, Matrix.Identity,
+            new Rect(current.X - 12, current.Y - 12, 24, 24), current));
+
+        var velocity = MakeText(
+            $"_ground  ΔX {sample.DeltaX:+0.###;-0.###;0}  ·  {sample.PixelsPerUpdate:+0.###;-0.###;0} px/更新  ·  {sample.PixelsPerSecond:+0.###;-0.###;0} px/s",
+            11, new SolidColorBrush(Color.FromRgb(190, 234, 255)), FontWeights.SemiBold);
+        var labelX = Math.Clamp(current.X + 12, 6, Math.Max(6, ActualWidth - velocity.Width - 16));
+        var labelY = Math.Clamp(current.Y + 14, 54, Math.Max(54, ActualHeight - velocity.Height - 10));
+        context.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(215, 6, 23, 34)),
+            new Pen(new SolidColorBrush(Color.FromArgb(190, 77, 200, 255)), 1),
+            new Rect(labelX - 5, labelY - 3, velocity.Width + 10, velocity.Height + 6), 3, 3);
+        context.DrawText(velocity, new Point(labelX, labelY));
+    }
+
     private Point GetOrigin() => new(ActualWidth / 2 + _pan.X, ActualHeight / 2 + _pan.Y);
+
+    private EditorTool GetEffectiveTool() =>
+        _viewModel?.SelectedTrack?.IsGroundTrack == true ? EditorTool.Move : _viewModel?.ActiveTool ?? EditorTool.Select;
 
     private void OnDragOver(object sender, DragEventArgs eventArgs)
     {
@@ -301,7 +373,7 @@ public sealed class AnimationPreviewControl : FrameworkElement
     private void DrawOverlay(DrawingContext context)
     {
         if (_viewModel is null) return;
-        var tool = _viewModel.ActiveTool switch
+        var tool = GetEffectiveTool() switch
         {
             EditorTool.Select => "选择(Q)",
             EditorTool.Move => "移动(G/W)",
@@ -314,11 +386,17 @@ public sealed class AnimationPreviewControl : FrameworkElement
         var previewNote = plan is null ? string.Empty : $"    实体组合预览：{plan.DisplayName}";
         var line2 = MakeText($"当前：{selectedName}{previewNote}    左键选择/拖动操纵器 · 中键平移 · 滚轮缩放 · 方向键微调 · Ctrl+Z 撤销", 12,
             new SolidColorBrush(Color.FromRgb(218, 226, 235)));
-        var width = Math.Max(line1.Width, line2.Width) + 20;
+        var groundLine = _viewModel.HasGroundMotion
+            ? MakeText(_viewModel.GroundMotionVelocityText, 11, new SolidColorBrush(Color.FromRgb(109, 211, 255)))
+            : null;
+        var width = Math.Max(Math.Max(line1.Width, line2.Width), groundLine?.Width ?? 0) + 20;
+        var height = line1.Height + line2.Height + (groundLine?.Height ?? 0) + 17;
         context.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(205, 6, 10, 14)), new Pen(new SolidColorBrush(Color.FromArgb(150, 95, 110, 125)), 1),
-            new Rect(8, 8, width, line1.Height + line2.Height + 17), 4, 4);
+            new Rect(8, 8, width, height), 4, 4);
         context.DrawText(line1, new Point(18, 13));
         context.DrawText(line2, new Point(18, 15 + line1.Height));
+        if (groundLine is not null)
+            context.DrawText(groundLine, new Point(18, 16 + line1.Height + line2.Height));
     }
 
     private FormattedText MakeText(string text, double size, Brush brush, FontWeight? weight = null) => new(
@@ -354,7 +432,7 @@ public sealed class AnimationPreviewControl : FrameworkElement
             _viewModel.SelectedTrack = hit.Track;
             _selectedPivot = hit.Pivot;
             _selectedLocalCenter = new Point(hit.LocalBounds.Width / 2, hit.LocalBounds.Height / 2);
-            if (_viewModel.ActiveTool == EditorTool.Move) _activeHandle = GizmoHandle.FreeMove;
+            if (GetEffectiveTool() == EditorTool.Move) _activeHandle = GizmoHandle.FreeMove;
         }
 
         if (_activeHandle != GizmoHandle.None)
@@ -367,7 +445,7 @@ public sealed class AnimationPreviewControl : FrameworkElement
                 InvalidateVisual();
                 return;
             }
-            _viewModel.BeginEditTransaction(_viewModel.ActiveTool switch
+            _viewModel.BeginEditTransaction(GetEffectiveTool() switch
             {
                 EditorTool.Rotate => "旋转部件",
                 EditorTool.Scale => "缩放部件",
@@ -458,6 +536,7 @@ public sealed class AnimationPreviewControl : FrameworkElement
     public bool BeginModalTransform(EditorTool tool)
     {
         if (_viewModel?.SelectedTrack is null || _viewModel.SelectedTrack.IsLockedInEditor || tool == EditorTool.Select) return false;
+        if (_viewModel.SelectedTrack.IsGroundTrack) tool = EditorTool.Move;
         var selected = _renderedParts.LastOrDefault(part => ReferenceEquals(part.Track, _viewModel.SelectedTrack));
         if (selected is null) return false;
         Focus();
@@ -536,8 +615,9 @@ public sealed class AnimationPreviewControl : FrameworkElement
             !_renderedParts.Any(part => ReferenceEquals(part.Track, _viewModel.SelectedTrack)))
             return GizmoHandle.None;
         var pivot = _selectedPivot;
-        if ((point - pivot).Length <= 10 && _viewModel.ActiveTool != EditorTool.Select) return GizmoHandle.FreeMove;
-        return _viewModel.ActiveTool switch
+        var tool = GetEffectiveTool();
+        if ((point - pivot).Length <= 10 && tool != EditorTool.Select) return GizmoHandle.FreeMove;
+        return tool switch
         {
             EditorTool.Move when DistanceToSegment(point, pivot, new Point(pivot.X + 72, pivot.Y)) <= 8 => GizmoHandle.MoveX,
             EditorTool.Move when DistanceToSegment(point, pivot, new Point(pivot.X, pivot.Y - 72)) <= 8 => GizmoHandle.MoveY,

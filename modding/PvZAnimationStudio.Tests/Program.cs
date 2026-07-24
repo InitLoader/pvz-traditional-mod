@@ -13,7 +13,8 @@ if (args.Length > 1 && string.Equals(args[0], "--workspace-screenshot", StringCo
 {
     RenderWorkspaceScreenshot(args[1], args.Length > 2 && args[2] != "-" ? args[2] : null,
         args.Length > 3 && Enum.TryParse<WorkspacePreset>(args[3], true, out var preset) ? preset : null,
-        args.Length > 4 && string.Equals(args[4], "floating", StringComparison.OrdinalIgnoreCase));
+        args.Length > 4 && string.Equals(args[4], "floating", StringComparison.OrdinalIgnoreCase),
+        args.Length > 5 ? args[5] : null);
     return;
 }
 
@@ -32,6 +33,12 @@ if (args.Length > 1 && string.Equals(args[0], "--audit", StringComparison.Ordina
 if (args.Length > 1 && string.Equals(args[0], "--inspect", StringComparison.OrdinalIgnoreCase))
 {
     RunTrackInspection(args[1], args.Skip(2));
+    return;
+}
+
+if (args.Length > 1 && string.Equals(args[0], "--ground-audit", StringComparison.OrdinalIgnoreCase))
+{
+    RunGroundAudit(args[1]);
     return;
 }
 
@@ -100,6 +107,38 @@ try
     editorViewModel.AdvancePlaybackFrames(7);
     Assert(editorViewModel.CurrentFrame == playbackStart + 7, "播放时钟不能按实际经过帧数追赶");
     editorViewModel.IsPlaying = false;
+    editorViewModel.SelectedAction = editorViewModel.Actions.First();
+    editorViewModel.SelectedActionRate = 20;
+    Assert(Math.Abs(editorViewModel.EffectivePlaybackRate - 20) < 0.0001,
+        "动作预览没有使用动作自身 rate");
+    editorViewModel.SelectedAction = null;
+
+    var groundDocument = new AnimationDocument { Fps = 12 };
+    var groundMarker = new AnimationTrack { Name = "anim_walk" };
+    var groundTrack = new AnimationTrack { Name = "_ground" };
+    groundMarker.EnsureFrameCount(4);
+    groundTrack.EnsureFrameCount(4);
+    groundMarker.Frames[0].Frame = 0;
+    groundTrack.Frames[0].X = 0;
+    groundTrack.Frames[1].X = 2;
+    groundTrack.Frames[2].X = 5;
+    groundTrack.Frames[3].X = 9;
+    groundDocument.Tracks.Add(groundMarker);
+    groundDocument.Tracks.Add(groundTrack);
+    var groundAction = new ActionDefinition
+    {
+        Id = "walk", DisplayName = "行走", Track = "anim_walk", Rate = 20, Loop = AnimationLoopMode.Loop
+    };
+    var groundMotion = new GroundMotionService().Sample(groundDocument, groundAction, 1);
+    Assert(groundTrack.IsGroundTrack && groundTrack.EditorDisplayName.Contains("速度", StringComparison.Ordinal),
+        "_ground 没有被识别为特殊定位/速度轨道");
+    Assert(groundMotion is not null && Math.Abs(groundMotion.DeltaX - 3) < 0.0001 &&
+           Math.Abs(groundMotion.PixelsPerUpdate - 0.6) < 0.0001 &&
+           Math.Abs(groundMotion.PixelsPerSecond - 60) < 0.0001,
+        "_ground 没有按原版 GetTrackVelocity 公式计算瞬时速度");
+    Assert(Math.Abs(groundMotion!.AveragePixelsPerSecond - 60) < 0.0001 &&
+           Math.Abs(groundMotion.TotalDeltaX - 9) < 0.0001,
+        "_ground 动作平均速度或累计位移计算错误");
 
     var repositoryRoot = FindRepositoryRoot();
     Assert(repositoryRoot is not null, "无法定位仓库根目录以校验植物模板文档");
@@ -1052,7 +1091,12 @@ static void SaveBitmap(BitmapSource bitmap, BitmapEncoder encoder, string path)
     encoder.Save(stream);
 }
 
-static void RenderWorkspaceScreenshot(string path, string? animationPath, WorkspacePreset? preset, bool openFloating)
+static void RenderWorkspaceScreenshot(
+    string path,
+    string? animationPath,
+    WorkspacePreset? preset,
+    bool openFloating,
+    string? actionSelector)
 {
     Exception? failure = null;
     var thread = new Thread(() =>
@@ -1077,6 +1121,16 @@ static void RenderWorkspaceScreenshot(string path, string? animationPath, Worksp
             var workspace = window.FindName("WorkspaceHost") as WorkspaceHostControl;
             if (preset.HasValue) workspace?.ApplyPreset(preset.Value);
             window.Show();
+            if (!string.IsNullOrWhiteSpace(actionSelector))
+            {
+                screenshotViewModel.SelectedAction = screenshotViewModel.Actions.FirstOrDefault(action =>
+                    string.Equals(action.Id, actionSelector, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(action.Track, actionSelector, StringComparison.OrdinalIgnoreCase));
+                screenshotViewModel.SelectedTrack = screenshotViewModel.Project.Animation.FindTrack("_ground")
+                                                    ?? screenshotViewModel.SelectedTrack;
+                screenshotViewModel.CurrentFrame = screenshotViewModel.TimelineFrameStart +
+                                                   Math.Min(5, Math.Max(0, screenshotViewModel.TimelineFrameCount - 1));
+            }
             if (openFloating)
                 workspace?.OpenFloatingWindow(WorkspaceEditorKind.Inspector);
             window.UpdateLayout();
@@ -1264,8 +1318,8 @@ static void RunTrackInspection(string sourcePath, IEnumerable<string> frameArgum
         foreach (var track in document.Tracks)
         {
             var frame = track.ResolveFrame(frameIndex);
-            if (frame.Frame < 0 || frame.Alpha <= 0 ||
-                (string.IsNullOrWhiteSpace(frame.Image) && string.IsNullOrWhiteSpace(frame.Text)))
+            if (!track.IsGroundTrack && (frame.Frame < 0 || frame.Alpha <= 0 ||
+                (string.IsNullOrWhiteSpace(frame.Image) && string.IsNullOrWhiteSpace(frame.Text))))
                 continue;
             Console.WriteLine(string.Join('\t', track.Name, frame.Image ?? frame.Text ?? string.Empty,
                 $"x={frame.X:0.###}", $"y={frame.Y:0.###}",
@@ -1273,5 +1327,36 @@ static void RunTrackInspection(string sourcePath, IEnumerable<string> frameArgum
                 $"sx={frame.ScaleX:0.###}", $"sy={frame.ScaleY:0.###}",
                 $"f={frame.Frame:0.###}", $"a={frame.Alpha:0.###}"));
         }
+    }
+}
+
+static void RunGroundAudit(string sourcePath)
+{
+    var path = Path.GetFullPath(sourcePath);
+    var document = new ReanimCodecService().Load(path);
+    var ground = document.FindTrack("_ground");
+    if (ground is null)
+    {
+        Console.WriteLine($"{Path.GetFileName(path)} 没有 _ground 轨道。");
+        return;
+    }
+    var kind = Path.GetFileName(path).StartsWith("Zombie", StringComparison.OrdinalIgnoreCase)
+        ? EntityKind.Zombie
+        : EntityKind.Plant;
+    var actions = new ActionCatalogService().InferActions(document, kind);
+    var motion = new GroundMotionService();
+    Console.WriteLine("action\tframes\trate\ttotal_x\tavg_px_update\tavg_px_sec\tmin_px_sec\tmax_px_sec");
+    foreach (var action in actions)
+    {
+        var first = motion.Sample(document, action, 0);
+        if (first is null) continue;
+        var velocities = Enumerable.Range(first.Range.Start, Math.Max(1, first.Range.Count - 1))
+            .Select(frame => motion.Sample(document, action, frame)!.PixelsPerSecond)
+            .ToArray();
+        Console.WriteLine(string.Join('\t', action.Track,
+            $"{first.Range.Start}-{first.Range.End}", action.Rate.ToString("0.###"),
+            first.TotalDeltaX.ToString("0.###"), first.AveragePixelsPerUpdate.ToString("0.###"),
+            first.AveragePixelsPerSecond.ToString("0.###"), velocities.Min().ToString("0.###"),
+            velocities.Max().ToString("0.###")));
     }
 }
