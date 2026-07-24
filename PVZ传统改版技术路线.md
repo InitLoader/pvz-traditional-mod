@@ -26,6 +26,8 @@
 
 僵尸外部主体动画不能在 Holder 重建时丢失原版的实例分层状态。运行时在释放旧 TrackInstance 前按轨道名快照 `RenderGroup`、裁剪和消失截断标志，初始化新 Definition 后再恢复，让路障、铁桶、铁门、旗帜和泳圈等仍由原版 `Zombie::SetupReanimLayers` 选择。编辑器对普通僵尸及其另存工程自动隐藏未启用装备，选中某装备轨道时才临时显示供编辑。
 
+同一替换流程还必须迁移 Reanimation 的当前动作。原版普通僵尸在 `_ground` 存在时使用当前动作的轨道速度移动；若替换后无条件播放零位移的 `idle`，僵尸会留在右侧屏幕外。新流程在旧 `anim_*` 标记轨道中用 `mFrameStart/mFrameCount` 识别当前动作，然后恢复同名轨道、进度、速率和循环状态，使 `idle/idle2 -> walk/walk2` 出场过渡仍由原版状态机控制。
+
 ## 0.11.x 设计契约：可脚本化技能与自由行为
 
 植物、僵尸、精英、Boss 和关卡机制不能继续依赖“每种技能在 DLL 中预注册一个专用处理器”，也不能把条件、循环和状态机继续扩张成大量 JSON 字段。后续采用三级扩展：有限 JSON 保存静态数据并允许“一个事件 + 简单过滤 + 一个固定效果”的微规则；Lua 编写条件、组合和状态机；可信 Win32 DLL 从 `pvzmod/plugins/native/<plugin-id>/` 加载，通过版本化 C ABI 调用 `pvzmod` 并注册可供 JSON、Lua 和其他 DLL 共用的新 Capability。`pvzmod.dll` 继续隔离 1051 版地址、对象偏移和调用约定。

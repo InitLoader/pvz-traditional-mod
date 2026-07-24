@@ -61,6 +61,7 @@ add_library(pvz_wave_core STATIC
     src/plant_attack_config.cpp
     src/raw_reanim.cpp
     src/reanimation_carrier_catalog.cpp
+    src/reanimation_playback_state.cpp
     src/reanimation_track_instance_state.cpp
     src/reanim_loader.cpp
     src/runtime_reanim_definition.cpp

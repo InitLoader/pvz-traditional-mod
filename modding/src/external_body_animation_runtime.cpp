@@ -4,8 +4,10 @@
 #include "hook_utils.h"
 #include "logger.h"
 #include "reanimation_carrier_catalog.h"
+#include "reanimation_playback_state.h"
 #include "reanimation_track_instance_state.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <mutex>
@@ -42,6 +44,7 @@ constexpr std::array<std::uint8_t, 5> kDefinitionSyncTrackRead =
 
 constexpr std::ptrdiff_t kReanimationRateOffset = 0x08;
 constexpr std::ptrdiff_t kReanimationLoopTypeOffset = 0x10;
+constexpr std::ptrdiff_t kReanimationTimeOffset = 0x04;
 constexpr std::ptrdiff_t kReanimationLoopCountOffset = 0x5C;
 
 struct RegisteredDefinition {
@@ -259,15 +262,34 @@ bool ApplyExternalBodyAnimation(
         return false;
     }
 
+    const ReanimationPlaybackState previousPlaybackState =
+        CaptureReanimationPlaybackState(body);
     const ReanimationTrackInstanceStateMap previousTrackState =
         CaptureReanimationTrackInstanceState(body);
     DestroyReanimationContents(body);
     InitializeReanimation(body, runtimeDefinition);
     RestoreReanimationTrackInstanceState(body, previousTrackState);
-    SetFramesForLayer(body, initialAction->track.c_str());
-    Field<float>(body, kReanimationRateOffset) = static_cast<float>(initialAction->rate);
-    Field<int>(body, kReanimationLoopTypeOffset) = ToGameLoopType(initialAction->loop);
-    Field<int>(body, kReanimationLoopCountOffset) = 0;
+    const RawReanimTrack* preservedAction = previousPlaybackState.HasAction()
+        ? animation->raw.FindTrack(previousPlaybackState.actionTrack)
+        : nullptr;
+    const bool canPreserveAction = preservedAction != nullptr &&
+        preservedAction->VisibleFrameRange().has_value();
+    if (canPreserveAction) {
+        SetFramesForLayer(body, previousPlaybackState.actionTrack.c_str());
+        Field<float>(body, kReanimationTimeOffset) = previousPlaybackState.animationTime;
+        Field<float>(body, kReanimationRateOffset) = previousPlaybackState.animationRate;
+        Field<int>(body, kReanimationLoopTypeOffset) = previousPlaybackState.loopType;
+        Field<int>(body, kReanimationLoopCountOffset) = previousPlaybackState.loopCount;
+        LogOnce("preserved-action:" + std::string(ownerLabel) + ":" + std::string(animationId), false,
+            "Preserved body action '" + previousPlaybackState.actionTrack +
+            "' while injecting external animation '" + std::string(animationId) + "' into " +
+            std::string(ownerLabel) + ".");
+    } else {
+        SetFramesForLayer(body, initialAction->track.c_str());
+        Field<float>(body, kReanimationRateOffset) = static_cast<float>(initialAction->rate);
+        Field<int>(body, kReanimationLoopTypeOffset) = ToGameLoopType(initialAction->loop);
+        Field<int>(body, kReanimationLoopCountOffset) = 0;
+    }
     LogOnce("applied:" + std::string(ownerLabel) + ":" + std::string(animationId), false,
         "Injected external body animation '" + std::string(animationId) + "' into " +
         std::string(ownerLabel) + ".");

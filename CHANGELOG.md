@@ -10,6 +10,7 @@
 - 动画制作器导出和一键安装现在按 `templatePlantId`/`templateZombieId` 强制写入真实载体；新增完整原版僵尸 ID 0–32 载体目录，避免普通僵尸工程误导出为豌豆射手载体。
 - 外部动画未显式绑定贴图时，合法 `IMAGE_REANIM_*` 符号可安全复用游戏 `reanim/` 下的同名原版 PNG；显式外部贴图仍优先，未知符号和越界路径继续拒绝，从原版 compiled 另存的僵尸不再因几十个空 `images` 映射而失效。
 - 修复僵尸外部主体动画重建后路障、铁桶、铁门等可选防具轨道全部显示：替换 Definition 前按轨道名快照实例级 `RenderGroup`/裁剪状态，重建后再恢复，继续由原版 `Zombie::SetupReanimLayers` 决定实际装备。
+- 修复被外部动画替换的僵尸停在屏幕外、只有声音但无法走入场地：替换前通过旧 `mFrameStart/mFrameCount` 反查当前 `anim_*` 动作，替换后优先恢复同名动作、进度、速率、循环类型与循环次数，仅在无法匹配时回退 `initialAction`。这保留了原版 `idle/idle2 -> walk/walk2` 状态过渡和 `_ground` 行走速度。
 
 - 增加僵尸主体外部 Reanimation 纵切：`zombies/attributes.jsonc` 可按原版僵尸 ID 稀疏填写 `animationId`，生成后在既有 body Holder 内安全替换 Definition 和 TrackInstance。
 - 抽出植物/僵尸共用的 `external_body_animation_runtime`，统一精确版本 ABI、资源预构建、载体校验、初始动作和存档恢复，僵尸配置、动画生命周期和基础属性 Hook 继续分模块维护。

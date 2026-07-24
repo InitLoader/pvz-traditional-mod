@@ -25,6 +25,8 @@
 
 僵尸主体替换还必须保留原版已经对 TrackInstance 做完的分层结果。运行时在释放旧 Definition 前按轨道名记录 `renderGroup`、`ignoreClipRect` 和 `truncateDisappearingFrames`，新 Definition 初始化后恢复同名轨道。因此 compiled 里可以继续保留全部原版可选防具轨道，游戏中只有该实例实际拥有的路障、铁桶、铁门等会显示，而不是在外部动画里手工删轨道。
 
+还要保留替换瞬间的动作状态。原版僵尸存在 `_ground` 轨道时，每帧使用当前动作的 `GetTrackVelocity("_ground")` 推进水平位置。运行时现在会从旧 `mFrameStart/mFrameCount` 识别 `anim_idle/anim_idle2/anim_walk/anim_walk2/...`，并在新 Definition 中恢复同名动作、进度、速率及循环状态。这样保留原版出场待机到行走的过渡；外部动画没有对应动作时才使用 `initialAction`。
+
 ## 2. 原版动画模型
 
 PvZ 的 Reanimation 是分层变换动画，不是 GIF：
@@ -138,7 +140,7 @@ compiled/reanim/                            # 游戏本体已有的原版 compil
 
 ### 4.1 僵尸主体动画覆盖
 
-先在 `resources/animations.jsonc` 注册动画。普通、路障、铁桶和铁门僵尸的主体都属于 `REANIM_ZOMBIE`；外部 Definition 必须保留原版 AI 会请求的动作标记轨道，例如 `anim_walk`、`anim_eat`、受伤/死亡和掉头动作。当前运行时会播放 `initialAction`，之后原版僵尸 AI 直接按同名轨道切换；`actions[].replaces` 还没有运行时路由，因此不能用任意新名字代替这些原版轨道。
+先在 `resources/animations.jsonc` 注册动画。普通、路障、铁桶和铁门僵尸的主体都属于 `REANIM_ZOMBIE`；外部 Definition 必须保留原版 AI 会请求的动作标记轨道，例如 `anim_walk`、`anim_eat`、受伤/死亡和掉头动作。替换时优先保留原版当前同名动作，无法匹配时才播放 `initialAction`；之后原版僵尸 AI 继续按同名轨道切换。`actions[].replaces` 还没有运行时路由，因此不能用任意新名字代替这些原版轨道。
 
 ```jsonc
 {

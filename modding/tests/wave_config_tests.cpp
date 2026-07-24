@@ -7,6 +7,7 @@
 #include "plant_attack_config.h"
 #include "raw_reanim.h"
 #include "reanimation_carrier_catalog.h"
+#include "reanimation_playback_state.h"
 #include "reanimation_track_instance_state.h"
 #include "reanim_loader.h"
 #include "runtime_reanim_definition.h"
@@ -1053,6 +1054,44 @@ void TestReanimationTrackInstanceStateTransfer() {
            "body replacement should preserve original shield draw order");
 }
 
+void TestReanimationPlaybackStateCapture() {
+    std::array<pvzmod::RuntimeReanimatorTransform, 6> idleTransforms{};
+    std::array<pvzmod::RuntimeReanimatorTransform, 6> walkTransforms{};
+    for (auto& transform : idleTransforms) transform.frame = -10000.0f;
+    for (auto& transform : walkTransforms) transform.frame = -10000.0f;
+    idleTransforms[0].frame = 0.0f;
+    idleTransforms[2].frame = -1.0f;
+    walkTransforms[0].frame = -1.0f;
+    walkTransforms[2].frame = 0.0f;
+    walkTransforms[5].frame = -1.0f;
+    std::array<pvzmod::RuntimeReanimatorTrack, 2> tracks = {{
+        {"anim_idle", idleTransforms.data(), static_cast<int>(idleTransforms.size())},
+        {"anim_walk", walkTransforms.data(), static_cast<int>(walkTransforms.size())}
+    }};
+    pvzmod::RuntimeReanimatorDefinition definition{
+        tracks.data(), static_cast<int>(tracks.size()), 12.0f, nullptr};
+    alignas(8) std::array<std::byte, 0x60> reanimation{};
+    *reinterpret_cast<float*>(reanimation.data() + 0x04) = 0.35f;
+    *reinterpret_cast<float*>(reanimation.data() + 0x08) = 11.5f;
+    *reinterpret_cast<void**>(reanimation.data() + 0x0C) = &definition;
+    *reinterpret_cast<int*>(reanimation.data() + 0x10) = 0;
+    *reinterpret_cast<int*>(reanimation.data() + 0x18) = 2;
+    *reinterpret_cast<int*>(reanimation.data() + 0x1C) = 3;
+    *reinterpret_cast<int*>(reanimation.data() + 0x5C) = 4;
+
+    const auto captured = pvzmod::CaptureReanimationPlaybackState(reanimation.data());
+    Expect(captured.actionTrack == "anim_walk" &&
+           std::abs(captured.animationTime - 0.35f) < 0.001f &&
+           std::abs(captured.animationRate - 11.5f) < 0.001f &&
+           captured.loopType == 0 && captured.loopCount == 4,
+           "body replacement should identify and preserve the active walking action");
+
+    *reinterpret_cast<int*>(reanimation.data() + 0x18) = 5;
+    *reinterpret_cast<int*>(reanimation.data() + 0x1C) = 1;
+    Expect(!pvzmod::CaptureReanimationPlaybackState(reanimation.data()).HasAction(),
+           "unknown frame ranges should fall back to the configured initial action");
+}
+
 }  // namespace
 
 int main() {
@@ -1086,6 +1125,7 @@ int main() {
     TestEliteZombieConfigAndPriority();
     TestReanimationCarrierCatalog();
     TestReanimationTrackInstanceStateTransfer();
+    TestReanimationPlaybackStateCapture();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " test(s) failed.\n";

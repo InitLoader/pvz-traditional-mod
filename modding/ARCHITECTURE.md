@@ -65,6 +65,8 @@ ExtensionHub
 
 替换已存在的 body Holder 时不能只重建 Definition：`Zombie::SetupReanimLayers` 已在旧 TrackInstance 上写入路障、铁桶、铁门、旗帜、泳圈等的实例级 `mRenderGroup`。`external_body_animation_runtime` 在 `Destroy` 之前按大小写无关的轨道名快照 render group、clip 和 truncate 状态，`Initialize` 之后再恢复；未命中的新轨道使用初始默认值。这使装备选择仍归原版僵尸逻辑所有，不在 Mod 中硬编码某种防具的显示规则。
 
+播放状态与分层状态同样属于 Reanimation 实例，不能在替换后无条件改成配置默认动作。普通僵尸的水平位移会在 `_ground` 存在时读取当前动作的轨道速度；若初始化完成后把 `idle2` 或 `walk` 强制覆盖为无位移的 `idle`，僵尸会停在屏幕外。`reanimation_playback_state` 在旧 Definition 的 `anim_*` 标记轨道中用 `mFrameStart/mFrameCount` 反查当前动作，新 Definition 存在同名有效轨道时恢复动作、标准化进度、速率、循环类型和次数；只有不兼容的外部骨架才回退 `initialAction`。
+
 ## 0.9.0 精英与通用外部贴图边界
 
 `external_texture_config/runtime` 建立通用字符串贴图 ID 注册表，只负责路径安全、原版 `SexyAppBase::GetImage` 加载和进程内缓存。精英、植物和 UI 只能按 ID 查询 `Image*`，不得各自复制图片解析器。
