@@ -13,6 +13,7 @@ public partial class PublishConfirmationDialog : Window
     private readonly EditorProject _project;
     private readonly PublishOperation _operation;
     private readonly PublishConfirmationService _confirmation = new();
+    private readonly AnimationEntityClassification _classification;
 
     public PublishProjectDraft? Result { get; private set; }
 
@@ -21,6 +22,7 @@ public partial class PublishConfirmationDialog : Window
         InitializeComponent();
         _project = project;
         _operation = operation;
+        _classification = AnimationEntityClassifier.Classify(project);
         OperationText.Text = operation switch
         {
             PublishOperation.ExportRaw => "导出 Raw .reanim",
@@ -58,7 +60,10 @@ public partial class PublishConfirmationDialog : Window
         LaunchRateBox.Text = project.LaunchRate.ToString();
         ProjectileTypeBox.Text = project.ProjectileType.ToString();
         ShotsBox.Text = project.ShotsPerAttack.ToString();
-        ProjectSummaryText.Text = $"动画：{project.Animation.Tracks.Count} 轨 / {project.Animation.FrameCount} 帧；图片绑定：{project.ImageBindings.Count}；动作：{project.Actions.Count}";
+        ProjectSummaryText.Text =
+            $"动画：{project.Animation.Tracks.Count} 轨 / {project.Animation.FrameCount} 帧；" +
+            $"图片绑定：{project.ImageBindings.Count}；动作：{_classification.ActionIds.Count}；" +
+            $"类型识别：{_classification.Summary}";
         TargetPathText.Text = string.IsNullOrWhiteSpace(targetPath) ? "目标位置将在下一步选择。" : $"目标：{targetPath}";
         UpdateTemplatePreview();
     }
@@ -93,10 +98,13 @@ public partial class PublishConfirmationDialog : Window
             ? "我已核对新增实体类型、ID、模板和数值"
             : "我已核对替换目标、动画 ID 和原版模板";
 
-        if (PublishConfirmationService.LooksLikeZombieBody(_project) && SelectedKind != EntityKind.Zombie)
+        if (_classification.IsHighConfidence && SelectedKind != _classification.Kind)
         {
             ValidationBorder.Visibility = Visibility.Visible;
-            ValidationText.Text = "检测到僵尸主体轨道。请选择“僵尸”，否则不能继续导出或安装。";
+            ValidationText.Text =
+                $"动画内容高置信度识别为“{AnimationEntityClassifier.GetKindName(_classification.Kind)}”。" +
+                $"当前选择“{AnimationEntityClassifier.GetKindName(SelectedKind)}”与动画主体不一致。\n" +
+                $"证据：{string.Join("；", _classification.Evidence)}";
         }
         else
         {

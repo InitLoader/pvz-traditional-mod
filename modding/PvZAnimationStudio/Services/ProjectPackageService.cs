@@ -484,8 +484,12 @@ public sealed class ProjectPackageService
             throw new InvalidDataException("字符串 ID 必须为 1–64 位，只能包含英文字母、数字和下划线。");
         if (string.IsNullOrWhiteSpace(project.DisplayName))
             throw new InvalidDataException("中文名称不能为空。");
-        if (PublishConfirmationService.LooksLikeZombieBody(project) && project.Kind != EntityKind.Zombie)
-            throw new InvalidDataException("检测到僵尸主体轨道，实体类型必须选择“僵尸”。");
+        var classification = AnimationEntityClassifier.Classify(project);
+        if (classification.IsHighConfidence && project.Kind != classification.Kind)
+            throw new InvalidDataException(
+                $"动画内容高置信度识别为“{AnimationEntityClassifier.GetKindName(classification.Kind)}”，" +
+                $"实体类型不能选择“{AnimationEntityClassifier.GetKindName(project.Kind)}”。" +
+                $"证据：{string.Join("；", classification.Evidence)}");
         if (project.Kind == EntityKind.Zombie &&
             (project.Id.Contains("PLANT", StringComparison.OrdinalIgnoreCase) ||
              project.DisplayName.Contains("植物", StringComparison.Ordinal)))

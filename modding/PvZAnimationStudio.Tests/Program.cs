@@ -184,6 +184,13 @@ try
         {
             var compiledAsset = Path.Combine(originalReanimRoot, definition.CompiledFileName);
             Assert(File.Exists(compiledAsset), $"植物模板目录引用了不存在的原版资源：{definition.CompiledFileName}");
+            var classification = AnimationEntityClassifier.Classify(new EditorProject
+            {
+                SourceAnimationPath = compiledAsset,
+                Animation = new ReanimCodecService().Load(compiledAsset)
+            });
+            Assert(classification.Kind == EntityKind.Plant && classification.IsHighConfidence,
+                $"全局植物模板被通用分类器误判：{definition.CompiledFileName} -> {classification.Summary}");
         }
     }
 
@@ -228,7 +235,7 @@ try
     var mismatchedDraft = PublishProjectDraft.FromProject(mismatchedProject);
     Assert(new PublishConfirmationService().Validate(
             mismatchedDraft, mismatchedProject, PublishOperation.Install)
-        .Any(message => message.Contains("僵尸主体轨道", StringComparison.Ordinal)),
+        .Any(message => message.Contains("高置信度识别为“僵尸”", StringComparison.Ordinal)),
         "发布确认没有拦截被误设为植物的僵尸主体工程");
 
     var chomperPath = Path.Combine(originalReanimRoot, "Chomper.reanim.compiled");
@@ -237,22 +244,54 @@ try
         "缺少大嘴花/普通僵尸原版 compiled，无法执行实体类型识别回归");
     var chomperProject = new EditorProject
     {
-        SourceAnimationPath = chomperPath,
+        SourceAnimationPath = Path.Combine(Path.GetDirectoryName(chomperPath)!, "custom_actor.reanim.compiled"),
         Animation = new ReanimCodecService().Load(chomperPath)
     };
     Assert(chomperProject.Animation.Tracks.Count(track =>
                track.Name.StartsWith("Zombie_", StringComparison.OrdinalIgnoreCase)) == 2,
         "大嘴花原版样本不再包含预期的两条被吞食僵尸手臂轨道，请重新核对识别规则");
-    Assert(!PublishConfirmationService.LooksLikeZombieBody(chomperProject),
-        "大嘴花被吞食僵尸手臂轨道仍被误判为僵尸主体");
+    var chomperClassification = AnimationEntityClassifier.Classify(chomperProject);
+    Assert(chomperClassification.Kind == EntityKind.Plant && chomperClassification.IsHighConfidence,
+        "以通用图片命名空间占比识别时，大嘴花仍被局部僵尸手臂误判");
+    var chomperActions = new ActionCatalogService().InferActions(chomperProject.Animation, chomperClassification.Kind);
+    Assert(new[] { "swallow", "chew", "bite", "idle" }.All(expected =>
+            chomperActions.Any(action => action.Id.Equals(expected, StringComparison.OrdinalIgnoreCase))),
+        "通用动作发现没有识别大嘴花的 swallow/chew/bite/idle 动作");
+
+    var arbitraryActionDocument = new AnimationDocument();
+    arbitraryActionDocument.Tracks.Add(new AnimationTrack { Name = "anim_teleport_phase_42" });
+    var arbitraryActions = new ActionCatalogService().InferActions(arbitraryActionDocument, EntityKind.Other);
+    Assert(arbitraryActions.Count == 1 &&
+           arbitraryActions[0].Id == "teleport_phase_42" &&
+           arbitraryActions[0].DisplayName.Contains("自定义动作", StringComparison.Ordinal),
+        "动作发现仍被植物/僵尸内置动作列表限制，未保留任意 anim_* 动作");
 
     var zombieProjectForDetection = new EditorProject
     {
         SourceAnimationPath = Path.Combine(Path.GetDirectoryName(zombiePath)!, "custom_body.reanim.compiled"),
         Animation = new ReanimCodecService().Load(zombiePath)
     };
-    Assert(PublishConfirmationService.LooksLikeZombieBody(zombieProjectForDetection),
-        "普通僵尸完整身体骨架未被识别为僵尸主体");
+    var zombieClassification = AnimationEntityClassifier.Classify(zombieProjectForDetection);
+    Assert(zombieClassification.Kind == EntityKind.Zombie && zombieClassification.IsHighConfidence,
+        "普通僵尸完整身体骨架未被通用分类器识别为僵尸主体");
+
+    var selectorScreenPath = Path.Combine(originalReanimRoot, "SelectorScreen.reanim.compiled");
+    var selectorClassification = AnimationEntityClassifier.Classify(new EditorProject
+    {
+        SourceAnimationPath = selectorScreenPath,
+        Animation = new ReanimCodecService().Load(selectorScreenPath)
+    });
+    Assert(selectorClassification.Kind == EntityKind.Ui && selectorClassification.IsHighConfidence,
+        "通用分类器没有识别原版界面动画");
+
+    var coinPath = Path.Combine(originalReanimRoot, "Coin_gold.reanim.compiled");
+    var otherClassification = AnimationEntityClassifier.Classify(new EditorProject
+    {
+        SourceAnimationPath = coinPath,
+        Animation = new ReanimCodecService().Load(coinPath)
+    });
+    Assert(otherClassification.Kind == EntityKind.Other && otherClassification.CanAutoSelect,
+        "通用分类器没有把非植物、非僵尸、非 UI 的道具动画归为其他");
 
     var plantNamedZombieDraft = mismatchedDraft with
     {
@@ -1617,6 +1656,7 @@ static void RenderPublishConfirmationScreenshot(string path)
                 }
             };
             project.Animation.Tracks.Add(new AnimationTrack { Name = "Zombie_body" });
+            project.Animation.Tracks.Add(new AnimationTrack { Name = "Zombie_outerleg_upper" });
             var window = new PublishConfirmationDialog(project, PublishOperation.Install, @"H:\pvz")
             {
                 Width = 760,

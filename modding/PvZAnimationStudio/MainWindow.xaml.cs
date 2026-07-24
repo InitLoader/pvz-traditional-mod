@@ -149,8 +149,9 @@ public partial class MainWindow : Window
             if (openedOriginalAnimation)
             {
                 _viewModel.ProjectIntegrationMode = EntityIntegrationMode.ReplaceOriginal;
-                if (PublishConfirmationService.LooksLikeZombieBody(_viewModel.Project))
-                    _viewModel.ProjectKind = EntityKind.Zombie;
+                var classification = AnimationEntityClassifier.Classify(_viewModel.Project);
+                if (classification.CanAutoSelect)
+                    _viewModel.ProjectKind = classification.Kind;
             }
         }
         _viewModel.Status = $"已读取 {Path.GetFileName(fileName)}：{document.Tracks.Count} 轨 / {document.FrameCount} 帧";

@@ -102,8 +102,12 @@ public sealed class PublishConfirmationService
             errors.Add("当前 Mod 打包和一键安装只支持植物或僵尸工程。");
         }
 
-        if (LooksLikeZombieBody(sourceProject) && draft.Kind != EntityKind.Zombie)
-            errors.Add("当前动画包含 Zombie_*、anim_bucket/anim_cone 等僵尸主体轨道，实体类型必须选择“僵尸”。");
+        var classification = AnimationEntityClassifier.Classify(sourceProject);
+        if (classification.IsHighConfidence && classification.Kind != draft.Kind)
+            errors.Add(
+                $"动画内容高置信度识别为“{AnimationEntityClassifier.GetKindName(classification.Kind)}”，" +
+                $"当前选择的是“{AnimationEntityClassifier.GetKindName(draft.Kind)}”。" +
+                $"证据：{string.Join("；", classification.Evidence)}");
         if (draft.Kind == EntityKind.Plant &&
             (draft.Id.Contains("ZOMBIE", StringComparison.OrdinalIgnoreCase) ||
              draft.DisplayName.Contains("僵尸", StringComparison.Ordinal)))
@@ -125,33 +129,4 @@ public sealed class PublishConfirmationService
         _ => fallback
     };
 
-    public static bool LooksLikeZombieBody(EditorProject project)
-    {
-        if (Path.GetFileName(project.SourceAnimationPath ?? string.Empty)
-            .StartsWith("Zombie", StringComparison.OrdinalIgnoreCase)) return true;
-
-        var trackNames = project.Animation.Tracks.Select(track => track.Name).ToArray();
-        if (trackNames.Any(name =>
-                name.Equals("anim_bucket", StringComparison.OrdinalIgnoreCase) ||
-                name.Equals("anim_cone", StringComparison.OrdinalIgnoreCase) ||
-                name.Equals("anim_screendoor", StringComparison.OrdinalIgnoreCase)))
-            return true;
-
-        var zombieTracks = trackNames
-            .Where(name => name.StartsWith("Zombie_", StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-        if (zombieTracks.Length == 0) return false;
-
-        // 大嘴花在吞咽/咀嚼动作中会临时显示 Zombie_outerarm_hand/lower，
-        // 这只是被吞食僵尸的局部附件，不代表当前动画是一套僵尸主体骨架。
-        // 只有同时存在躯干/头颈核心以及肢体结构时，才按僵尸主体处理。
-        var hasCore = zombieTracks.Any(name =>
-            ContainsPart(name, "body") || ContainsPart(name, "head") || ContainsPart(name, "neck"));
-        var hasArm = zombieTracks.Any(name => ContainsPart(name, "arm"));
-        var hasLeg = zombieTracks.Any(name => ContainsPart(name, "leg"));
-        return hasCore && (hasArm || hasLeg);
-    }
-
-    private static bool ContainsPart(string trackName, string part) =>
-        trackName.Contains(part, StringComparison.OrdinalIgnoreCase);
 }
