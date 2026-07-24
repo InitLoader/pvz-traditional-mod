@@ -46,6 +46,15 @@
 - 自定义植物、`plants/attributes.jsonc` 和 `zombies/attributes.jsonc` 的 `animationId` 均可把注册动画注入主体 Reanimation；附属 Reanimation 和通用动作事件仍处于分阶段接入。
 - 动画制作器发布时区分“替换原版动画”和“新增实体”。替换原版植物只合并目标 `plants.<id>.animationId`，替换原版僵尸只合并 `zombies.<id>.animationId`；未修改的原版图片不复制、不注册。真正新增僵尸尚未完成，不能把新增描述写进原版覆盖表。
 
+## 外部短音效与原版替换（0.10.5-dev）
+
+- `audio/samples.jsonc` 注册字符串音效 ID，允许英文、数字和下划线，比较时统一转为大写；外部 ID 不得冒充保留前缀 `SOUND_`。
+- 文件只能放在 `pvzmod/audio/samples/`，当前由原版 `DSoundManager` 读取 OGG、WAV 或 AU。禁止绝对路径、盘符、UNC 与 `..`。
+- `audio/replacements.jsonc` 按全部 167 个原版 `SOUND_*` 名称稀疏覆盖。只写 `SOUND_CHOMP` 就只改变咀嚼声，其他音效继续使用原版。
+- 启用示例前先放入对应文件，再把样本和替换项的 `enabled` 改为 `true`。两个默认示例均关闭，不会改变原版行为。
+- DLL 等待原版 LoadingSounds 完成后才动态分配音效槽；文件缺失、原版符号错误、槽位不足或解码失败时记录警告并保留原版声音，不产生半注册 ID。
+- 修改配置后需要完全退出并重启游戏。当前没有热重载；背景音乐 MO3/场景状态机也不由这两个文件处理。
+
 精英视觉示例：
 
 ```jsonc
@@ -86,6 +95,7 @@ pvzmod/
 │  ├─ zombies/      # 普通僵尸属性与行为参数
 │  ├─ elites/       # 精英编号、倍率、技能和生成规则
 │  ├─ resources/    # 通用外部贴图字符串 ID 注册表
+│  ├─ audio/        # 外部短音效注册和原版 SOUND_* 稀疏替换
 │  ├─ bosses/       # 各大关 Boss 阶段和技能
 │  ├─ ui/           # UI 布局、按钮、文本和界面开关
 │  ├─ settings/     # Mod 全局设置和难度配置
@@ -96,6 +106,7 @@ pvzmod/
 ├─ saves/           # Mod 独立存档，不放配置模板
 ├─ images/          # 用户提供的外部图片；按用途继续分子目录
 ├─ animations/      # Raw .reanim 外部动作；按植物、僵尸和 UI 分类
+├─ audio/samples/   # 用户提供的 OGG/WAV/AU 短音效
 ├─ plugins/native/  # 规划中的可信 Win32 DLL 插件；每个插件独占子目录
 └─ logs/            # 运行日志
 ```
@@ -115,6 +126,8 @@ pvzmod/
 - `settings/global.json`：全局经济和通用规则；当前包含普通、小型、大型阳光拾取价值。
 - `resources/textures.jsonc`：通用外部贴图 ID、受限相对路径和原版图片加载缓存。
 - `resources/animations.jsonc`：外部 Raw/compiled Reanimation、动作、事件、定位轨道和贴图符号映射。
+- `audio/samples.jsonc`：外部短音效字符串 ID、受限路径和启用状态。
+- `audio/replacements.jsonc`：全部原版 `SOUND_*` 名称的稀疏替换关系。
 - `elites/zombies.jsonc`：精英编号、概率、视觉、贴图引用和技能绑定。
 - `rules/*.jsonc`：规划中的有限 MicroRule；只允许“一个事件 + 简单过滤 + 一个固定效果”，复杂逻辑必须升级为 Lua。
 - `scripts/modules.jsonc`：规划中由打包工具生成的 Lua 发布索引、API 版本和能力声明，新手不手写。

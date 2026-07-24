@@ -1,3 +1,5 @@
+#include "audio_replacement_config.h"
+#include "audio_sample_config.h"
 #include "compiled_reanim.h"
 #include "global_config.h"
 #include "custom_plant_config.h"
@@ -6,6 +8,7 @@
 #include "external_texture_config.h"
 #include "plant_attack_config.h"
 #include "plant_animation_override_config.h"
+#include "original_sound_catalog.h"
 #include "raw_reanim.h"
 #include "reanimation_carrier_catalog.h"
 #include "reanimation_playback_state.h"
@@ -37,6 +40,56 @@
 namespace {
 
 int g_failures = 0;
+void Expect(bool condition, const std::string& message);
+
+void TestAudioConfigs() {
+    const std::filesystem::path root = std::filesystem::temp_directory_path();
+    const std::filesystem::path samplesPath = root / "pvzmod_audio_samples_test.jsonc";
+    const std::filesystem::path replacementsPath = root / "pvzmod_audio_replacements_test.jsonc";
+    {
+        std::ofstream output(samplesPath, std::ios::binary | std::ios::trunc);
+        output << R"({
+            "schemaVersion": 1,
+            "samples": {
+                "rage_roar": {"path": "pvzmod/audio/samples/rage.ogg"},
+                "Ui_Click": {"path": "pvzmod/audio/samples/click.wav", "enabled": false}
+            }
+        })";
+    }
+    {
+        std::ofstream output(replacementsPath, std::ios::binary | std::ios::trunc);
+        output << R"({
+            "schemaVersion": 1,
+            "replaceOriginal": {
+                "sound_chomp": {"sampleId": "rage_roar"}
+            }
+        })";
+    }
+    const auto samples = pvzmod::LoadAudioSampleConfig(samplesPath);
+    const auto replacements = pvzmod::LoadAudioReplacementConfig(replacementsPath);
+    std::error_code error;
+    std::filesystem::remove(samplesPath, error);
+    std::filesystem::remove(replacementsPath, error);
+    Expect(samples.Ok(), "valid external audio sample config should load");
+    Expect(replacements.Ok(), "valid sparse audio replacement config should load");
+    if (samples.Ok()) {
+        Expect(samples.config->Find("RAGE_ROAR") != nullptr,
+               "audio IDs should be case-insensitive and normalized");
+        Expect(samples.config->Find("ui_click") != nullptr && !samples.config->Find("ui_click")->enabled,
+               "disabled samples should remain registered but inactive");
+    }
+    if (replacements.Ok()) {
+        const auto* replacement = replacements.config->Find("SOUND_CHOMP");
+        Expect(replacement != nullptr && replacement->sampleId == "RAGE_ROAR",
+               "replacement should preserve sparse SOUND_* to external ID routing");
+    }
+    Expect(pvzmod::FindOriginalSoundGlobalRva("sound_chomp") == std::optional<std::uintptr_t>(0x002A74D8),
+           "original sound catalog should resolve the verified CHOMP global RVA");
+    Expect(pvzmod::IsKnownOriginalSound("SOUND_BUTTONCLICK") &&
+           pvzmod::IsKnownOriginalSound("SOUND_ZOMBIE_FALLING_2") &&
+           !pvzmod::IsKnownOriginalSound("SOUND_NOT_REAL"),
+           "original sound catalog should cover both resource groups and reject unknown symbols");
+}
 
 void Expect(const bool condition, const std::string& message) {
     if (!condition) {
@@ -1138,6 +1191,7 @@ void TestReanimationPlaybackStateCapture() {
 }  // namespace
 
 int main() {
+    TestAudioConfigs();
     TestSparseConfigParsing();
     TestPlantAnimationOverrideConfig();
     TestDeterministicWeights();

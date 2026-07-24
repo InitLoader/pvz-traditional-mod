@@ -5,7 +5,18 @@
 1. 注册新的短音效或音乐，并由植物、僵尸、UI、动画事件、关卡和以后脚本接口按字符串 ID 播放；
 2. 按原版音频符号做稀疏替换，只覆盖配置中列出的音频，未列出的资源完全保持原版。
 
-该设计暂不表示 DLL 已经实现音频加载。音频 Hook 必须像 Reanimation 一样先验证精确版本、调用约定、对象生命周期和失败回退，再进入发布构建。
+当前 DLL 已完成第一阶段短音效垂直切片：配置解析、原版 DSoundManager 动态加载、全部 167 个 `SOUND_*` 运行时目录、中央稀疏替换、字符串 ID 播放入口与失败回退。尚未完成的部分包括游戏内实音频验收、资源热重载、每资源音量/音调/并发策略、动画事件适配器和背景音乐状态机。
+
+### 当前实现文件
+
+- `audio_sample_config.*`：外部 ID、路径、格式和数量校验；
+- `audio_replacement_config.*`：`SOUND_* -> 外部 ID` 稀疏规则；
+- `original_sound_catalog.*`：从 1.0.0.1051 两个资源初始化函数恢复的 167 项全局 RVA；
+- `game_sound_bridge.*`：原版 32 字节字符串 ABI 与 `DSoundManager::LoadSound(string)`；
+- `audio_asset_registry.*`：外部文件存在性、引擎槽 ID 与日志；
+- `audio_replacement_hook.*`：等待 LoadingSounds 完成、中央 `GetSoundInstance` 路由和 `PlayConfiguredAudio`。
+
+默认示例全部 `enabled: false`。这意味着发布 DLL 在用户没有提供音频时不会安装替换 Hook，也不会改变原版声音。
 
 ## 1. 已确认的原版边界
 

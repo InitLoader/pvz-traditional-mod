@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+
+  // 外部短音效统一放到 pvzmod/audio/samples/，ID 允许英文、数字和下划线。
+  // 默认示例关闭，避免没有示例文件时改变原版行为。
+  "samples": {
+    "EXAMPLE_CHOMP": {
+      "path": "pvzmod/audio/samples/example_chomp.ogg",
+      "enabled": false,
+      "preload": true
+    }
+  }
+}

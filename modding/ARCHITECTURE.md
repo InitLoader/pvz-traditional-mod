@@ -77,7 +77,7 @@ ExtensionHub
 
 `elite_zombie_config/hook` 保存数字 `runtimeId`、字符串精英 ID、确定性概率、`Zombie* + instanceId` 侧挂状态和 Reanimation 轨道替换；`elite_skill_registry` 注册技能回调；`zombie_event_bus` 是基础僵尸 Hook 向扩展模块发事件的唯一桥。完整约定和首个 `RAGE + BERSERK` 示例见 `ELITE_AND_TEXTURE_DESIGN.md`，普通与特殊僵尸图片轨道见 `ZOMBIE_TEXTURE_TRACKS.md`。
 
-外部音频采用与图片/动画相同的字符串资源 ID，但短音效与音乐必须分离：`audio_asset_registry` 管新增音效，`audio_replacement_hook` 只做原版 `SOUND_*` 稀疏路由，`game_sound_bridge` 独占 1.0.0.1051 的 SoundManager ABI，`music_runtime` 在完成 MO3/音乐状态机验证后独立实现。任何植物、僵尸、UI 或动画模块只能调用播放服务或提交语义事件，不能直接持有 SoundManager/SoundInstance。完整方案见 [`AUDIO_EXTENSION_DESIGN.md`](AUDIO_EXTENSION_DESIGN.md)。
+外部音频采用与图片/动画相同的字符串资源 ID，但短音效与音乐必须分离：`audio_sample_config`/`audio_replacement_config` 负责纯配置校验，`audio_asset_registry` 管新增音效，`original_sound_catalog` 保存精确版本的 167 个 `SOUND_*` 全局入口，`audio_replacement_hook` 只做原版 `SOUND_*` 稀疏路由，`game_sound_bridge` 独占 1.0.0.1051 的 SoundManager ABI。当前第一阶段已经实现原版 DSoundManager 动态装载、字符串 ID 播放入口和中央替换；`music_runtime`、音量/音调/并发策略与热重载仍未实现。任何植物、僵尸、UI 或动画模块只能调用 `PlayConfiguredAudio` 或提交语义事件，不能直接持有 SoundManager/SoundInstance。完整方案见 [`AUDIO_EXTENSION_DESIGN.md`](AUDIO_EXTENSION_DESIGN.md)。
 
 ## 0.8.3 选卡页绘制分流
 

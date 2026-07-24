@@ -1,5 +1,6 @@
 #include "pvz_hook.h"
 
+#include "audio_replacement_hook.h"
 #include "hook_modules.h"
 #include "hook_utils.h"
 #include "logger.h"
@@ -21,6 +22,10 @@ bool InstallPvZHooks() {
     }
 
     bool success = true;
+    if (!InstallAudioReplacementRuntime(moduleBase)) {
+        LogError("Audio registration/replacement runtime failed to install.");
+        success = false;
+    }
     if (!InitializeExternalTextureRuntime(moduleBase)) {
         LogError("External texture runtime failed to initialize.");
         success = false;
@@ -73,14 +78,14 @@ bool InstallPvZHooks() {
     }
 
     if (success) {
-        LogInfo("Installed wave, sun, plant attack, zombie, elite, external texture/body-animation registry, and seed chooser modules for PvZ 1.0.0.1051.");
+        LogInfo("Installed audio, wave, sun, plant attack, zombie, elite, external texture/body-animation registry, and seed chooser modules for PvZ 1.0.0.1051.");
     }
     return success;
 }
 
 DWORD WINAPI InitializeModThread(void* moduleParameter) {
     InitializeLogger(static_cast<HMODULE>(moduleParameter));
-    LogInfo("pvzmod.dll loaded; mod runtime version 0.10.4-dev.");
+    LogInfo("pvzmod.dll loaded; mod runtime version 0.10.5-dev.");
     if (!InstallPvZHooks()) {
         LogError("One or more isolated hook modules are inactive; see earlier log entries.");
     }
