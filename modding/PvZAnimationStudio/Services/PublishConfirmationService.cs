@@ -129,10 +129,29 @@ public sealed class PublishConfirmationService
     {
         if (Path.GetFileName(project.SourceAnimationPath ?? string.Empty)
             .StartsWith("Zombie", StringComparison.OrdinalIgnoreCase)) return true;
-        return project.Animation.Tracks.Any(track =>
-            track.Name.StartsWith("Zombie_", StringComparison.OrdinalIgnoreCase) ||
-            track.Name.Equals("anim_bucket", StringComparison.OrdinalIgnoreCase) ||
-            track.Name.Equals("anim_cone", StringComparison.OrdinalIgnoreCase) ||
-            track.Name.Equals("anim_screendoor", StringComparison.OrdinalIgnoreCase));
+
+        var trackNames = project.Animation.Tracks.Select(track => track.Name).ToArray();
+        if (trackNames.Any(name =>
+                name.Equals("anim_bucket", StringComparison.OrdinalIgnoreCase) ||
+                name.Equals("anim_cone", StringComparison.OrdinalIgnoreCase) ||
+                name.Equals("anim_screendoor", StringComparison.OrdinalIgnoreCase)))
+            return true;
+
+        var zombieTracks = trackNames
+            .Where(name => name.StartsWith("Zombie_", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (zombieTracks.Length == 0) return false;
+
+        // 大嘴花在吞咽/咀嚼动作中会临时显示 Zombie_outerarm_hand/lower，
+        // 这只是被吞食僵尸的局部附件，不代表当前动画是一套僵尸主体骨架。
+        // 只有同时存在躯干/头颈核心以及肢体结构时，才按僵尸主体处理。
+        var hasCore = zombieTracks.Any(name =>
+            ContainsPart(name, "body") || ContainsPart(name, "head") || ContainsPart(name, "neck"));
+        var hasArm = zombieTracks.Any(name => ContainsPart(name, "arm"));
+        var hasLeg = zombieTracks.Any(name => ContainsPart(name, "leg"));
+        return hasCore && (hasArm || hasLeg);
     }
+
+    private static bool ContainsPart(string trackName, string part) =>
+        trackName.Contains(part, StringComparison.OrdinalIgnoreCase);
 }

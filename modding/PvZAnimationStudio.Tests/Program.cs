@@ -212,6 +212,7 @@ try
 
     var zombieBodyDocument = CreateDocument();
     zombieBodyDocument.Tracks.Add(new AnimationTrack { Name = "Zombie_body" });
+    zombieBodyDocument.Tracks.Add(new AnimationTrack { Name = "Zombie_outerleg_upper" });
     var mismatchedProject = new EditorProject
     {
         Kind = EntityKind.Plant,
@@ -229,6 +230,30 @@ try
             mismatchedDraft, mismatchedProject, PublishOperation.Install)
         .Any(message => message.Contains("僵尸主体轨道", StringComparison.Ordinal)),
         "发布确认没有拦截被误设为植物的僵尸主体工程");
+
+    var chomperPath = Path.Combine(originalReanimRoot, "Chomper.reanim.compiled");
+    var zombiePath = Path.Combine(originalReanimRoot, "Zombie.reanim.compiled");
+    Assert(File.Exists(chomperPath) && File.Exists(zombiePath),
+        "缺少大嘴花/普通僵尸原版 compiled，无法执行实体类型识别回归");
+    var chomperProject = new EditorProject
+    {
+        SourceAnimationPath = chomperPath,
+        Animation = new ReanimCodecService().Load(chomperPath)
+    };
+    Assert(chomperProject.Animation.Tracks.Count(track =>
+               track.Name.StartsWith("Zombie_", StringComparison.OrdinalIgnoreCase)) == 2,
+        "大嘴花原版样本不再包含预期的两条被吞食僵尸手臂轨道，请重新核对识别规则");
+    Assert(!PublishConfirmationService.LooksLikeZombieBody(chomperProject),
+        "大嘴花被吞食僵尸手臂轨道仍被误判为僵尸主体");
+
+    var zombieProjectForDetection = new EditorProject
+    {
+        SourceAnimationPath = Path.Combine(Path.GetDirectoryName(zombiePath)!, "custom_body.reanim.compiled"),
+        Animation = new ReanimCodecService().Load(zombiePath)
+    };
+    Assert(PublishConfirmationService.LooksLikeZombieBody(zombieProjectForDetection),
+        "普通僵尸完整身体骨架未被识别为僵尸主体");
+
     var plantNamedZombieDraft = mismatchedDraft with
     {
         Kind = EntityKind.Zombie,
