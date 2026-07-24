@@ -121,6 +121,7 @@ compiled/reanim/                            # 游戏本体已有的原版 compil
 - `id`：大小写敏感，匹配 `[A-Za-z0-9_]+`，长度 1–64。
 - `path`：支持 `pvzmod/animations/` 下的 `.reanim` 或 `.reanim.compiled`；也支持只读引用 `compiled/reanim/*.reanim.compiled` 原版资源。拒绝绝对路径、盘符、UNC 和 `..`。
 - `carrierReanimation`：稳定的原版动画符号名，只作为对象池载体，不代表复用其图片或动作。动画制作器会按植物/僵尸模板 ID 自动覆盖为真实载体；手写错误值时运行时也会以实体实际 `mReanimationType` 为准并写警告。
+- `images` 中显式写出的映射始终优先使用 `pvzmod/images/` 外部贴图。未写映射且 compiled/Raw 引用合法 `IMAGE_REANIM_*` 符号时，运行时只从游戏根目录 `reanim/` 复用同名原版 PNG；这让从原版 compiled 另存的新植物/僵尸可以先沿用原图，再逐项覆盖自制贴图。其他符号、越界路径或不存在的原图仍会拒绝 Definition 构建。
 - `initialAction`：植物注入完成后立即播放的动作 ID；省略时为 `idle`，且必须引用已登记动作。
 - `images`：Raw 或自制 compiled Reanimation 中的图片符号到外部贴图 ID 的映射；贴图 ID 必须已经登记在 `textures.jsonc`。直接引用原版 compiled 时可以继续使用其原版图片符号。
 - `actions`：至少一个动作，动作 ID 匹配 `[A-Za-z0-9_]+`。

@@ -58,9 +58,6 @@ bool InstallCustomZombieAnimationRuntime(std::uint8_t*) {
                 LogWarning("Zombie type " + std::to_string(zombieType) + " animationId '" +
                            *override->animationId + "' is inactive; its original body animation will be kept.");
             }
-            else {
-                static_cast<void>(RegisterExternalBodyAnimation(*override->animationId));
-            }
         }
     }
     // Run before elite listeners so tint/image overrides target the final body

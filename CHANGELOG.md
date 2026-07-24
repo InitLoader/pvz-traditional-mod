@@ -8,6 +8,7 @@
 
 - 修复带外部主体动画的自定义植物保存后再次进入关卡可能在 `Reanimation::Sync` 中空指针崩溃：新增 1.0.0.1051 植物/僵尸模板载体目录，启动时按模板真实 `mReanimationType` 预登记 Definition，并把旧工程中错误的 `carrierReanimation` 作为存档迁移别名。
 - 动画制作器导出和一键安装现在按 `templatePlantId`/`templateZombieId` 强制写入真实载体；新增完整原版僵尸 ID 0–32 载体目录，避免普通僵尸工程误导出为豌豆射手载体。
+- 外部动画未显式绑定贴图时，合法 `IMAGE_REANIM_*` 符号可安全复用游戏 `reanim/` 下的同名原版 PNG；显式外部贴图仍优先，未知符号和越界路径继续拒绝，从原版 compiled 另存的僵尸不再因几十个空 `images` 映射而失效。
 
 - 增加僵尸主体外部 Reanimation 纵切：`zombies/attributes.jsonc` 可按原版僵尸 ID 稀疏填写 `animationId`，生成后在既有 body Holder 内安全替换 Definition 和 TrackInstance。
 - 抽出植物/僵尸共用的 `external_body_animation_runtime`，统一精确版本 ABI、资源预构建、载体校验、初始动作和存档恢复，僵尸配置、动画生命周期和基础属性 Hook 继续分模块维护。

@@ -765,9 +765,16 @@ void TestRuntimeReanimDefinitionBuild() {
     }
 
     pvzmod::ExternalAnimationDefinition missingBinding;
+    const auto originalFallback = pvzmod::BuildRuntimeReanimDefinition(
+        raw, missingBinding, [expectedImage](const std::string_view id) {
+            return id == "IMAGE_REANIM_TEST_BODY" ? expectedImage : nullptr;
+        });
+    Expect(originalFallback.Ok() &&
+               originalFallback.storage->Definition()->tracks[0].transforms[0].image == expectedImage,
+           "unbound IMAGE_REANIM symbols should be reusable through the original-image resolver");
     const auto rejected = pvzmod::BuildRuntimeReanimDefinition(
         raw, missingBinding, [](const std::string_view) { return static_cast<void*>(nullptr); });
-    Expect(!rejected.Ok(), "runtime Definition build must reject unmapped external image symbols");
+    Expect(!rejected.Ok(), "runtime Definition build must reject unresolved image symbols");
 }
 
 void TestExternalAnimationConfigRejectsUnsafeInput() {

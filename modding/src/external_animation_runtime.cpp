@@ -170,7 +170,10 @@ RuntimeReanimatorDefinition* PrepareExternalReanimationDefinition(
     RuntimeReanimBuildResult built = BuildRuntimeReanimDefinition(
         animation->raw, animation->config,
         [lawnApp](const std::string_view textureId) {
-            return ResolveExternalTexture(textureId, lawnApp);
+            if (ExternalTextureIsRegistered(textureId)) {
+                return ResolveExternalTexture(textureId, lawnApp);
+            }
+            return ResolveOriginalReanimationTexture(textureId, lawnApp);
         });
     if (!built.Ok()) {
         LogWarning(built.error + "; external animation '" + std::string(animationId) +

@@ -26,6 +26,21 @@ std::filesystem::path g_gameRoot;
 std::shared_ptr<const ExternalTextureConfig> g_textureConfig;
 std::unordered_map<std::string, void*> g_loadedTextures;
 std::unordered_set<std::string> g_failedTextures;
+std::unordered_map<std::string, void*> g_originalReanimationTextures;
+std::unordered_set<std::string> g_failedOriginalReanimationTextures;
+
+constexpr std::string_view kOriginalReanimationImagePrefix = "IMAGE_REANIM_";
+
+bool IsSafeOriginalReanimationSymbol(const std::string_view symbol) {
+    if (!symbol.starts_with(kOriginalReanimationImagePrefix) ||
+        symbol.size() == kOriginalReanimationImagePrefix.size()) return false;
+    for (const char character : symbol) {
+        if ((character >= 'A' && character <= 'Z') ||
+            (character >= '0' && character <= '9') || character == '_') continue;
+        return false;
+    }
+    return true;
+}
 
 std::string Utf8ToAnsi(const std::string& text) {
     if (text.empty()) return {};
@@ -101,6 +116,8 @@ bool InitializeExternalTextureRuntime(std::uint8_t* moduleBase) {
         g_textureConfig = std::make_shared<ExternalTextureConfig>(*loaded.config);
         g_loadedTextures.clear();
         g_failedTextures.clear();
+        g_originalReanimationTextures.clear();
+        g_failedOriginalReanimationTextures.clear();
     }
     LogInfo("Loaded external texture registry with " +
             std::to_string(loaded.config->textures.size()) + " texture id(s).");
@@ -157,6 +174,41 @@ void* ResolveExternalTexture(const std::string_view textureId, void* lawnApp) {
     }
     g_loadedTextures.emplace(id, image);
     LogInfo("Loaded external texture '" + id + "' from " + definition->path + ".");
+    return image;
+}
+
+void* ResolveOriginalReanimationTexture(
+    const std::string_view imageSymbol, void* lawnApp) {
+    if (lawnApp == nullptr || !IsSafeOriginalReanimationSymbol(imageSymbol)) return nullptr;
+    std::lock_guard lock(g_textureMutex);
+    if (g_textureModuleBase == nullptr || g_gameRoot.empty()) return nullptr;
+    const std::string symbol(imageSymbol);
+    if (const auto loaded = g_originalReanimationTextures.find(symbol);
+        loaded != g_originalReanimationTextures.end()) return loaded->second;
+    if (g_failedOriginalReanimationTextures.contains(symbol)) return nullptr;
+
+    const std::string stem(imageSymbol.substr(kOriginalReanimationImagePrefix.size()));
+    std::error_code error;
+    const std::filesystem::path originalRoot = std::filesystem::weakly_canonical(
+        g_gameRoot / L"reanim", error);
+    if (error) return nullptr;
+    const std::filesystem::path absolutePath = std::filesystem::weakly_canonical(
+        originalRoot / std::filesystem::u8path(stem + ".png"), error);
+    if (error || !IsUnderDirectory(absolutePath, originalRoot) ||
+        !std::filesystem::is_regular_file(absolutePath, error) || error) {
+        g_failedOriginalReanimationTextures.insert(symbol);
+        LogWarning("Original Reanimation image symbol '" + symbol +
+                   "' has no matching PNG under the game reanim directory.");
+        return nullptr;
+    }
+    void* image = LoadGameImage(lawnApp, absolutePath);
+    if (image == nullptr) {
+        g_failedOriginalReanimationTextures.insert(symbol);
+        LogWarning("The game image decoder could not reuse original Reanimation image '" +
+                   symbol + "'.");
+        return nullptr;
+    }
+    g_originalReanimationTextures.emplace(symbol, image);
     return image;
 }
 
