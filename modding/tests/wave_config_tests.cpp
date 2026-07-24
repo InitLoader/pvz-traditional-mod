@@ -343,6 +343,7 @@ void TestZombieAttributeConfigAndArmorChances() {
                 "0": {
                     "bodyHealth": 540,
                     "attackDamage": 8,
+                    "animationId": "CUSTOM_NORMAL_ZOMBIE",
                     "armorRolls": [
                         {"armorId":1001,"chance":0},
                         {"armorId":2001,"chance":100}
@@ -381,6 +382,8 @@ void TestZombieAttributeConfigAndArmorChances() {
            "omitted original armor catalog values should remain fully sparse");
     Expect(normal && normal->bodyHealth == 540, "body health override should be parsed");
     Expect(normal && normal->attackDamage == 8, "independent attack damage should be parsed");
+    Expect(normal && normal->animationId == "CUSTOM_NORMAL_ZOMBIE",
+           "sparse zombie animationId should be parsed without affecting omitted zombie ids");
     const pvzmod::ArmorDefinition* wallnut = loaded.config->FindArmor(3001);
     Expect(wallnut && wallnut->visual == pvzmod::ArmorVisual::WallnutHead &&
                wallnut->slot == pvzmod::ArmorSlot::Helmet && wallnut->health == 900,
@@ -510,6 +513,19 @@ void TestSeedUiAndCustomPlantConfig() {
                plant.attack.shotsPerAttack == 2,
                "custom projectile fields should be retained");
     }
+}
+
+void TestZombieConfigRejectsInvalidAnimationId() {
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "pvzmod_zombie_bad_animation_id_test.jsonc";
+    {
+        std::ofstream output(path, std::ios::binary | std::ios::trunc);
+        output << R"({"schemaVersion":1,"zombies":{"0":{"animationId":"bad/path"}}})";
+    }
+    const pvzmod::ZombieConfigLoadResult loaded = pvzmod::LoadZombieConfig(path);
+    std::error_code error;
+    std::filesystem::remove(path, error);
+    Expect(!loaded.Ok(), "zombie animationId must use the shared external resource ID grammar");
 }
 
 void AppendU32(std::vector<std::uint8_t>& output, const std::uint32_t value) {
@@ -995,6 +1011,7 @@ int main() {
     TestZombieAttributeConfigAndArmorChances();
     TestAllOriginalArmorVisualAdapters();
     TestZombieConfigRejectsMissingArmorDefinition();
+    TestZombieConfigRejectsInvalidAnimationId();
     TestZombieConfigRejectsUnknownOriginalArmor();
     TestSeedUiAndCustomPlantConfig();
     TestExternalTextureConfigAndAliases();

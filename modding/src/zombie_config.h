@@ -62,6 +62,7 @@ struct ArmorRoll {
 struct ZombieAttributeOverride {
     std::optional<int> bodyHealth;
     std::optional<int> attackDamage;
+    std::optional<std::string> animationId;
     std::optional<std::vector<ArmorRoll>> armorRolls;
 };
 

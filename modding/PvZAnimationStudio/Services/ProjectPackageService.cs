@@ -71,6 +71,11 @@ public sealed class ProjectPackageService
         }
         else if (project.Kind == EntityKind.Zombie)
         {
+            _jsoncEditor.UpsertObjectProperty(
+                Path.Combine(gameRoot, "pvzmod", "config", "zombies", "attributes.jsonc"),
+                "zombies",
+                project.TemplateEntityId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                CreateZombieRuntimeOverrideJson(project));
             var generatedPath = Path.Combine(gameRoot, "pvzmod", "config", "zombies", "custom_zombies.generated.jsonc");
             var root = new JsonObject
             {
@@ -103,12 +108,7 @@ public sealed class ProjectPackageService
             ["schemaVersion"] = 1,
             ["animations"] = new JsonArray(CreateAnimationJson(project, relativeAnimation.Replace('\\', '/')))
         });
-        WriteJson(Path.Combine(generatedRoot, "entity.fragment.jsonc"), new JsonObject
-        {
-            ["schemaVersion"] = 1,
-            [project.Kind == EntityKind.Plant ? "plant" : "zombie"] =
-                project.Kind == EntityKind.Plant ? CreatePlantJson(project) : CreateZombieJson(project)
-        });
+        WriteJson(Path.Combine(generatedRoot, "entity.fragment.jsonc"), CreateEntityFragment(project));
         File.WriteAllText(Path.Combine(staging, "安装说明.txt"),
             "此包由 PvZ 动画制作器生成。\r\n" +
             "推荐在制作器中选择“安装到游戏”，工具会备份并合并 JSONC。\r\n" +
@@ -222,6 +222,35 @@ public sealed class ProjectPackageService
         ["attackDamage"] = project.Damage,
         ["animationId"] = SanitizeResourceId(project.Id)
     };
+
+    private static JsonObject CreateZombieRuntimeOverrideJson(EditorProject project) => new()
+    {
+        ["bodyHealth"] = project.Health,
+        ["attackDamage"] = project.Damage,
+        ["animationId"] = SanitizeResourceId(project.Id)
+    };
+
+    private static JsonObject CreateEntityFragment(EditorProject project)
+    {
+        if (project.Kind == EntityKind.Plant)
+        {
+            return new JsonObject
+            {
+                ["schemaVersion"] = 1,
+                ["plant"] = CreatePlantJson(project)
+            };
+        }
+        var templateId = project.TemplateEntityId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return new JsonObject
+        {
+            ["schemaVersion"] = 1,
+            ["zombie"] = CreateZombieJson(project),
+            ["zombies"] = new JsonObject
+            {
+                [templateId] = CreateZombieRuntimeOverrideJson(project)
+            }
+        };
+    }
 
     private static void WriteJson(string path, JsonObject root)
     {

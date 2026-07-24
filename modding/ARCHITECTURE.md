@@ -57,7 +57,9 @@ ExtensionHub
 
 `external_animation_config` 只解析 `animations.jsonc` 元数据，`raw_reanim` 只负责受限 Raw XML、逐帧字段继承和结构校验，`external_animation_runtime` 只做启动时路径解析、贴图 ID/动作/事件/定位轨道交叉校验和只读注册。三者不得并回 `pvz_hook.cpp`；启动器仍只按顺序初始化贴图注册表和动画注册表。
 
-`0.10.3-dev` 不安装全局 `ReanimationInitializeType` Detour，也不扩大原版 `ReanimationType` 数组。`runtime_reanim_definition` 把已校验的 Raw/compiled 数据转换为 1.0.0.1051 的 16/12/44 字节 Definition/Track/Transform；`custom_plant_animation_runtime` 只在自定义植物首次更新时释放模板 body 的旧 TrackInstance，并在同一 Holder 对象内用外部 Definition 重新初始化。所有贴图和 Definition 在破坏旧 body 前准备完成，失败则保留模板动画。`initialAction`、`replaces` 和动作事件已经进入配置模型与制作器，但运行时不再安装覆盖全游戏的 `Reanimation::SetFramesForLayer`/`GetFramesForLayer` 动作 Hook；后续必须从已确认的植物局部调用点接入。原版关卡存档不能识别未登记的外部 Definition，因此运行时启动时预构建自定义植物中唯一的 `animationId`，并在读取旧 Reanimation 指针为空时恢复同一持久 Definition；若配置中存在多个不同动画而无法判定，直接禁用外部 body 注入，避免生成下一次必崩的存档。完整格式和边界见 `EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`。
+`0.10.4-dev` 不安装全局 `ReanimationInitializeType` Detour，也不扩大原版 `ReanimationType` 数组。`runtime_reanim_definition` 把已校验的 Raw/compiled 数据转换为 1.0.0.1051 的 16/12/44 字节 Definition/Track/Transform；`external_body_animation_runtime` 独占精确版本 ABI、Holder 内重建和存档 Definition 恢复，植物和僵尸模块只负责各自的配置与生命周期事件。所有贴图和 Definition 在破坏旧 body 前准备完成，并校验对象现有 `mReanimationType` 与 `carrierReanimation` 一致；失败则保留模板动画。
+
+`custom_plant_animation_runtime` 在自定义植物首次更新时注入，`custom_zombie_animation_runtime` 以事件总线高优先级监听统一的 Zombie 初始化完成事件并按 `zombies.<id>.animationId` 稀疏注入；精英监听随后在最终 Definition 上绑定 tint 和轨道贴图。高优先级只改变 C++ 监听顺序，不改变已经实机稳定的原生 Hook 安装顺序。读取原版关卡存档时，兼容桥使用已经随 Reanimation 原始结构保存的 `mReanimationType` 选择持久 Definition，因此不同载体可同时存在；同一载体的两个外部 Definition 无法消歧，会拒绝第二个。`initialAction` 已运行，`replaces` 和动作事件仍只是配置/制作器元数据；运行时不安装覆盖全游戏的动作 Hook，后续必须从已确认的植物或僵尸局部调用点接入。完整格式和边界见 `EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`。
 
 ## 0.9.0 精英与通用外部贴图边界
 

@@ -1,5 +1,6 @@
 #include "zombie_config.h"
 
+#include "external_texture_config.h"
 #include "zombie_armor_adapter.h"
 
 #include <array>
@@ -86,6 +87,20 @@ std::optional<int> ReadOptionalInteger(
                                  " and " + std::to_string(maximum));
     }
     return static_cast<int>(value);
+}
+
+std::optional<std::string> ReadOptionalResourceId(
+    const json& object, const char* field, const std::string& path) {
+    const auto found = object.find(field);
+    if (found == object.end()) return std::nullopt;
+    if (!found->is_string()) {
+        throw std::runtime_error(path + "." + field + " must be a string");
+    }
+    std::string value = found->get<std::string>();
+    if (!IsExternalResourceId(value)) {
+        throw std::runtime_error(path + "." + field + " must match [A-Za-z0-9_]+ and contain 1-64 characters");
+    }
+    return value;
 }
 
 ArmorVisual ParseVisual(const std::string& visual) {
@@ -249,6 +264,7 @@ ZombieConfigLoadResult LoadZombieConfig(const std::filesystem::path& path) {
                 ZombieAttributeOverride override;
                 override.bodyHealth = ReadOptionalInteger(item.value(), "bodyHealth", 1, 1000000, entryPath);
                 override.attackDamage = ReadOptionalInteger(item.value(), "attackDamage", 0, 1000000, entryPath);
+                override.animationId = ReadOptionalResourceId(item.value(), "animationId", entryPath);
 
                 const auto rolls = item.value().find("armorRolls");
                 if (rolls != item.value().end()) {

@@ -4,6 +4,7 @@
 #include "logger.h"
 #include "zombie_armor_adapter.h"
 #include "zombie_config.h"
+#include "zombie_config_runtime_access.h"
 #include "zombie_event_bus.h"
 
 #include <array>
@@ -433,6 +434,10 @@ const ArmorDefinition* PickArmorForSlot(
 }
 
 }  // namespace
+
+std::shared_ptr<const ZombieConfig> CurrentZombieConfigSnapshot() {
+    return g_zombieConfigRuntime.Current();
+}
 
 bool InstallZombieHooks(std::uint8_t* moduleBase) {
     if (!VerifyHookTarget(moduleBase, kZombieInitializeRva, kZombieInitializePrologue, "Zombie::ZombieInitialize") ||

@@ -43,7 +43,7 @@
 - `images` 的值必须是 `resources/textures.jsonc` 已注册的贴图 ID。
 - `actions` 至少包含一个动作；每个动作通过 `track` 指向 Raw `.reanim` 的 `anim_*` 轨道。
 - 事件使用相对动作帧 `frame` 或 `normalizedTime`，二者必须且只能填写一个。
-- 自定义植物的 `animationId` 已支持把注册动画注入主体 Reanimation；其他植物附件、僵尸和通用动作事件仍处于分阶段接入，完整边界见 `modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`。
+- 自定义植物和 `zombies/attributes.jsonc` 的 `animationId` 已支持把注册动画注入主体 Reanimation；附属 Reanimation 和通用动作事件仍处于分阶段接入，完整边界见 `modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`。
 
 精英视觉示例：
 
@@ -119,11 +119,11 @@ pvzmod/
 - `extensions/packages.jsonc`：规划中由工具生成的统一包索引，管理 JSON、Lua、DLL 的所有者、版本、依赖、启用状态和文件哈希。
 - 原生插件只允许位于 `pvzmod/plugins/native/<plugin-id>/`，不放在 `config`；每个目录必须包含 `plugin.jsonc` 和 manifest 精确指定的 Win32 DLL。
 - `plants/attacks.jsonc`：植物攻击伤害稀疏覆盖；文件内已列出所有数值攻击的原版默认值。
-- `zombies/attributes.jsonc`：完整原版防具生命目录、按僵尸 ID 稀疏覆盖本体生命/啃食伤害，以及带等级和概率的额外防具。
+- `zombies/attributes.jsonc`：完整原版防具生命目录、按僵尸 ID 稀疏覆盖本体生命/啃食伤害/主体 `animationId`，以及带等级和概率的额外防具。
 
 `plants/attacks.jsonc` 中只有实际写出的键会覆盖原版。注释掉的示例只是攻击目录，不会生效；删除已启用键后，投射物会在下次启动或进入关卡时恢复原版，直接攻击会在下一次命中时恢复原版。未知键、非整数或超出 `0–1000000` 的数值会拒绝整份新配置并保留上一次有效配置。
 
-`zombies/attributes.jsonc` 中的 `originalArmorHealth` 完整列出 1051 版 11 个有效防具/额外生命池。文件中的数值等于 DLL 内核对过的原版默认值时不写内存，保留原版初始化；改动某个数值时只覆盖对应防具，且不要求在 `zombies` 中再写该僵尸 ID。删除某个键也表示完全使用原版。
+`zombies/attributes.jsonc` 中的 `originalArmorHealth` 完整列出 1051 版 11 个有效防具/额外生命池。文件中的数值等于 DLL 内核对过的原版默认值时不写内存，保留原版初始化；改动某个数值时只覆盖对应防具，且不要求在 `zombies` 中再写该僵尸 ID。删除某个键也表示完全使用原版。`zombies.<id>.animationId` 可引用 `resources/animations.jsonc`，只覆盖该 ID 的主体动画；省略则完全沿用原版。动画载体必须与实际僵尸主体一致，并保留原版 AI 请求的同名 `anim_*` 动作轨道。
 
 复杂技能、Boss 状态机和以后需要自由代码的功能不会继续扩张为大量 JSON 字段。规划采用有限 JSON、Lua、可信 DLL 三级扩展，并让它们共用 `pvzmod.dll` 的事件、Capability、命令、配置和所有者注册中心；以上目录和运行时目前都尚未实现，设计与迁移顺序见 `modding/SCRIPTABLE_SKILLS_AND_BEHAVIORS.md`。
 

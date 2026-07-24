@@ -82,10 +82,12 @@ add_library(pvzmod SHARED
     src/custom_plant_animation_runtime.cpp
     src/custom_plant_hook.cpp
     src/custom_plant_text_hook.cpp
+    src/custom_zombie_animation_runtime.cpp
     src/dllmain.cpp
     src/elite_skill_registry.cpp
     src/elite_zombie_hook.cpp
     src/external_animation_runtime.cpp
+    src/external_body_animation_runtime.cpp
     src/external_texture_runtime.cpp
     src/game_tooltip_text.cpp
     src/hook_utils.cpp

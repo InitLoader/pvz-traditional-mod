@@ -142,7 +142,7 @@ bool InitializeExternalAnimationRuntime(std::uint8_t* moduleBase) {
         g_runtimeDefinitions.clear();
     }
     LogInfo("Loaded external animation registry: " + std::to_string(accepted) + "/" +
-            std::to_string(configured) + " animation(s) validated; custom-plant Definition injection is available.");
+            std::to_string(configured) + " animation(s) validated; external body Definition injection is available.");
     return accepted == configured;
 }
 
@@ -174,7 +174,7 @@ RuntimeReanimatorDefinition* PrepareExternalReanimationDefinition(
         });
     if (!built.Ok()) {
         LogWarning(built.error + "; external animation '" + std::string(animationId) +
-                   "' cannot be injected into a plant.");
+                   "' cannot be injected into an entity body.");
         return nullptr;
     }
 

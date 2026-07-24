@@ -4,6 +4,18 @@
 
 ## Unreleased
 
+### Added in 0.10.4-dev
+
+- 增加僵尸主体外部 Reanimation 纵切：`zombies/attributes.jsonc` 可按原版僵尸 ID 稀疏填写 `animationId`，生成后在既有 body Holder 内安全替换 Definition 和 TrackInstance。
+- 抽出植物/僵尸共用的 `external_body_animation_runtime`，统一精确版本 ABI、资源预构建、载体校验、初始动作和存档恢复，僵尸配置、动画生命周期和基础属性 Hook 继续分模块维护。
+- 存档 Definition 恢复从“全局唯一动画”改为按原版 `carrierReanimation` 分类；植物与僵尸可同时使用不同载体的外部动画，同一载体出现两个 Definition 时拒绝后者并保留原版，避免读档歧义。
+- 动画制作器安装僵尸工程时会把 `bodyHealth`、`attackDamage` 和 `animationId` 合并到实际生效的 `zombies/attributes.jsonc`，保留其他僵尸 ID、JSONC 注释并生成 `.pvzstudio.bak`。
+
+### Validation in 0.10.4-dev
+
+- Win32 Release `pvzmod.dll` 构建通过；C++ 配置回归和动画制作器控制台回归通过。
+- 新增 `animationId` 合法/非法 ID 测试，以及 JSONC 僵尸对象新增、重复更新、注释保留和稀疏覆盖测试。
+
 ### Planned documentation for 0.11.x
 
 - 设计有限 JSON、Lua、可信 Win32 DLL 三级扩展体系：小型“一事件一效果”功能保留 JSON，复杂状态与组合使用 Lua，原生能力由 `pvzmod/plugins/native/<plugin-id>/` 中的版本化插件提供。

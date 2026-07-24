@@ -28,6 +28,17 @@ bool RegisterZombieInitializedListener(const ZombieInitializedListener listener)
     return RegisterUnique(g_initializedListeners, listener);
 }
 
+bool RegisterZombieInitializedListenerFirst(const ZombieInitializedListener listener) {
+    std::lock_guard lock(g_eventMutex);
+    if (listener == nullptr ||
+        std::find(g_initializedListeners.begin(), g_initializedListeners.end(), listener) !=
+            g_initializedListeners.end()) {
+        return false;
+    }
+    g_initializedListeners.insert(g_initializedListeners.begin(), listener);
+    return true;
+}
+
 bool RegisterZombieAttackDamageModifier(const ZombieAttackDamageModifier modifier) {
     std::lock_guard lock(g_eventMutex);
     return RegisterUnique(g_attackModifiers, modifier);

@@ -748,6 +748,26 @@ try
     Assert(jsonc.Contains("保留这条注释", StringComparison.Ordinal), "JSONC 注释未保留");
     Assert(jsonc.Contains("TEST_IMAGE", StringComparison.Ordinal), "JSONC 条目未写入");
 
+    var zombieJsoncPath = Path.Combine(root, "zombies.jsonc");
+    File.WriteAllText(zombieJsoncPath, "{\n  // 保留僵尸配置注释\n  \"schemaVersion\": 1,\n  \"zombies\": {\n    \"2\": { \"bodyHealth\": 640 }\n  }\n}\n");
+    var jsoncEditor = new JsoncArrayEditor();
+    jsoncEditor.UpsertObjectProperty(zombieJsoncPath, "zombies", "0", new System.Text.Json.Nodes.JsonObject
+    {
+        ["bodyHealth"] = 270,
+        ["animationId"] = "CUSTOM_NORMAL_ZOMBIE"
+    });
+    jsoncEditor.UpsertObjectProperty(zombieJsoncPath, "zombies", "0", new System.Text.Json.Nodes.JsonObject
+    {
+        ["bodyHealth"] = 300,
+        ["animationId"] = "CUSTOM_NORMAL_ZOMBIE_V2"
+    });
+    var zombieJsonc = File.ReadAllText(zombieJsoncPath);
+    Assert(zombieJsonc.Contains("保留僵尸配置注释", StringComparison.Ordinal), "僵尸对象合并丢失了原 JSONC 注释");
+    Assert(zombieJsonc.Contains("\"2\"", StringComparison.Ordinal), "稀疏僵尸对象合并覆盖了其他僵尸 ID");
+    Assert(zombieJsonc.Contains("CUSTOM_NORMAL_ZOMBIE_V2", StringComparison.Ordinal) &&
+           !zombieJsonc.Contains("CUSTOM_NORMAL_ZOMBIE\"", StringComparison.Ordinal),
+        "僵尸动画覆盖项没有按模板 ID 更新");
+
     var fakePng = Path.Combine(root, "body.png");
     File.WriteAllBytes(fakePng, [137, 80, 78, 71, 13, 10, 26, 10]);
     var project = new EditorProject
@@ -788,6 +808,55 @@ try
             "动画包没有写入原版轨道替换映射");
         Assert(generatedAnimation["actions"]!["idle"]!["events"]![0]!["frame"]!.GetValue<int>() == 1,
             "动画包没有写入动作事件帧");
+    }
+
+    File.WriteAllBytes(Path.Combine(root, "PlantsVsZombies.exe"), [0]);
+    Directory.CreateDirectory(Path.Combine(root, "pvzmod", "config", "resources"));
+    Directory.CreateDirectory(Path.Combine(root, "pvzmod", "config", "zombies"));
+    File.WriteAllText(Path.Combine(root, "pvzmod", "config", "resources", "textures.jsonc"),
+        "{\n  \"schemaVersion\": 1,\n  \"textures\": []\n}\n");
+    File.WriteAllText(Path.Combine(root, "pvzmod", "config", "resources", "animations.jsonc"),
+        "{\n  \"schemaVersion\": 1,\n  \"animations\": []\n}\n");
+    var installedZombieConfig = Path.Combine(root, "pvzmod", "config", "zombies", "attributes.jsonc");
+    File.WriteAllText(installedZombieConfig,
+        "{\n  // keep zombie 2\n  \"schemaVersion\": 1,\n  \"zombies\": {\n    \"2\": { \"bodyHealth\": 640 }\n  }\n}\n");
+    var zombieProject = new EditorProject
+    {
+        Kind = EntityKind.Zombie,
+        Id = "TEST_ZOMBIE",
+        DisplayName = "测试僵尸",
+        TemplateEntityId = 0,
+        CarrierReanimation = "REANIM_ZOMBIE",
+        Health = 360,
+        Damage = 6,
+        Animation = source,
+        Actions = new ObservableCollection<ActionDefinition>
+        {
+            new() { Id = "idle", DisplayName = "待机", Track = "anim_idle" }
+        },
+        ImageBindings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["IMAGE_REANIM_TEST_BODY"] = fakePng
+        }
+    };
+    new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor()).InstallToGame(zombieProject, root);
+    var installedZombieText = File.ReadAllText(installedZombieConfig);
+    Assert(installedZombieText.Contains("keep zombie 2", StringComparison.Ordinal) &&
+           installedZombieText.Contains("\"2\"", StringComparison.Ordinal),
+        "僵尸工程一键安装覆盖了原有稀疏条目或注释");
+    Assert(installedZombieText.Contains("\"0\"", StringComparison.Ordinal) &&
+           installedZombieText.Contains("TEST_ZOMBIE", StringComparison.Ordinal),
+        "僵尸工程一键安装没有写入实际生效的 attributes.jsonc");
+    var zombieZipPath = Path.Combine(root, "zombie-package.zip");
+    new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor()).CreatePackage(zombieProject, zombieZipPath);
+    using (var zombieZip = ZipFile.OpenRead(zombieZipPath))
+    {
+        var entityFragment = zombieZip.Entries.Single(entry =>
+            entry.FullName.EndsWith("entity.fragment.jsonc", StringComparison.Ordinal));
+        using var reader = new StreamReader(entityFragment.Open());
+        var entityJson = System.Text.Json.Nodes.JsonNode.Parse(reader.ReadToEnd())!;
+        Assert(entityJson["zombies"]!["0"]!["animationId"]!.GetValue<string>() == "TEST_ZOMBIE",
+            "僵尸 ZIP 没有生成可合并到 attributes.jsonc 的稀疏覆盖片段");
     }
 
     Console.WriteLine("PASS: Raw/compiled 往返、自动补间、JSONC 合并和 ZIP 打包全部通过。");
