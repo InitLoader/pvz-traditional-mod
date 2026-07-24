@@ -38,6 +38,10 @@ struct ExternalAnimationDefinition {
     std::string path;
     std::string carrierReanimation;
     std::string initialAction = "idle";
+    // A restore-only animation is never applied to a newly created entity.
+    // It only pre-registers a persistent Definition for old saves whose body
+    // was written by a previously enabled external animation.
+    bool savedGameRecovery = false;
     std::unordered_map<std::string, std::string> images;
     std::unordered_map<std::string, ExternalAnimationActionDefinition> actions;
     std::unordered_map<std::string, std::string> actionReplacements;

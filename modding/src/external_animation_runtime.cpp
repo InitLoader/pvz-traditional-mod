@@ -191,6 +191,16 @@ RuntimeReanimatorDefinition* PrepareExternalReanimationDefinition(
     return stored->second->Definition();
 }
 
+std::vector<std::string> SavedGameRecoveryAnimationIds() {
+    std::vector<std::string> result;
+    std::lock_guard lock(g_animationMutex);
+    result.reserve(g_animations.size());
+    for (const auto& [id, animation] : g_animations) {
+        if (animation != nullptr && animation->config.savedGameRecovery) result.push_back(id);
+    }
+    return result;
+}
+
 std::size_t ExternalAnimationCount() {
     std::lock_guard lock(g_animationMutex);
     return g_animations.size();

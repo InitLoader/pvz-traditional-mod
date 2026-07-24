@@ -307,6 +307,10 @@ custom_animation_preview    卡片、选卡、图鉴和预览
 
 ## 10. 存档和热加载
 
+删除实体配置不代表旧关卡中的 Reanimation 数据也随之消失。若旧存档仍含外部主体，必须保留与保存时轨道数量一致的动画条目，并设置 `savedGameRecovery: true`。运行时只按 `carrierReanimation` 预登记该 Definition；它不会出现在选卡、不创建新实体，也不会触发主体注入。确认所有旧实例已经从关卡中清除并重新保存后，才可移除恢复项及资源。
+
+普通自定义僵尸在 DLL 启动时只登记 `animationId -> ReanimationType` 映射，不提前解码所有图片。首次生成该僵尸时构建并缓存 Definition；如果读档先遇到空 Definition，则由存档恢复点按同一映射惰性构建。标有 `savedGameRecovery: true` 的迁移项仍会启动时预构建，以便恢复已经停用且不会再生成的旧实体。
+
 原版存档不能写入超出固定枚举的动画或实体 ID。当前兼容层允许每个原版 `carrierReanimation` 对应一个外部 Definition：保存时仍由原版写 TrackInstance，读取时用 Reanimation 原始结构里的载体类型选择启动时预构建的持久对象。已经验证含 5 株 `NEW_PLANT` 的关卡完全退出并重启后可继续运行；僵尸纵切的进游戏与存档回归仍需在提供匹配 `REANIM_ZOMBIE` 的自制资源后完成。同一载体若出现两个不同动画，后者禁用并保留原版。完整 Mod 存档仍需保存：
 
 ```text

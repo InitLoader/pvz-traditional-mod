@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+- 修复停用自定义植物后读取旧关卡仍在 `Reanimation::Sync` 崩溃：旧存档里的 `ReanimationType 81` 现在会取得与保存时香蒲骨架一致的 15 轨持久恢复 Definition。恢复动画只用于读档，不生成卡片、不创建植物，也不重新启用自定义植物。
+- 自定义僵尸动画改为启动时只登记载体映射，在首次生成或实际读取相应存档时才构建 Definition，避免主菜单资源系统尚未就绪时提前解码整套僵尸贴图并永久缓存失败状态。
+- `custom_plants.jsonc` 为空时不再安装自定义植物实例、开火、子弹和文本 Hook；旧存档所需的 Definition 恢复桥与新植物逻辑完全分离。
+
 ### Added in 0.10.4-dev
 
 - 修复带外部主体动画的自定义植物保存后再次进入关卡可能在 `Reanimation::Sync` 中空指针崩溃：新增 1.0.0.1051 植物/僵尸模板载体目录，启动时按模板真实 `mReanimationType` 预登记 Definition，并把旧工程中错误的 `carrierReanimation` 作为存档迁移别名。

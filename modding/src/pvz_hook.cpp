@@ -6,6 +6,7 @@
 #include "external_animation_runtime.h"
 #include "external_body_animation_runtime.h"
 #include "external_texture_runtime.h"
+#include "plant_catalog_runtime.h"
 
 #include <MinHook.h>
 
@@ -60,17 +61,21 @@ bool InstallPvZHooks() {
         LogError("Seed chooser UI hook module failed to install.");
         success = false;
     }
-    if (!InstallCustomPlantHooks(moduleBase)) {
-        LogError("Custom plant hook module failed to install.");
-        success = false;
-    }
-    if (!InstallCustomPlantTextHooks(moduleBase)) {
-        LogError("Custom plant text hook module failed to install.");
-        success = false;
+    if (CustomChooserPlantCount() > 0) {
+        if (!InstallCustomPlantHooks(moduleBase)) {
+            LogError("Custom plant hook module failed to install.");
+            success = false;
+        }
+        if (!InstallCustomPlantTextHooks(moduleBase)) {
+            LogError("Custom plant text hook module failed to install.");
+            success = false;
+        }
+    } else {
+        LogInfo("Custom plant catalog is empty; plant instance, fire, projectile, and text hooks are disabled.");
     }
 
     if (success) {
-        LogInfo("Installed wave, sun, plant attack, zombie, elite, external texture/body-animation registry, paged chooser, and custom plant modules for PvZ 1.0.0.1051.");
+        LogInfo("Installed wave, sun, plant attack, zombie, elite, external texture/body-animation registry, and seed chooser modules for PvZ 1.0.0.1051.");
     }
     return success;
 }

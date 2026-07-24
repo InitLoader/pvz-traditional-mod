@@ -668,6 +668,7 @@ void TestExternalAnimationConfigAndRawReanim() {
             "path":"pvzmod/animations/plants/demo/demo.reanim",
             "carrierReanimation":"REANIM_PEASHOOTER",
             "initialAction":"idle",
+            "savedGameRecovery":true,
             "images":{"IMAGE_REANIM_DEMO_BODY":"KILL"},
             "actions":{
               "idle":{"track":"anim_idle","loop":"loop","rate":1.25},
@@ -708,8 +709,9 @@ void TestExternalAnimationConfigAndRawReanim() {
            "external animation metadata should parse");
     if (config.Ok()) {
         const auto* animation = config.config->Find("PLANT_DEMO_01");
-        Expect(animation != nullptr && animation->images.at("IMAGE_REANIM_DEMO_BODY") == "KILL",
-               "animation image symbols should retain external texture ids");
+        Expect(animation != nullptr && animation->savedGameRecovery &&
+                   animation->images.at("IMAGE_REANIM_DEMO_BODY") == "KILL",
+               "animation recovery metadata and image symbols should parse");
         const auto* attack = animation == nullptr ? nullptr : animation->FindAction("attack");
         Expect(attack != nullptr && attack->loop == pvzmod::ExternalAnimationLoopMode::OnceHold &&
                    attack->blendFrames == 3 && attack->events.size() == 2 &&

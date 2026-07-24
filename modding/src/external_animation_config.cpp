@@ -262,6 +262,11 @@ ExternalAnimationConfigLoadResult LoadExternalAnimationConfig(const std::filesys
             if (!IsExternalResourceId(animation.initialAction)) {
                 throw std::runtime_error("initialAction must match [A-Za-z0-9_]+");
             }
+            const auto savedGameRecovery = value.find("savedGameRecovery");
+            if (savedGameRecovery != value.end() && !savedGameRecovery->is_boolean()) {
+                throw std::runtime_error("savedGameRecovery must be true or false");
+            }
+            animation.savedGameRecovery = value.value("savedGameRecovery", false);
             ParseStringMap(value, "images", kMaxImageBindings, animation.images, true);
             ParseStringMap(value, "locators", kMaxLocators, animation.locators, false);
 

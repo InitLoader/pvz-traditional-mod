@@ -151,8 +151,18 @@ bool InitializeExternalBodyAnimationRuntime(std::uint8_t* moduleBase) {
             "Reanimation save-load definition guard")) {
         return false;
     }
+    bool recoveryReady = true;
+    for (const std::string& animationId : SavedGameRecoveryAnimationIds()) {
+        if (!RegisterExternalBodyAnimation(animationId)) {
+            LogError("Saved-game recovery animation '" + animationId +
+                     "' could not register its persistent Definition.");
+            recoveryReady = false;
+        } else {
+            LogInfo("Pre-registered restore-only body animation '" + animationId + "'.");
+        }
+    }
     LogInfo("External body Reanimation ABI verified; carrier-aware saved Definition restore is active.");
-    return true;
+    return recoveryReady;
 }
 
 bool RegisterExternalBodyAnimation(const std::string_view animationId) {
@@ -174,7 +184,8 @@ bool RegisterExternalBodyAnimation(const std::string_view animationId) {
 }
 
 bool RegisterExternalBodyAnimationForCarrier(
-    const std::string_view animationId, const int carrierReanimationType) {
+    const std::string_view animationId, const int carrierReanimationType,
+    const bool prepareImmediately) {
     if (animationId.empty() || g_moduleBase == nullptr) return false;
     if (!IsBodyCarrierReanimationType(carrierReanimationType)) {
         LogOnce("unsupported-carrier-type:" + std::to_string(carrierReanimationType), true,
@@ -189,18 +200,33 @@ bool RegisterExternalBodyAnimationForCarrier(
             "External body animation '" + std::string(animationId) + "' is not registered.");
         return false;
     }
+    bool definitionAlreadyReady = false;
     {
         std::lock_guard lock(g_runtimeMutex);
         const auto existing = g_definitionsByCarrier.find(carrierReanimationType);
         if (existing != g_definitionsByCarrier.end()) {
-            if (existing->second.animationId == animationId) return true;
-            LogWarning("External animation '" + std::string(animationId) +
-                       "' was disabled because ReanimationType " +
-                       std::to_string(carrierReanimationType) + " is already used by '" +
-                       existing->second.animationId +
-                       "'; saved games require one Definition per carrier.");
-            return false;
+            if (existing->second.animationId == animationId) {
+                definitionAlreadyReady = existing->second.definition != nullptr;
+            } else {
+                LogWarning("External animation '" + std::string(animationId) +
+                           "' was disabled because ReanimationType " +
+                           std::to_string(carrierReanimationType) + " is already used by '" +
+                           existing->second.animationId +
+                           "'; saved games require one Definition per carrier.");
+                return false;
+            }
+        } else {
+            g_definitionsByCarrier.emplace(
+                carrierReanimationType,
+                RegisteredDefinition{std::string(animationId), nullptr});
         }
+    }
+    if (definitionAlreadyReady) return true;
+    if (!prepareImmediately) {
+        LogOnce("registered-lazy:" + std::to_string(carrierReanimationType), false,
+            "Registered lazy saved-game body mapping '" + std::string(animationId) +
+            "' for ReanimationType " + std::to_string(carrierReanimationType) + ".");
+        return true;
     }
     void* lawnApp = *reinterpret_cast<void**>(g_moduleBase + kLawnAppGlobalRva);
     RuntimeReanimatorDefinition* definition =
@@ -208,10 +234,8 @@ bool RegisterExternalBodyAnimationForCarrier(
     if (definition == nullptr) return false;
 
     std::lock_guard lock(g_runtimeMutex);
-    const auto [entry, inserted] = g_definitionsByCarrier.emplace(
-        carrierReanimationType,
-        RegisteredDefinition{std::string(animationId), definition});
-    if (!inserted && entry->second.animationId != animationId) return false;
+    const auto entry = g_definitionsByCarrier.find(carrierReanimationType);
+    if (entry == g_definitionsByCarrier.end() || entry->second.animationId != animationId) return false;
     entry->second.definition = definition;
     LogInfo("Registered saved-game body Definition '" + std::string(animationId) +
             "' for ReanimationType " + std::to_string(carrierReanimationType) + ".");
@@ -301,10 +325,31 @@ bool ApplyExternalBodyAnimation(
 extern "C" pvzmod::RuntimeReanimatorDefinition* __stdcall
 ResolveSavedExternalReanimationDefinition(const int reanimationType) {
     pvzmod::RuntimeReanimatorDefinition* definition = nullptr;
+    std::string animationId;
     {
         std::lock_guard lock(pvzmod::g_runtimeMutex);
         const auto found = pvzmod::g_definitionsByCarrier.find(reanimationType);
-        if (found != pvzmod::g_definitionsByCarrier.end()) definition = found->second.definition;
+        if (found != pvzmod::g_definitionsByCarrier.end()) {
+            definition = found->second.definition;
+            animationId = found->second.animationId;
+        }
+    }
+    if (definition == nullptr && !animationId.empty() && pvzmod::g_moduleBase != nullptr) {
+        void* lawnApp = *reinterpret_cast<void**>(
+            pvzmod::g_moduleBase + pvzmod::kLawnAppGlobalRva);
+        definition = pvzmod::PrepareExternalReanimationDefinition(animationId, lawnApp);
+        if (definition != nullptr) {
+            std::lock_guard lock(pvzmod::g_runtimeMutex);
+            const auto found = pvzmod::g_definitionsByCarrier.find(reanimationType);
+            if (found != pvzmod::g_definitionsByCarrier.end() &&
+                found->second.animationId == animationId) {
+                found->second.definition = definition;
+            }
+            pvzmod::LogOnce(
+                "lazy-saved-definition:" + std::to_string(reanimationType), false,
+                "Built lazy saved-game body Definition '" + animationId +
+                    "' for ReanimationType " + std::to_string(reanimationType) + ".");
+        }
     }
     if (definition == nullptr) {
         pvzmod::LogOnce(

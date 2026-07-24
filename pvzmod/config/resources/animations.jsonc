@@ -32,6 +32,19 @@
         "cone": { "track": "anim_cone", "loop": "once", "rate": 12, "blendFrames": 0 },
         "bucket": { "track": "anim_bucket", "loop": "once", "rate": 12, "blendFrames": 0 }
       }
+    },
+    {
+      // 仅用于读取曾经启用自定义香蒲载体后保存的旧关卡。
+      // 它不会注册植物卡片，也不会应用到新创建的植物；清除旧实例后可删除本项。
+      "id": "SAVE_RECOVERY_CATTAIL",
+      "path": "compiled/reanim/Cattail.reanim.compiled",
+      "carrierReanimation": "REANIM_CATTAIL",
+      "initialAction": "idle",
+      "savedGameRecovery": true,
+      "images": {},
+      "actions": {
+        "idle": { "track": "anim_idle", "loop": "loop", "rate": 12, "blendFrames": 0 }
+      }
     }
   ]
 }

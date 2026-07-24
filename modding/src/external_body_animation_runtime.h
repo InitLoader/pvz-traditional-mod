@@ -13,7 +13,8 @@ namespace pvzmod {
 [[nodiscard]] bool RegisterExternalBodyAnimation(std::string_view animationId);
 [[nodiscard]] bool RegisterExternalBodyAnimationForCarrier(
     std::string_view animationId,
-    int carrierReanimationType);
+    int carrierReanimationType,
+    bool prepareImmediately = true);
 
 // Replaces one already-created body Reanimation in place. All validation,
 // texture resolution and save-restore registration must succeed before the

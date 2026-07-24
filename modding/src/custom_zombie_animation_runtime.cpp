@@ -54,7 +54,7 @@ bool InstallCustomZombieAnimationRuntime(std::uint8_t*) {
             if (!override->animationId.has_value()) continue;
             const int carrier = ResolveZombieTypeCarrierReanimationType(zombieType);
             if (carrier < 0 ||
-                !RegisterExternalBodyAnimationForCarrier(*override->animationId, carrier)) {
+                !RegisterExternalBodyAnimationForCarrier(*override->animationId, carrier, false)) {
                 LogWarning("Zombie type " + std::to_string(zombieType) + " animationId '" +
                            *override->animationId + "' is inactive; its original body animation will be kept.");
             }
