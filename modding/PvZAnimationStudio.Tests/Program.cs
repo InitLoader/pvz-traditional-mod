@@ -17,6 +17,12 @@ if (args.Length > 1 && string.Equals(args[0], "--workspace-screenshot", StringCo
     return;
 }
 
+if (args.Length > 1 && string.Equals(args[0], "--timeline-scroll-screenshot", StringComparison.OrdinalIgnoreCase))
+{
+    RenderTimelineScrollScreenshot(args[1]);
+    return;
+}
+
 if (args.Length > 1 && string.Equals(args[0], "--audit", StringComparison.OrdinalIgnoreCase))
 {
     RunAnimationAudit(args[1]);
@@ -1098,6 +1104,75 @@ static void RenderWorkspaceScreenshot(string path, string? animationPath, Worksp
     thread.Join();
     if (failure is not null) throw failure;
     Console.WriteLine($"PASS: 工作区窗口已渲染到 {Path.GetFullPath(path)}");
+}
+
+static void RenderTimelineScrollScreenshot(string path)
+{
+    Exception? failure = null;
+    var thread = new Thread(() =>
+    {
+        try
+        {
+            var application = new App();
+            application.InitializeComponent();
+            var viewModel = new EditorViewModel(new ActionCatalogService());
+            for (var index = 0; index < 45; index++)
+            {
+                var track = new AnimationTrack { Name = $"scroll_track_{index:D2}" };
+                track.EnsureFrameCount(30);
+                track.Frames[0].X = index;
+                viewModel.Project.Animation.Tracks.Add(track);
+            }
+
+            var timeline = new TimelineControl();
+            timeline.Bind(viewModel);
+            var scrollViewer = new System.Windows.Controls.ScrollViewer
+            {
+                Width = 760,
+                Height = 260,
+                HorizontalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto,
+                VerticalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto,
+                Content = timeline
+            };
+            var window = new Window
+            {
+                Width = 780,
+                Height = 300,
+                Left = -10000,
+                Top = -10000,
+                ShowActivated = false,
+                WindowStyle = WindowStyle.None,
+                Content = scrollViewer
+            };
+            window.Show();
+            window.UpdateLayout();
+            scrollViewer.ScrollToBottom();
+            window.UpdateLayout();
+            System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(
+                () => window.UpdateLayout(), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            scrollViewer.ScrollToTop();
+            window.UpdateLayout();
+            System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(
+                () => window.UpdateLayout(), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+
+            var bitmap = new RenderTargetBitmap(780, 300, 96, 96, PixelFormats.Pbgra32);
+            bitmap.Render(window);
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+            SaveBitmap(bitmap, new PngBitmapEncoder(), Path.GetFullPath(path));
+            timeline.Unbind();
+            window.Close();
+            application.Shutdown();
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
+        }
+    });
+    thread.SetApartmentState(ApartmentState.STA);
+    thread.Start();
+    thread.Join();
+    if (failure is not null) throw failure;
+    Console.WriteLine($"PASS: 时间轴滚动往返后已渲染到 {Path.GetFullPath(path)}");
 }
 
 static AnimationDocument CreateCompositePreviewDocument()

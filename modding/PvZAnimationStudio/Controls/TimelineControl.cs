@@ -25,6 +25,7 @@ public sealed class TimelineControl : FrameworkElement
     private Rect _boxRect;
     private int _lastTrackCount = -1;
     private int _lastFrameCount = -1;
+    private ScrollViewer? _scrollViewer;
 
     public TimelineControl()
     {
@@ -34,6 +35,8 @@ public sealed class TimelineControl : FrameworkElement
         MouseMove += OnMouseMove;
         MouseUp += OnMouseUp;
         KeyDown += OnKeyDown;
+        Loaded += (_, _) => AttachScrollViewer();
+        Unloaded += (_, _) => DetachScrollViewer();
     }
 
     public void Bind(EditorViewModel viewModel)
@@ -41,12 +44,14 @@ public sealed class TimelineControl : FrameworkElement
         if (_viewModel is not null) _viewModel.VisualStateChanged -= OnVisualStateChanged;
         _viewModel = viewModel;
         _viewModel.VisualStateChanged += OnVisualStateChanged;
+        if (IsLoaded) AttachScrollViewer();
         UpdateExtent();
     }
 
     public void Unbind()
     {
         if (_viewModel is not null) _viewModel.VisualStateChanged -= OnVisualStateChanged;
+        DetachScrollViewer();
         _viewModel = null;
     }
 
@@ -447,15 +452,42 @@ public sealed class TimelineControl : FrameworkElement
 
     private Rect GetVisibleBounds()
     {
-        DependencyObject? current = this;
-        while (current is not null)
-        {
-            current = VisualTreeHelper.GetParent(current);
-            if (current is not ScrollViewer viewer) continue;
+        var viewer = _scrollViewer ?? FindScrollViewer();
+        if (viewer is not null)
             return new Rect(viewer.HorizontalOffset, viewer.VerticalOffset,
                 Math.Max(1, viewer.ViewportWidth), Math.Max(1, viewer.ViewportHeight));
-        }
         return new Rect(RenderSize);
+    }
+
+    private void AttachScrollViewer()
+    {
+        var viewer = FindScrollViewer();
+        if (ReferenceEquals(_scrollViewer, viewer)) return;
+        DetachScrollViewer();
+        _scrollViewer = viewer;
+        if (_scrollViewer is not null) _scrollViewer.ScrollChanged += OnScrollChanged;
+    }
+
+    private void DetachScrollViewer()
+    {
+        if (_scrollViewer is not null) _scrollViewer.ScrollChanged -= OnScrollChanged;
+        _scrollViewer = null;
+    }
+
+    private ScrollViewer? FindScrollViewer()
+    {
+        DependencyObject? current = this;
+        while ((current = VisualTreeHelper.GetParent(current)) is not null)
+            if (current is ScrollViewer viewer) return viewer;
+        return null;
+    }
+
+    private void OnScrollChanged(object sender, ScrollChangedEventArgs eventArgs)
+    {
+        // The timeline deliberately renders only the visible rows/frames. A
+        // ScrollViewer changes its offsets without changing this element's
+        // model, so explicitly redraw the newly exposed area immediately.
+        InvalidateVisual();
     }
 
     private void OnVisualStateChanged(object? sender, EventArgs eventArgs)
