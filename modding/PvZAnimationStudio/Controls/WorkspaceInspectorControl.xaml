@@ -3,6 +3,21 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <StackPanel Margin="5">
+      <GroupBox Header="选中轨道图片">
+        <Grid Margin="3">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition Width="*" MinWidth="150"/></Grid.ColumnDefinitions>
+          <Border Width="64" Height="64" Background="#202832" BorderBrush="#5C6B7B" BorderThickness="1">
+            <Image Source="{Binding SelectedTrackThumbnail}" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
+          </Border>
+          <StackPanel Grid.Column="1" Margin="8,0,0,0">
+            <CheckBox Content="锁定轨道（禁止编辑）" IsChecked="{Binding SelectedTrackIsLocked, Mode=TwoWay}"/>
+            <TextBlock Margin="0,5,0,0" Text="{Binding SelectedTrackImageSymbol}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+            <TextBlock Margin="0,3,0,0" Text="{Binding SelectedTrackImageLayout}" Foreground="#9FC3D8"/>
+            <TextBlock Margin="0,3,0,0" Text="{Binding SelectedTrackImagePath}" Foreground="#AEB9C4"
+                       TextWrapping="Wrap" ToolTip="{Binding SelectedTrackImagePath}"/>
+          </StackPanel>
+        </Grid>
+      </GroupBox>
       <GroupBox Header="当前关键帧属性">
         <Grid>
           <Grid.ColumnDefinitions><ColumnDefinition Width="115"/><ColumnDefinition Width="*" MinWidth="120"/></Grid.ColumnDefinitions>

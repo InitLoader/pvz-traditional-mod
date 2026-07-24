@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Text.Json.Serialization;
+using System.Windows.Media.Imaging;
 
 namespace PvZAnimationStudio.Models;
 
@@ -99,17 +101,32 @@ public sealed class AnimationCurveDefinition
 
 public sealed class AnimationFrame
 {
-    public float? X { get; set; }
-    public float? Y { get; set; }
-    public float? SkewX { get; set; }
-    public float? SkewY { get; set; }
-    public float? ScaleX { get; set; }
-    public float? ScaleY { get; set; }
-    public float? Frame { get; set; }
-    public float? Alpha { get; set; }
-    public string? Image { get; set; }
-    public string? Font { get; set; }
-    public string? Text { get; set; }
+    private float? _x;
+    private float? _y;
+    private float? _skewX;
+    private float? _skewY;
+    private float? _scaleX;
+    private float? _scaleY;
+    private float? _frame;
+    private float? _alpha;
+    private string? _image;
+    private string? _font;
+    private string? _text;
+
+    [JsonIgnore]
+    internal Action? Changed { get; set; }
+
+    public float? X { get => _x; set => SetField(ref _x, value); }
+    public float? Y { get => _y; set => SetField(ref _y, value); }
+    public float? SkewX { get => _skewX; set => SetField(ref _skewX, value); }
+    public float? SkewY { get => _skewY; set => SetField(ref _skewY, value); }
+    public float? ScaleX { get => _scaleX; set => SetField(ref _scaleX, value); }
+    public float? ScaleY { get => _scaleY; set => SetField(ref _scaleY, value); }
+    public float? Frame { get => _frame; set => SetField(ref _frame, value); }
+    public float? Alpha { get => _alpha; set => SetField(ref _alpha, value); }
+    public string? Image { get => _image; set => SetField(ref _image, value); }
+    public string? Font { get => _font; set => SetField(ref _font, value); }
+    public string? Text { get => _text; set => SetField(ref _text, value); }
 
     [JsonIgnore]
     public bool HasKey =>
@@ -136,6 +153,13 @@ public sealed class AnimationFrame
     {
         X = Y = SkewX = SkewY = ScaleX = ScaleY = Frame = Alpha = null;
         Image = Font = Text = null;
+    }
+
+    private void SetField<T>(ref T field, T value)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value)) return;
+        field = value;
+        Changed?.Invoke();
     }
 }
 
@@ -173,6 +197,17 @@ public sealed class AnimationTrack : ObservableObject
 {
     private string _name = "track";
     private bool _isVisibleInEditor = true;
+    private bool _isLockedInEditor;
+    private ObservableCollection<AnimationFrame> _frames = [];
+    private ResolvedAnimationFrame[]? _resolvedFrameCache;
+    private bool? _hasRenderableContentCache;
+    private BitmapSource? _editorThumbnail;
+    private string? _editorImageSymbol;
+
+    public AnimationTrack()
+    {
+        _frames.CollectionChanged += OnFramesCollectionChanged;
+    }
 
     public string EditorId { get; set; } = Guid.NewGuid().ToString("N");
 
@@ -182,7 +217,20 @@ public sealed class AnimationTrack : ObservableObject
         set => SetField(ref _name, value);
     }
 
-    public ObservableCollection<AnimationFrame> Frames { get; set; } = [];
+    public ObservableCollection<AnimationFrame> Frames
+    {
+        get => _frames;
+        set
+        {
+            if (ReferenceEquals(_frames, value)) return;
+            _frames.CollectionChanged -= OnFramesCollectionChanged;
+            foreach (var frame in _frames) frame.Changed = null;
+            _frames = value ?? [];
+            _frames.CollectionChanged += OnFramesCollectionChanged;
+            AttachFrameCallbacks();
+            InvalidateFrameCache();
+        }
+    }
 
     // Preview-only state. Raw/compiled codecs export only Reanimation fields,
     // so hiding a layer here never changes the in-game animation.
@@ -199,8 +247,37 @@ public sealed class AnimationTrack : ObservableObject
     [JsonIgnore]
     public string EditorVisibilityGlyph => IsVisibleInEditor ? "\uE7B3" : "\uED1A";
 
+    // Editor-only protection. It is persisted in .pvza projects but ignored by
+    // raw/compiled Reanimation codecs and therefore never changes game data.
+    public bool IsLockedInEditor
+    {
+        get => _isLockedInEditor;
+        set
+        {
+            if (SetField(ref _isLockedInEditor, value))
+                RaisePropertyChanged(nameof(EditorLockGlyph));
+        }
+    }
+
     [JsonIgnore]
-    public bool HasRenderableContent => Frames.Any(frame =>
+    public string EditorLockGlyph => IsLockedInEditor ? "\uE72E" : "\uE785";
+
+    [JsonIgnore]
+    public BitmapSource? EditorThumbnail
+    {
+        get => _editorThumbnail;
+        set => SetField(ref _editorThumbnail, value);
+    }
+
+    [JsonIgnore]
+    public string? EditorImageSymbol
+    {
+        get => _editorImageSymbol;
+        set => SetField(ref _editorImageSymbol, value);
+    }
+
+    [JsonIgnore]
+    public bool HasRenderableContent => _hasRenderableContentCache ??= Frames.Any(frame =>
         !string.IsNullOrEmpty(frame.Image) || !string.IsNullOrEmpty(frame.Font) || !string.IsNullOrEmpty(frame.Text));
 
     [JsonIgnore]
@@ -217,11 +294,30 @@ public sealed class AnimationTrack : ObservableObject
 
     public ResolvedAnimationFrame ResolveFrame(int index)
     {
-        var resolved = new ResolvedAnimationFrame();
-        if (Frames.Count == 0)
-            return resolved;
+        if (Frames.Count == 0) return new ResolvedAnimationFrame();
         index = Math.Clamp(index, 0, Frames.Count - 1);
-        for (var frameIndex = 0; frameIndex <= index; frameIndex++)
+        EnsureResolvedFrameCache();
+        return _resolvedFrameCache![index];
+    }
+
+    public void InvalidateFrameCache()
+    {
+        _resolvedFrameCache = null;
+        _hasRenderableContentCache = null;
+    }
+
+    public void WarmFrameCache()
+    {
+        if (Frames.Count > 0) EnsureResolvedFrameCache();
+    }
+
+    private void EnsureResolvedFrameCache()
+    {
+        if (_resolvedFrameCache is { Length: var length } && length == Frames.Count) return;
+        AttachFrameCallbacks();
+        var cache = new ResolvedAnimationFrame[Frames.Count];
+        var resolved = new ResolvedAnimationFrame();
+        for (var frameIndex = 0; frameIndex < Frames.Count; frameIndex++)
         {
             var frame = Frames[frameIndex];
             if (frame.X.HasValue) resolved.X = frame.X.Value;
@@ -235,8 +331,39 @@ public sealed class AnimationTrack : ObservableObject
             if (frame.Image is not null) resolved.Image = frame.Image.Length == 0 ? null : frame.Image;
             if (frame.Font is not null) resolved.Font = frame.Font.Length == 0 ? null : frame.Font;
             if (frame.Text is not null) resolved.Text = frame.Text.Length == 0 ? null : frame.Text;
+            cache[frameIndex] = new ResolvedAnimationFrame
+            {
+                X = resolved.X, Y = resolved.Y, SkewX = resolved.SkewX, SkewY = resolved.SkewY,
+                ScaleX = resolved.ScaleX, ScaleY = resolved.ScaleY, Frame = resolved.Frame,
+                Alpha = resolved.Alpha, Image = resolved.Image, Font = resolved.Font, Text = resolved.Text
+            };
         }
-        return resolved;
+        _resolvedFrameCache = cache;
+    }
+
+    private void AttachFrameCallbacks()
+    {
+        foreach (var frame in Frames) frame.Changed = InvalidateFrameCache;
+    }
+
+    private void OnFramesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs eventArgs)
+    {
+        if (eventArgs.Action is NotifyCollectionChangedAction.Replace or NotifyCollectionChangedAction.Reset)
+        {
+            // Swap operations can temporarily place one frame in two
+            // positions. Rebind the complete final collection so neither
+            // frame loses its callback. Adds stay O(1), which matters while
+            // cloning large projects into the undo history.
+            AttachFrameCallbacks();
+        }
+        else
+        {
+            if (eventArgs.OldItems is not null)
+                foreach (AnimationFrame frame in eventArgs.OldItems) frame.Changed = null;
+            if (eventArgs.NewItems is not null)
+                foreach (AnimationFrame frame in eventArgs.NewItems) frame.Changed = InvalidateFrameCache;
+        }
+        InvalidateFrameCache();
     }
 }
 
@@ -268,6 +395,11 @@ public sealed class AnimationDocument : ObservableObject
         foreach (var track in Tracks)
             track.EnsureFrameCount(count);
         RaisePropertyChanged(nameof(FrameCount));
+    }
+
+    public void WarmFrameCaches()
+    {
+        foreach (var track in Tracks) track.WarmFrameCache();
     }
 
     public AnimationTrack? FindTrack(string name) =>

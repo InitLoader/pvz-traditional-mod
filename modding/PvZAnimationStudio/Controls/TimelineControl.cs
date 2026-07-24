@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using PvZAnimationStudio.ViewModels;
@@ -8,9 +9,10 @@ namespace PvZAnimationStudio.Controls;
 
 public sealed class TimelineControl : FrameworkElement
 {
-    private const double HeaderWidth = 210;
+    private const double HeaderWidth = 260;
     private const double CellWidth = 14;
     private const double RowHeight = 26;
+    private const double RulerHeight = 28;
     private EditorViewModel? _viewModel;
     private readonly HashSet<TimelineKeySelection> _selectedKeys = [];
     private bool _pendingKeyDrag;
@@ -21,6 +23,8 @@ public sealed class TimelineControl : FrameworkElement
     private bool _boxAdditive;
     private Point _boxStart;
     private Rect _boxRect;
+    private int _lastTrackCount = -1;
+    private int _lastFrameCount = -1;
 
     public TimelineControl()
     {
@@ -76,47 +80,86 @@ public sealed class TimelineControl : FrameworkElement
         var gridPen = new Pen(new SolidColorBrush(Color.FromRgb(56, 64, 75)), 1);
         var rangeStart = _viewModel.TimelineFrameStart;
         var rangeEnd = _viewModel.TimelineFrameEnd;
+        var viewport = GetVisibleBounds();
+        var firstRow = Math.Clamp((int)Math.Floor((viewport.Top - RulerHeight) / RowHeight), 0,
+            Math.Max(0, tracks.Count - 1));
+        var lastRow = Math.Clamp((int)Math.Ceiling((viewport.Bottom - RulerHeight) / RowHeight), 0,
+            Math.Max(0, tracks.Count - 1));
+        var firstLocalFrame = Math.Clamp((int)Math.Floor((viewport.Left - HeaderWidth) / CellWidth) - 1, 0,
+            Math.Max(0, rangeEnd - rangeStart));
+        var lastLocalFrame = Math.Clamp((int)Math.Ceiling((viewport.Right - HeaderWidth) / CellWidth) + 1, 0,
+            Math.Max(0, rangeEnd - rangeStart));
 
-        for (var row = 0; row < tracks.Count; row++)
+        context.DrawRectangle(new SolidColorBrush(Color.FromRgb(38, 44, 52)), null,
+            new Rect(viewport.Left, 0, Math.Max(0, viewport.Width), RulerHeight));
+        if (viewport.Left < HeaderWidth)
+        {
+            var rulerTitle = new FormattedText("显示  锁定  图片 / 轨道",
+                CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, new Typeface("Microsoft YaHei UI"), 10,
+                new SolidColorBrush(Color.FromRgb(180, 193, 205)), dpi);
+            context.DrawText(rulerTitle, new Point(8, 7));
+        }
+        var fps = Math.Max(0.1f, _viewModel.AnimationFps);
+        for (var localFrame = firstLocalFrame; localFrame <= lastLocalFrame; localFrame++)
+        {
+            var x = HeaderWidth + localFrame * CellWidth;
+            var seconds = localFrame / fps;
+            var roundedSecond = Math.Round(seconds);
+            var major = Math.Abs(seconds - roundedSecond) <= 0.5 / fps;
+            var minorStep = Math.Max(1, (int)Math.Round(fps / 4f));
+            if (!major && localFrame % minorStep != 0) continue;
+            var pen = major
+                ? new Pen(new SolidColorBrush(Color.FromRgb(101, 117, 133)), 1)
+                : gridPen;
+            context.DrawLine(pen, new Point(x, major ? 13 : 20),
+                new Point(x, RulerHeight + tracks.Count * RowHeight));
+            if (!major) continue;
+            var secondLabel = new FormattedText($"{roundedSecond:0}s",
+                CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 10,
+                new SolidColorBrush(Color.FromRgb(205, 216, 226)), dpi);
+            context.DrawText(secondLabel, new Point(x + 2, 2));
+        }
+        context.DrawLine(gridPen, new Point(viewport.Left, RulerHeight), new Point(viewport.Right, RulerHeight));
+        context.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(77, 88, 101)), 1),
+            new Point(HeaderWidth, 0), new Point(HeaderWidth, ActualHeight));
+
+        if (tracks.Count == 0) return;
+        for (var row = firstRow; row <= lastRow; row++)
         {
             var track = tracks[row];
-            var y = row * RowHeight;
+            var y = RulerHeight + row * RowHeight;
             var selected = ReferenceEquals(track, _viewModel.SelectedTrack);
             var background = selected
                 ? new SolidColorBrush(Color.FromRgb(50, 74, 62))
                 : track.IsActionTrack
                     ? new SolidColorBrush(Color.FromRgb(48, 40, 62))
                     : new SolidColorBrush(row % 2 == 0 ? Color.FromRgb(30, 35, 42) : Color.FromRgb(27, 32, 39));
-            context.DrawRectangle(background, null, new Rect(0, y, ActualWidth, RowHeight));
+            context.DrawRectangle(background, null, new Rect(viewport.Left, y, viewport.Width, RowHeight));
             DrawVisibilityIcon(context, new Point(16, y + RowHeight / 2), track.IsVisibleInEditor);
+            DrawLockIcon(context, new Point(45, y + RowHeight / 2), track.IsLockedInEditor);
+            if (track.EditorThumbnail is not null)
+                context.DrawImage(track.EditorThumbnail, new Rect(62, y + 2, 22, 22));
+            else
+                context.DrawRectangle(new SolidColorBrush(Color.FromRgb(45, 52, 61)), gridPen,
+                    new Rect(62, y + 3, 20, 20));
             var label = new FormattedText(
                 track.IsActionTrack ? $"动作范围  {track.Name}" : track.Name,
                 CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
                 new Typeface("Microsoft YaHei UI"), 11,
                 track.IsActionTrack ? Brushes.Plum : Brushes.White, dpi)
-            { MaxTextWidth = HeaderWidth - 40, Trimming = TextTrimming.CharacterEllipsis };
-            context.DrawText(label, new Point(33, y + 5));
-            context.DrawLine(gridPen, new Point(0, y + RowHeight), new Point(ActualWidth, y + RowHeight));
+            { MaxTextWidth = HeaderWidth - 96, Trimming = TextTrimming.CharacterEllipsis };
+            context.DrawText(label, new Point(91, y + 5));
+            context.DrawLine(gridPen, new Point(viewport.Left, y + RowHeight), new Point(viewport.Right, y + RowHeight));
 
-            for (var absoluteFrame = rangeStart; absoluteFrame <= rangeEnd; absoluteFrame++)
+            foreach (var absoluteFrame in _viewModel.GetMeaningfulKeyFrames(track))
             {
+                if (absoluteFrame < rangeStart + firstLocalFrame || absoluteFrame > rangeStart + lastLocalFrame) continue;
                 var localFrame = absoluteFrame - rangeStart;
                 var x = HeaderWidth + localFrame * CellWidth;
-                if (localFrame % 5 == 0)
-                {
-                    context.DrawLine(gridPen, new Point(x, y), new Point(x, y + RowHeight));
-                    if (row == 0)
-                    {
-                        var frameNumber = new FormattedText((localFrame + 1).ToString(CultureInfo.InvariantCulture),
-                            CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 8,
-                            new SolidColorBrush(Color.FromRgb(150, 160, 170)), dpi);
-                        context.DrawText(frameNumber, new Point(x + 1, y + 1));
-                    }
-                }
-                if (!_viewModel.IsMeaningfulKey(track, absoluteFrame)) continue;
                 var keySelected = _selectedKeys.Contains(new TimelineKeySelection(track.EditorId, absoluteFrame));
                 DrawDiamond(context, new Point(x + CellWidth / 2, y + RowHeight / 2 + 2),
-                    keySelected ? Brushes.Orange : selected ? Brushes.Gold : track.IsActionTrack ? Brushes.Plum : Brushes.LightGreen);
+                    keySelected ? Brushes.Orange : track.IsLockedInEditor ? Brushes.Gray :
+                    selected ? Brushes.Gold : track.IsActionTrack ? Brushes.Plum : Brushes.LightGreen);
             }
         }
 
@@ -163,18 +206,51 @@ public sealed class TimelineControl : FrameworkElement
             context.DrawLine(pen, new Point(center.X - 7, center.Y + 7), new Point(center.X + 7, center.Y - 7));
     }
 
+    private static void DrawLockIcon(DrawingContext context, Point center, bool locked)
+    {
+        var color = locked ? Color.FromRgb(245, 194, 86) : Color.FromRgb(112, 124, 137);
+        var pen = new Pen(new SolidColorBrush(color), 1.4);
+        context.DrawRoundedRectangle(locked ? new SolidColorBrush(Color.FromRgb(95, 73, 35)) : null,
+            pen, new Rect(center.X - 6, center.Y - 1, 12, 9), 1.5, 1.5);
+        var arc = new StreamGeometry();
+        using (var writer = arc.Open())
+        {
+            writer.BeginFigure(new Point(center.X - 4, center.Y - 1), false, false);
+            writer.BezierTo(new Point(center.X - 4, center.Y - 8), new Point(center.X + 4, center.Y - 8),
+                new Point(center.X + 4, center.Y - 1), true, false);
+        }
+        arc.Freeze();
+        context.DrawGeometry(null, pen, arc);
+        if (!locked)
+            context.DrawLine(pen, new Point(center.X + 4, center.Y - 1), new Point(center.X + 7, center.Y - 4));
+    }
+
     private void OnMouseDown(object sender, MouseButtonEventArgs eventArgs)
     {
         if (_viewModel is null) return;
         Focus();
         var tracks = _viewModel.TimelineTracks;
         var point = eventArgs.GetPosition(this);
-        var row = (int)(point.Y / RowHeight);
+        if (point.Y < RulerHeight && point.X >= HeaderWidth)
+        {
+            var rulerFrame = (int)((point.X - HeaderWidth) / CellWidth);
+            _viewModel.CurrentFrame = Math.Clamp(_viewModel.TimelineFrameStart + rulerFrame,
+                _viewModel.TimelineFrameStart, _viewModel.TimelineFrameEnd);
+            eventArgs.Handled = true;
+            return;
+        }
+        var row = (int)((point.Y - RulerHeight) / RowHeight);
         if (row < 0 || row >= tracks.Count) return;
         _viewModel.SelectedTrack = tracks[row];
-        if (eventArgs.ChangedButton == MouseButton.Left && point.X < 31)
+        if (eventArgs.ChangedButton == MouseButton.Left && point.X < 30)
         {
             _viewModel.ToggleTrackEditorVisibility(tracks[row]);
+            eventArgs.Handled = true;
+            return;
+        }
+        if (eventArgs.ChangedButton == MouseButton.Left && point.X < 59)
+        {
+            _viewModel.ToggleTrackEditorLock(tracks[row]);
             eventArgs.Handled = true;
             return;
         }
@@ -241,6 +317,14 @@ public sealed class TimelineControl : FrameworkElement
             _viewModel.TimelineFrameStart, _viewModel.TimelineFrameEnd);
         if (!_keyDragActive && Math.Abs(point.X - _dragOrigin.X) >= 4)
         {
+            var hasEditableKey = _selectedKeys.Any(key => _viewModel.Project.Animation.Tracks
+                .FirstOrDefault(track => track.EditorId == key.TrackId) is { IsLockedInEditor: false });
+            if (!hasEditableKey)
+            {
+                _pendingKeyDrag = false;
+                if (IsMouseCaptured) ReleaseMouseCapture();
+                return;
+            }
             _viewModel.BeginEditTransaction("拖动轨道关键帧");
             _keyDragActive = true;
         }
@@ -319,15 +403,19 @@ public sealed class TimelineControl : FrameworkElement
         if (_viewModel is null) return;
         if (!_boxAdditive) _selectedKeys.Clear();
         var tracks = _viewModel.TimelineTracks;
-        for (var row = 0; row < tracks.Count; row++)
+        var firstRow = Math.Clamp((int)Math.Floor((_boxRect.Top - RulerHeight) / RowHeight), 0,
+            Math.Max(0, tracks.Count - 1));
+        var lastRow = Math.Clamp((int)Math.Floor((_boxRect.Bottom - RulerHeight) / RowHeight), 0,
+            Math.Max(0, tracks.Count - 1));
+        for (var row = firstRow; row <= lastRow; row++)
         {
             var track = tracks[row];
-            for (var frame = _viewModel.TimelineFrameStart; frame <= _viewModel.TimelineFrameEnd; frame++)
+            foreach (var frame in _viewModel.GetMeaningfulKeyFrames(track))
             {
-                if (!_viewModel.IsMeaningfulKey(track, frame)) continue;
+                if (frame < _viewModel.TimelineFrameStart || frame > _viewModel.TimelineFrameEnd) continue;
                 var localFrame = frame - _viewModel.TimelineFrameStart;
                 var center = new Point(HeaderWidth + localFrame * CellWidth + CellWidth / 2,
-                    row * RowHeight + RowHeight / 2 + 2);
+                    RulerHeight + row * RowHeight + RowHeight / 2 + 2);
                 if (_boxRect.Contains(center)) _selectedKeys.Add(new TimelineKeySelection(track.EditorId, frame));
             }
         }
@@ -343,9 +431,31 @@ public sealed class TimelineControl : FrameworkElement
     private void UpdateExtent()
     {
         if (_viewModel is null) return;
-        Width = Math.Max(500, HeaderWidth + Math.Max(1, _viewModel.TimelineFrameCount) * CellWidth);
-        Height = Math.Max(120, _viewModel.TimelineTracks.Count * RowHeight);
+        var trackCount = _viewModel.TimelineTracks.Count;
+        var frameCount = _viewModel.TimelineFrameCount;
+        if (_lastTrackCount == trackCount && _lastFrameCount == frameCount)
+        {
+            InvalidateVisual();
+            return;
+        }
+        _lastTrackCount = trackCount;
+        _lastFrameCount = frameCount;
+        Width = Math.Max(500, HeaderWidth + Math.Max(1, frameCount) * CellWidth);
+        Height = Math.Max(120, RulerHeight + trackCount * RowHeight);
         InvalidateVisual();
+    }
+
+    private Rect GetVisibleBounds()
+    {
+        DependencyObject? current = this;
+        while (current is not null)
+        {
+            current = VisualTreeHelper.GetParent(current);
+            if (current is not ScrollViewer viewer) continue;
+            return new Rect(viewer.HorizontalOffset, viewer.VerticalOffset,
+                Math.Max(1, viewer.ViewportWidth), Math.Max(1, viewer.ViewportHeight));
+        }
+        return new Rect(RenderSize);
     }
 
     private void OnVisualStateChanged(object? sender, EventArgs eventArgs)

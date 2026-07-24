@@ -72,6 +72,29 @@ try
     Assert(editorViewModel.ProjectTemplateSummary.Contains("模式专用", StringComparison.Ordinal),
         "编辑器没有识别特殊植物 ID");
 
+    var editableTrack = editorViewModel.SelectedTrack!;
+    editableTrack.Frames[0].X = 3;
+    var cachedFrame = editableTrack.ResolveFrame(10);
+    Assert(ReferenceEquals(cachedFrame, editableTrack.ResolveFrame(10)), "播放帧解析没有复用轨道缓存");
+    editableTrack.Frames[5].X = 17;
+    var refreshedFrame = editableTrack.ResolveFrame(10);
+    Assert(!ReferenceEquals(cachedFrame, refreshedFrame) && Math.Abs(refreshedFrame.X - 17) < 0.0001f,
+        "编辑帧后轨道解析缓存没有正确失效");
+    editorViewModel.SetTrackEditorLock(editableTrack, true);
+    var lockedX = editableTrack.Frames[0].X;
+    editorViewModel.CurrentFrame = 0;
+    editorViewModel.CurrentX = 99;
+    Assert(editableTrack.Frames[0].X == lockedX, "锁定轨道仍能通过属性栏修改");
+    editorViewModel.SetTrackEditorLock(editableTrack, false);
+    editorViewModel.CurrentX = 99;
+    Assert(editableTrack.Frames[0].X == 99, "解锁轨道后没有恢复编辑");
+    Assert(editorViewModel.FrameLabel.Contains("秒", StringComparison.Ordinal), "帧状态没有显示秒数");
+    editorViewModel.IsPlaying = true;
+    var playbackStart = editorViewModel.CurrentFrame;
+    editorViewModel.AdvancePlaybackFrames(7);
+    Assert(editorViewModel.CurrentFrame == playbackStart + 7, "播放时钟不能按实际经过帧数追赶");
+    editorViewModel.IsPlaying = false;
+
     var repositoryRoot = FindRepositoryRoot();
     Assert(repositoryRoot is not null, "无法定位仓库根目录以校验植物模板文档");
     var templateDocument = File.ReadAllText(
@@ -267,6 +290,7 @@ try
             new() { Frame = 0, Value = 4, HandleMode = CurveHandleMode.Aligned, RightFrameOffset = 2, RightValueOffset = 6 }
         }
     });
+    source.Tracks[1].IsLockedInEditor = true;
     var portablePath = Path.Combine(root, "PORTABLE_PLANT.pvza");
     var portableResources = new OriginalResourceService();
     var portableFiles = new ProjectFileService(portableResources);
@@ -283,6 +307,8 @@ try
     Assert(portableLoaded.DisplayName == "便携植物" && portableLoaded.Health == 987 && portableLoaded.Damage == 66,
         "便携工程没有保留实体属性和信息");
     AssertDocument(source, portableLoaded.Animation);
+    Assert(portableLoaded.Animation.Tracks[1].IsLockedInEditor,
+        "便携工程没有保留轨道锁定状态");
     Assert(portableLoaded.Actions.Count == 1 && portableLoaded.Actions[0].DisplayName == "便携待机" &&
            Math.Abs(portableLoaded.Actions[0].Rate - 18) < 0.0001,
         "便携工程没有保留动作信息");

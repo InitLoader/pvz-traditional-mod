@@ -19,6 +19,9 @@ public sealed class OriginalResourceService
     private readonly Dictionary<string, string> _symbolIndex = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, (int Columns, int Rows)> _resourceLayout = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ImageResourceInfo?> _imageCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, BitmapSource> _bitmapPathCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, BitmapSource?> _thumbnailCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, BitmapSource?> _celCache = new(StringComparer.OrdinalIgnoreCase);
     private string? _indexedRoot;
 
     public void RebuildIndex(string? gameRoot)
@@ -26,6 +29,9 @@ public sealed class OriginalResourceService
         _symbolIndex.Clear();
         _resourceLayout.Clear();
         _imageCache.Clear();
+        _bitmapPathCache.Clear();
+        _thumbnailCache.Clear();
+        _celCache.Clear();
         _indexedRoot = null;
         if (string.IsNullOrWhiteSpace(gameRoot) || !Directory.Exists(gameRoot)) return;
 
@@ -67,6 +73,7 @@ public sealed class OriginalResourceService
         project.ImageBindings[candidate] = Path.GetFullPath(file);
         project.ImageLayouts[candidate] = new ImageLayoutDefinition();
         _imageCache.Remove(candidate);
+        _thumbnailCache.Remove(candidate);
         return candidate;
     }
 
@@ -94,8 +101,11 @@ public sealed class OriginalResourceService
         if (path is null) return _imageCache[symbol] = null;
         try
         {
-            var image = LoadBitmap(path);
-            image = ApplyLegacyAlphaMask(path, image);
+            if (!_bitmapPathCache.TryGetValue(path, out var image))
+            {
+                image = ApplyLegacyAlphaMask(path, LoadBitmap(path));
+                _bitmapPathCache[path] = image;
+            }
             var normalized = NormalizeSymbol(symbol);
             var layout = project.ImageLayouts.TryGetValue(symbol, out var embeddedLayout)
                 ? (Math.Max(1, embeddedLayout.Columns), Math.Max(1, embeddedLayout.Rows))
@@ -110,6 +120,50 @@ public sealed class OriginalResourceService
 
     public BitmapSource? ResolveBitmap(EditorProject project, string? symbol) =>
         ResolveImage(project, symbol)?.Bitmap;
+
+    public BitmapSource? ResolveThumbnail(EditorProject project, string? symbol)
+    {
+        if (string.IsNullOrWhiteSpace(symbol)) return null;
+        if (_thumbnailCache.TryGetValue(symbol, out var cached)) return cached;
+        var resource = ResolveImage(project, symbol);
+        if (resource is null) return _thumbnailCache[symbol] = null;
+        try
+        {
+            var width = Math.Max(1, (int)Math.Floor(resource.CelWidth));
+            var height = Math.Max(1, (int)Math.Floor(resource.CelHeight));
+            var crop = new CroppedBitmap(resource.Bitmap,
+                new System.Windows.Int32Rect(0, 0,
+                    Math.Min(width, resource.Bitmap.PixelWidth), Math.Min(height, resource.Bitmap.PixelHeight)));
+            crop.Freeze();
+            return _thumbnailCache[symbol] = crop;
+        }
+        catch
+        {
+            return _thumbnailCache[symbol] = resource.Bitmap;
+        }
+    }
+
+    public BitmapSource? ResolveCelBitmap(EditorProject project, string? symbol, float frame)
+    {
+        if (string.IsNullOrWhiteSpace(symbol)) return null;
+        var resource = ResolveImage(project, symbol);
+        if (resource is null) return null;
+        var rect = ReanimationRenderMath.GetCelRect(resource, frame);
+        if (rect.Width == resource.Bitmap.PixelWidth && rect.Height == resource.Bitmap.PixelHeight)
+            return resource.Bitmap;
+        var key = $"{symbol}|{rect.X}|{rect.Y}|{rect.Width}|{rect.Height}";
+        if (_celCache.TryGetValue(key, out var cached)) return cached;
+        try
+        {
+            var cropped = new CroppedBitmap(resource.Bitmap, rect);
+            cropped.Freeze();
+            return _celCache[key] = cropped;
+        }
+        catch
+        {
+            return _celCache[key] = null;
+        }
+    }
 
     private void ReadResourceManifest(string manifestPath)
     {

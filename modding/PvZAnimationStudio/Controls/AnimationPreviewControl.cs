@@ -155,14 +155,8 @@ public sealed class AnimationPreviewControl : FrameworkElement
                 continue;
             }
 
-            var celRect = ReanimationRenderMath.GetCelRect(image, frame.Frame);
-            BitmapSource bitmap = image.Bitmap;
-            if (celRect.Width != image.Bitmap.PixelWidth || celRect.Height != image.Bitmap.PixelHeight)
-            {
-                var cropped = new CroppedBitmap(image.Bitmap, celRect);
-                cropped.Freeze();
-                bitmap = cropped;
-            }
+            var bitmap = _resources.ResolveCelBitmap(_viewModel.Project, frame.Image, frame.Frame);
+            if (bitmap is null) continue;
 
             var matrix = ReanimationRenderMath.CreateScreenMatrix(frame, _zoom, origin);
             // PvZ's renderer feeds centered vertices into a +half-width/+half-height
@@ -365,6 +359,14 @@ public sealed class AnimationPreviewControl : FrameworkElement
 
         if (_activeHandle != GizmoHandle.None)
         {
+            if (_viewModel.SelectedTrack?.IsLockedInEditor == true)
+            {
+                _activeHandle = GizmoHandle.None;
+                Cursor = Cursors.No;
+                _viewModel.Status = $"轨道 {_viewModel.SelectedTrack.Name} 已锁定。";
+                InvalidateVisual();
+                return;
+            }
             _viewModel.BeginEditTransaction(_viewModel.ActiveTool switch
             {
                 EditorTool.Rotate => "旋转部件",
@@ -437,7 +439,8 @@ public sealed class AnimationPreviewControl : FrameworkElement
 
     private void OnMouseWheel(object sender, MouseWheelEventArgs eventArgs)
     {
-        if (_viewModel is not null && Keyboard.Modifiers.HasFlag(ModifierKeys.Control) && _viewModel.SelectedTrack is not null)
+        if (_viewModel is not null && Keyboard.Modifiers.HasFlag(ModifierKeys.Control) &&
+            _viewModel.SelectedTrack is { IsLockedInEditor: false })
         {
             _viewModel.BeginEditTransaction("缩放部件");
             var factor = eventArgs.Delta > 0 ? 1.05f : 1 / 1.05f;
@@ -454,7 +457,7 @@ public sealed class AnimationPreviewControl : FrameworkElement
 
     public bool BeginModalTransform(EditorTool tool)
     {
-        if (_viewModel?.SelectedTrack is null || tool == EditorTool.Select) return false;
+        if (_viewModel?.SelectedTrack is null || _viewModel.SelectedTrack.IsLockedInEditor || tool == EditorTool.Select) return false;
         var selected = _renderedParts.LastOrDefault(part => ReferenceEquals(part.Track, _viewModel.SelectedTrack));
         if (selected is null) return false;
         Focus();
@@ -529,7 +532,8 @@ public sealed class AnimationPreviewControl : FrameworkElement
 
     private GizmoHandle HitTestGizmo(Point point)
     {
-        if (_viewModel?.SelectedTrack is null || !_renderedParts.Any(part => ReferenceEquals(part.Track, _viewModel.SelectedTrack)))
+        if (_viewModel?.SelectedTrack is null || _viewModel.SelectedTrack.IsLockedInEditor ||
+            !_renderedParts.Any(part => ReferenceEquals(part.Track, _viewModel.SelectedTrack)))
             return GizmoHandle.None;
         var pivot = _selectedPivot;
         if ((point - pivot).Length <= 10 && _viewModel.ActiveTool != EditorTool.Select) return GizmoHandle.FreeMove;

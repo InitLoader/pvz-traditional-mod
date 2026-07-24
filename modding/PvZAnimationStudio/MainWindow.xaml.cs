@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -21,6 +22,8 @@ public partial class MainWindow : Window
     private readonly ProjectPackageService _packages;
     private readonly EditorViewModel _viewModel;
     private readonly DispatcherTimer _playTimer;
+    private readonly Stopwatch _playbackClock = new();
+    private double _playbackFrameBudget;
     private bool _changingWorkspaceSelection;
     private string? _lastFileDirectory;
 
@@ -41,8 +44,8 @@ public partial class MainWindow : Window
             _viewModel.Project.WorkspaceLayout = WorkspaceHost.ExportLayout();
             SelectWorkspacePreset(WorkspacePreset.Custom);
         };
-        _playTimer = new DispatcherTimer();
-        _playTimer.Tick += (_, _) => _viewModel.StepPlayback();
+        _playTimer = new DispatcherTimer(DispatcherPriority.Render);
+        _playTimer.Tick += (_, _) => AdvancePlaybackClock();
         _viewModel.VisualStateChanged += (_, _) =>
         {
             UpdatePlaybackInterval();
@@ -86,7 +89,19 @@ public partial class MainWindow : Window
     private void UpdatePlaybackInterval()
     {
         var fps = Math.Clamp(_viewModel.Project.Animation.Fps, 0.1f, 120f);
-        _playTimer.Interval = TimeSpan.FromSeconds(1.0 / fps);
+        _playTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(500.0 / fps, 8.0, 33.0));
+    }
+
+    private void AdvancePlaybackClock()
+    {
+        if (!_viewModel.IsPlaying) return;
+        var elapsed = _playbackClock.Elapsed.TotalSeconds;
+        _playbackClock.Restart();
+        _playbackFrameBudget += elapsed * Math.Clamp(_viewModel.Project.Animation.Fps, 0.1f, 120f);
+        var frames = (int)Math.Floor(_playbackFrameBudget);
+        if (frames <= 0) return;
+        _playbackFrameBudget -= frames;
+        _viewModel.AdvancePlaybackFrames(frames);
     }
 
     private void NewPlant_Click(object sender, RoutedEventArgs eventArgs) => NewProject(EntityKind.Plant);
@@ -339,13 +354,26 @@ public partial class MainWindow : Window
     private void Play_Click(object sender, RoutedEventArgs eventArgs)
     {
         _viewModel.IsPlaying = !_viewModel.IsPlaying;
-        if (_viewModel.IsPlaying) _playTimer.Start(); else _playTimer.Stop();
+        if (_viewModel.IsPlaying)
+        {
+            _viewModel.WarmPlaybackCaches();
+            _playbackFrameBudget = 0;
+            _playbackClock.Restart();
+            _playTimer.Start();
+        }
+        else
+        {
+            _playTimer.Stop();
+            _playbackClock.Stop();
+        }
         PlayButton.Content = _viewModel.IsPlaying ? "⏸ 暂停" : "▶ 播放";
     }
 
     private void Stop_Click(object sender, RoutedEventArgs eventArgs)
     {
         _playTimer.Stop();
+        _playbackClock.Reset();
+        _playbackFrameBudget = 0;
         _viewModel.IsPlaying = false;
         _viewModel.CurrentFrame = _viewModel.TimelineFrameStart;
         PlayButton.Content = "▶ 播放";
@@ -401,6 +429,12 @@ public partial class MainWindow : Window
         { WorkspaceHost.BeginModalTransform(EditorTool.Scale); eventArgs.Handled = true; }
         else if (eventArgs.Key is Key.Left or Key.Right or Key.Up or Key.Down)
         {
+            if (_viewModel.SelectedTrackIsLocked)
+            {
+                _viewModel.Status = $"轨道 {_viewModel.SelectedTrack?.Name} 已锁定。";
+                eventArgs.Handled = true;
+                return;
+            }
             var amount = modifiers.HasFlag(ModifierKeys.Shift) ? 10f : 1f;
             _viewModel.BeginEditTransaction("方向键移动部件");
             if (eventArgs.Key == Key.Left) _viewModel.MoveSelected(-amount, 0);

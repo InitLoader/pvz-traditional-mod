@@ -104,6 +104,13 @@ public sealed class AnimationCurveService
         AnimationCurveDefinition curve, CurveKeyDefinition key)
     {
         var keys = curve.Keys.OrderBy(item => item.Frame).ToArray();
+        return GetHandles(project, track, curve, key, keys);
+    }
+
+    public CurveHandlePair GetHandles(EditorProject project, AnimationTrack track,
+        AnimationCurveDefinition curve, CurveKeyDefinition key, IReadOnlyList<CurveKeyDefinition> sortedKeys)
+    {
+        var keys = sortedKeys as CurveKeyDefinition[] ?? sortedKeys.ToArray();
         var index = Array.IndexOf(keys, key);
         var value = key.Value;
         if (key.HandleMode is CurveHandleMode.Free or CurveHandleMode.Aligned)
