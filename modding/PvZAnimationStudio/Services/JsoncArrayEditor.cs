@@ -49,6 +49,59 @@ public sealed class JsoncArrayEditor
         File.WriteAllText(path, text[..end] + insertion + text[end..], new UTF8Encoding(false));
     }
 
+    public void UpsertObjectProperty(string path, string objectProperty, string key, JsonObject item)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        if (!File.Exists(path))
+            File.WriteAllText(path, $"{{\n  \"schemaVersion\": 1,\n  \"{objectProperty}\": {{}}\n}}\n", new UTF8Encoding(false));
+        var text = File.ReadAllText(path);
+        var (start, end) = FindObject(text, objectProperty);
+        var properties = FindTopLevelObjectProperties(text, start + 1, end);
+        var serializedProperty = JsonSerializer.Serialize(key) + ": " + item.ToJsonString(WriteOptions);
+        foreach (var property in properties)
+        {
+            if (!string.Equals(property.Key, key, StringComparison.Ordinal)) continue;
+            Backup(path);
+            var indentation = GetLineIndent(text, property.Start);
+            var replacement = serializedProperty.Replace("\r\n", "\n").Replace("\n", "\n" + indentation);
+            File.WriteAllText(path, text[..property.Start] + replacement + text[property.End..], new UTF8Encoding(false));
+            return;
+        }
+
+        Backup(path);
+        var needsComma = properties.Count > 0;
+        var insertion = $"{(needsComma ? "," : string.Empty)}\n{Indent(serializedProperty, "    ")}\n  ";
+        File.WriteAllText(path, text[..end] + insertion + text[end..], new UTF8Encoding(false));
+    }
+
+    public void MergeObjectProperty(string path, string objectProperty, string key, JsonObject patch)
+    {
+        if (!File.Exists(path))
+        {
+            UpsertObjectProperty(path, objectProperty, key, (JsonObject)patch.DeepClone());
+            return;
+        }
+
+        var text = File.ReadAllText(path);
+        var (start, end) = FindObject(text, objectProperty);
+        var property = FindTopLevelObjectProperties(text, start + 1, end)
+            .FirstOrDefault(item => string.Equals(item.Key, key, StringComparison.Ordinal));
+        var merged = new JsonObject();
+        if (property != default)
+        {
+            var colon = text.IndexOf(':', property.Start, property.End - property.Start);
+            if (colon >= 0)
+            {
+                merged = JsonNode.Parse(
+                    text[(colon + 1)..property.End], documentOptions: ReadOptions) as JsonObject
+                    ?? new JsonObject();
+            }
+        }
+        foreach (var (field, value) in patch)
+            merged[field] = value?.DeepClone();
+        UpsertObjectProperty(path, objectProperty, key, merged);
+    }
+
     private static (int Start, int End) FindArray(string text, string property)
     {
         var index = 0;
@@ -69,6 +122,52 @@ public sealed class JsoncArrayEditor
             return (start, end);
         }
         throw new InvalidDataException($"JSONC 中找不到数组 {property}。 ");
+    }
+
+    private static (int Start, int End) FindObject(string text, string property)
+    {
+        var index = 0;
+        while (index < text.Length)
+        {
+            SkipTrivia(text, ref index);
+            if (index >= text.Length) break;
+            if (text[index] != '"') { index++; continue; }
+            var token = ReadStringToken(text, ref index);
+            if (!string.Equals(token, property, StringComparison.Ordinal)) continue;
+            SkipTrivia(text, ref index);
+            if (index >= text.Length || text[index++] != ':') continue;
+            SkipTrivia(text, ref index);
+            if (index >= text.Length || text[index] != '{') continue;
+            var start = index;
+            var end = FindMatching(text, start, '{', '}');
+            return (start, end);
+        }
+        throw new InvalidDataException($"JSONC 中找不到对象 {property}。");
+    }
+
+    private static List<(string Key, int Start, int End)> FindTopLevelObjectProperties(
+        string text, int start, int end)
+    {
+        var result = new List<(string Key, int Start, int End)>();
+        var index = start;
+        while (index < end)
+        {
+            SkipTrivia(text, ref index);
+            if (index >= end) break;
+            if (text[index] == ',') { index++; continue; }
+            if (text[index] != '"') { index++; continue; }
+            var propertyStart = index;
+            var key = ReadStringToken(text, ref index);
+            SkipTrivia(text, ref index);
+            if (index >= end || text[index++] != ':') continue;
+            SkipTrivia(text, ref index);
+            if (index >= end || text[index] != '{')
+                throw new InvalidDataException($"JSONC 对象 {key} 的值必须是对象。");
+            var propertyEnd = FindMatching(text, index, '{', '}') + 1;
+            result.Add((key, propertyStart, propertyEnd));
+            index = propertyEnd;
+        }
+        return result;
     }
 
     private static List<(int Start, int End)> FindTopLevelObjects(string text, int start, int end)

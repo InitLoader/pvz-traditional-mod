@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+
+  // 稀疏覆盖：只替换这里明确写出且 enabled=true 的原版 SOUND_*。
+  // 未写、外部文件缺失或加载失败时，都会继续播放原版音效。
+  "replaceOriginal": {
+    "SOUND_CHOMP": {
+      "sampleId": "EXAMPLE_CHOMP",
+      "enabled": false
+    }
+  }
+}

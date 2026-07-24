@@ -52,14 +52,21 @@ FetchContent_MakeAvailable(nlohmann_json minhook tinyxml2 zlib)
 set_target_properties(zlib PROPERTIES EXCLUDE_FROM_ALL TRUE)
 
 add_library(pvz_wave_core STATIC
+    src/audio_replacement_config.cpp
+    src/audio_sample_config.cpp
     src/compiled_reanim.cpp
     src/custom_plant_config.cpp
     src/elite_zombie_config.cpp
     src/external_animation_config.cpp
     src/external_texture_config.cpp
     src/global_config.cpp
+    src/original_sound_catalog.cpp
     src/plant_attack_config.cpp
+    src/plant_animation_override_config.cpp
     src/raw_reanim.cpp
+    src/reanimation_carrier_catalog.cpp
+    src/reanimation_playback_state.cpp
+    src/reanimation_track_instance_state.cpp
     src/reanim_loader.cpp
     src/runtime_reanim_definition.cpp
     src/seed_ui_config.cpp
@@ -79,17 +86,23 @@ target_link_libraries(pvz_wave_core PUBLIC
 target_compile_definitions(pvz_wave_core PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
 
 add_library(pvzmod SHARED
+    src/audio_asset_registry.cpp
+    src/audio_replacement_hook.cpp
     src/custom_plant_animation_runtime.cpp
     src/custom_plant_hook.cpp
     src/custom_plant_text_hook.cpp
+    src/custom_zombie_animation_runtime.cpp
     src/dllmain.cpp
     src/elite_skill_registry.cpp
     src/elite_zombie_hook.cpp
     src/external_animation_runtime.cpp
+    src/external_body_animation_runtime.cpp
     src/external_texture_runtime.cpp
+    src/game_sound_bridge.cpp
     src/game_tooltip_text.cpp
     src/hook_utils.cpp
     src/logger.cpp
+    src/original_plant_animation_runtime.cpp
     src/plant_catalog_runtime.cpp
     src/plant_attack_hook.cpp
     src/pvz_hook.cpp

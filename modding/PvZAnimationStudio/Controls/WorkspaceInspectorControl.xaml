@@ -3,12 +3,46 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <StackPanel Margin="5">
+      <GroupBox Header="选中轨道图片">
+        <Grid Margin="3">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition Width="*" MinWidth="150"/></Grid.ColumnDefinitions>
+          <Border Width="64" Height="64" Background="#202832" BorderBrush="#5C6B7B" BorderThickness="1">
+            <Grid>
+              <TextBlock Text="{Binding SelectedTrack.EditorFallbackGlyph}" Foreground="#4DC8FF" FontSize="34"
+                         FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              <Image Source="{Binding SelectedTrackThumbnail}" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
+            </Grid>
+          </Border>
+          <StackPanel Grid.Column="1" Margin="8,0,0,0">
+            <CheckBox Content="锁定轨道（禁止编辑）" IsChecked="{Binding SelectedTrackIsLocked, Mode=TwoWay}"/>
+            <CheckBox Margin="0,4,0,0" Content="常显防具/附属层" IsChecked="{Binding SelectedTrackIsAlwaysVisible, Mode=TwoWay}"
+                      ToolTip="只影响编辑器组合预览；切换到其他轨道后仍显示，不写入 Raw/compiled。"/>
+            <TextBlock Margin="0,5,0,0" Text="{Binding SelectedTrackImageSymbol}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+            <TextBlock Margin="0,3,0,0" Text="{Binding SelectedTrackImageLayout}" Foreground="#9FC3D8"/>
+            <TextBlock Margin="0,3,0,0" Text="{Binding SelectedTrackImagePath}" Foreground="#AEB9C4"
+                       TextWrapping="Wrap" ToolTip="{Binding SelectedTrackImagePath}"/>
+          </StackPanel>
+        </Grid>
+      </GroupBox>
+      <GroupBox Header="_ground 原版位移 / 速度">
+        <StackPanel Margin="3">
+          <TextBlock Text="{Binding GroundMotionFrameText}" TextWrapping="Wrap"/>
+          <TextBlock Margin="0,5,0,0" Text="{Binding GroundMotionVelocityText}" Foreground="#6DD3FF"
+                     FontWeight="SemiBold" TextWrapping="Wrap"/>
+          <TextBlock Margin="0,4,0,0" Text="{Binding GroundMotionAverageText}" Foreground="#B9DDED"
+                     TextWrapping="Wrap"/>
+          <TextBlock Margin="0,4,0,0" Text="{Binding GroundMotionDistanceText}" Foreground="#9EABB8"
+                     TextWrapping="Wrap"/>
+          <TextBlock Margin="0,6,0,0" Foreground="#9FC3D8" TextWrapping="Wrap"
+                     Text="青色虚线是 _ground 的 X/Y 运动路径，箭头表示当前帧到下一帧的方向。选中青色定位点后可直接拖动；速度与游戏 GetTrackVelocity 使用同一公式。"/>
+        </StackPanel>
+      </GroupBox>
       <GroupBox Header="当前关键帧属性">
         <Grid>
           <Grid.ColumnDefinitions><ColumnDefinition Width="115"/><ColumnDefinition Width="*" MinWidth="120"/></Grid.ColumnDefinitions>
           <Grid.RowDefinitions>
             <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
-            <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+            <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition Height="Auto"/><RowDefinition/>
           </Grid.RowDefinitions>
           <TextBlock Grid.Row="0" Text="X 位移"/><TextBox Grid.Row="0" Grid.Column="1" Text="{Binding CurrentX, UpdateSourceTrigger=LostFocus}"/>
           <TextBlock Grid.Row="1" Text="Y 位移"/><TextBox Grid.Row="1" Grid.Column="1" Text="{Binding CurrentY, UpdateSourceTrigger=LostFocus}"/>
@@ -18,8 +52,10 @@
           <TextBlock Grid.Row="5" Text="Y 缩放"/><TextBox Grid.Row="5" Grid.Column="1" Text="{Binding CurrentScaleY, UpdateSourceTrigger=LostFocus}"/>
           <TextBlock Grid.Row="6" Text="图片子帧 f"/><TextBox Grid.Row="6" Grid.Column="1" Text="{Binding CurrentVisibilityFrame, UpdateSourceTrigger=LostFocus}"/>
           <TextBlock Grid.Row="7" Text="透明度"/><TextBox Grid.Row="7" Grid.Column="1" Text="{Binding CurrentAlpha, UpdateSourceTrigger=LostFocus}"/>
-          <TextBlock Grid.Row="8" Text="图片符号"/><TextBox Grid.Row="8" Grid.Column="1" Text="{Binding CurrentImage, UpdateSourceTrigger=LostFocus}"/>
-          <TextBlock Grid.Row="9" Text="文字"/><TextBox Grid.Row="9" Grid.Column="1" Text="{Binding CurrentText, UpdateSourceTrigger=LostFocus}"/>
+          <TextBlock Grid.Row="8" Text="图片符号（实际）"/><TextBox Grid.Row="8" Grid.Column="1" Text="{Binding CurrentImage, UpdateSourceTrigger=LostFocus}"/>
+          <TextBlock Grid.Row="9" Grid.Column="1" Margin="2,1,0,5" Foreground="#78C9EC"
+                     Text="{Binding CurrentImageValueSource}"/>
+          <TextBlock Grid.Row="10" Text="文字"/><TextBox Grid.Row="10" Grid.Column="1" Text="{Binding CurrentText, UpdateSourceTrigger=LostFocus}"/>
         </Grid>
       </GroupBox>
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
@@ -37,6 +73,51 @@
           <TextBlock Grid.Row="5" Text="混合帧"/><TextBox Grid.Row="5" Grid.Column="1" Text="{Binding SelectedActionBlendFrames, UpdateSourceTrigger=LostFocus}"/>
         </Grid>
       </GroupBox>
+      <GroupBox Header="动作替换与触发器">
+        <StackPanel>
+          <TextBlock Text="替换原版轨道（逗号分隔）"/>
+          <TextBox Text="{Binding SelectedActionReplacesCsv, UpdateSourceTrigger=LostFocus}"
+                   ToolTip="例如 anim_shooting, anim_attack；身体、头部和附件发出的同名请求都会切换到当前自定义动作。"/>
+          <TextBlock Margin="0,7,0,2" Text="动作事件"/>
+          <ListBox Height="88" ItemsSource="{Binding SelectedActionEvents}"
+                   SelectedItem="{Binding SelectedEvent, Mode=TwoWay}" DisplayMemberPath="Summary"/>
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+            <Button Content="＋ 添加事件" Click="AddEvent_Click"/>
+            <Button Content="－ 删除事件" Click="RemoveEvent_Click"/>
+          </StackPanel>
+          <Grid Margin="0,4,0,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="115"/><ColumnDefinition Width="*" MinWidth="120"/></Grid.ColumnDefinitions>
+            <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+            <TextBlock Grid.Row="0" Text="事件 ID"/><TextBox Grid.Row="0" Grid.Column="1" Text="{Binding SelectedEventId, UpdateSourceTrigger=LostFocus}"/>
+            <TextBlock Grid.Row="1" Text="动作内帧（0 起）"/><TextBox Grid.Row="1" Grid.Column="1" Text="{Binding SelectedEventFrame, UpdateSourceTrigger=LostFocus}"/>
+            <TextBlock Grid.Row="2" Text="归一化时间"/><TextBox Grid.Row="2" Grid.Column="1" Text="{Binding SelectedEventNormalizedTime, UpdateSourceTrigger=LostFocus}" ToolTip="帧和归一化时间只填一个；归一化范围 0 到 1。"/>
+            <TextBlock Grid.Row="3" Text="目标动作"/><TextBox Grid.Row="3" Grid.Column="1" Text="{Binding SelectedEventTargetAction, UpdateSourceTrigger=LostFocus}" ToolTip="PLAY_ACTION 事件必填，例如 idle。"/>
+            <TextBlock Grid.Row="4" Text="每轮触发一次"/><CheckBox Grid.Row="4" Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding SelectedEventOncePerLoop, Mode=TwoWay}"/>
+          </Grid>
+          <TextBlock Margin="2,5" Foreground="#9FC3D8" TextWrapping="Wrap"
+                     Text="事件会保存并导出；当前 DLL 尚未执行 FIRE_PROJECTILE、PLAY_ACTION 或其他事件。"/>
+        </StackPanel>
+      </GroupBox>
+      <GroupBox Header="动画运行时">
+        <Grid>
+          <Grid.ColumnDefinitions><ColumnDefinition Width="115"/><ColumnDefinition Width="*" MinWidth="120"/></Grid.ColumnDefinitions>
+          <Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+          <TextBlock Grid.Row="0" Text="初始动作 ID"/><TextBox Grid.Row="0" Grid.Column="1" Text="{Binding ProjectInitialActionId, UpdateSourceTrigger=LostFocus}"/>
+          <TextBlock Grid.Row="1" Text="隐藏模板附件"/><CheckBox Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding ProjectHideTemplateAttachments, Mode=TwoWay}" ToolTip="保存并导出附件显示策略；当前 DLL 尚未执行此字段。"/>
+        </Grid>
+      </GroupBox>
+      <GroupBox Header="发布用途">
+        <StackPanel Margin="3">
+          <ComboBox ItemsSource="{Binding IntegrationModes}"
+                    DisplayMemberPath="Label"
+                    SelectedValuePath="Mode"
+                    SelectedValue="{Binding ProjectIntegrationMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+          <TextBlock Margin="0,6,0,0" Foreground="#9FC3D8" TextWrapping="Wrap"
+                     Text="{Binding ProjectIntegrationModeSummary}"/>
+          <TextBlock Margin="0,5,0,0" Foreground="#9EABB8" TextWrapping="Wrap"
+                     Text="发布时只复制动画实际引用的 Mod 图片；原版图片符号保持原引用，不重复写入 textures.jsonc。"/>
+        </StackPanel>
+      </GroupBox>
       <GroupBox Header="植物 / 僵尸配置">
         <Grid>
           <Grid.ColumnDefinitions><ColumnDefinition Width="115"/><ColumnDefinition Width="*" MinWidth="120"/></Grid.ColumnDefinitions>
@@ -46,14 +127,14 @@
           </Grid.RowDefinitions>
           <TextBlock Grid.Row="0" Text="数字 ID"/><TextBox Grid.Row="0" Grid.Column="1" Text="{Binding ProjectNumericEntityId}"/>
           <TextBlock Grid.Row="1" Text="模板 ID"/><TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ProjectTemplateEntityId}"/>
-          <TextBlock Grid.Row="2" Text="植物模板速选"/>
+          <TextBlock Grid.Row="2" Text="{Binding ProjectTemplatePickerLabel}"/>
           <ComboBox Grid.Row="2" Grid.Column="1"
-                    ItemsSource="{Binding PlantTemplates}"
+                    ItemsSource="{Binding EntityTemplates}"
                     DisplayMemberPath="DisplayLabel"
                     SelectedValuePath="Id"
                     SelectedValue="{Binding ProjectTemplateEntityId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                    IsEnabled="{Binding IsPlantProject}"
-                    ToolTip="全局目录中的 0–48 为当前 DLL 可复用模板"/>
+                    IsEnabled="{Binding HasEntityTemplates}"
+                    ToolTip="{Binding ProjectTemplatePickerHelp}"/>
           <TextBlock Grid.Row="3" Grid.ColumnSpan="2" Margin="3,4,3,7"
                      Foreground="#9FC3D8" TextWrapping="Wrap"
                      Text="{Binding ProjectTemplateSummary}"/>

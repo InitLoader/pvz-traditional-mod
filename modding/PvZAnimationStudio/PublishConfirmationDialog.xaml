@@ -1,0 +1,159 @@
+<Window x:Class="PvZAnimationStudio.PublishConfirmationDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="导出与安装确认" Width="760" Height="790" MinWidth="680" MinHeight="650"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResizeWithGrip"
+        Background="#171D24" Foreground="#F2F6F8" ShowInTaskbar="False">
+  <Grid Margin="18">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <StackPanel>
+      <TextBlock Text="最终检查" FontSize="25" FontWeight="SemiBold" />
+      <TextBlock Margin="0,5,0,0" Foreground="#AFC0CE" TextWrapping="Wrap"
+                 Text="这些值会写入导出文件或游戏配置。请在继续前确认实体类型、字符串 ID、名称、模板和战斗属性。" />
+    </StackPanel>
+
+    <Border Grid.Row="1" Margin="0,14,0,12" Padding="12,9" CornerRadius="6"
+            Background="#23372E" BorderBrush="#3C8A61" BorderThickness="1">
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Left" Text="操作" Foreground="#9FD9B6" FontWeight="SemiBold" />
+        <TextBlock x:Name="OperationText" Margin="14,0,0,0" FontWeight="SemiBold" />
+      </DockPanel>
+    </Border>
+
+    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="0,0,8,0">
+        <GroupBox Header="接入模式">
+          <StackPanel Margin="4">
+            <ComboBox x:Name="ModeCombo" Margin="6,4" DisplayMemberPath="Name"
+                      SelectionChanged="Field_Changed"/>
+            <TextBlock x:Name="ModeDescriptionText" Margin="6,3,6,5" Foreground="#9FC3D8"
+                       TextWrapping="Wrap"/>
+          </StackPanel>
+        </GroupBox>
+        <GroupBox Header="必须确认">
+          <Grid Margin="4">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="150" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" VerticalAlignment="Center" Text="实体类型 *" />
+            <ComboBox x:Name="KindCombo" Grid.Row="0" Grid.Column="1" Margin="6,4"
+                      DisplayMemberPath="Name" SelectionChanged="Field_Changed" />
+
+            <TextBlock Grid.Row="1" VerticalAlignment="Center" Text="字符串 ID *" />
+            <TextBox x:Name="IdBox" Grid.Row="1" Grid.Column="1" Margin="6,4" TextChanged="Field_Changed"
+                     ToolTip="1–64 位；仅英文字母、数字和下划线。同一 ID 不能同时用于植物和僵尸。" />
+
+            <TextBlock Grid.Row="2" VerticalAlignment="Center" Text="中文名称 *" />
+            <TextBox x:Name="NameBox" Grid.Row="2" Grid.Column="1" Margin="6,4" />
+
+            <TextBlock x:Name="NumericIdLabel" Grid.Row="3" VerticalAlignment="Center" Text="数字 ID *" />
+            <TextBox x:Name="NumericIdBox" Grid.Row="3" Grid.Column="1" Margin="6,4" />
+
+            <TextBlock x:Name="TemplateIdLabel" Grid.Row="4" VerticalAlignment="Center" Text="模板 ID *" />
+            <TextBox x:Name="TemplateIdBox" Grid.Row="4" Grid.Column="1" Margin="6,4" TextChanged="Field_Changed" />
+
+            <TextBlock Grid.Row="5" VerticalAlignment="Center" Text="模板与载体" />
+            <Border Grid.Row="5" Grid.Column="1" Margin="6,4" Padding="8" CornerRadius="4" Background="#202933">
+              <StackPanel>
+                <TextBlock x:Name="TemplateSummaryText" TextWrapping="Wrap" />
+                <TextBlock x:Name="CarrierText" Margin="0,3,0,0" Foreground="#75D8FF" FontWeight="SemiBold" />
+              </StackPanel>
+            </Border>
+
+            <TextBlock Grid.Row="6" VerticalAlignment="Center" Text="初始动作 *" />
+            <ComboBox x:Name="InitialActionCombo" Grid.Row="6" Grid.Column="1" Margin="6,4" />
+
+            <TextBlock Grid.Row="7" VerticalAlignment="Top" Margin="0,8,0,0" Text="介绍" />
+            <TextBox x:Name="DescriptionBox" Grid.Row="7" Grid.Column="1" Margin="6,4" Height="66"
+                     AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" />
+          </Grid>
+        </GroupBox>
+
+        <GroupBox x:Name="CommonCombatFields" Header="通用战斗属性">
+          <Grid Margin="4">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="150" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="150" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock VerticalAlignment="Center" Text="生命 *" />
+            <TextBox x:Name="HealthBox" Grid.Column="1" Margin="6,4" />
+            <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="攻击伤害 *" />
+            <TextBox x:Name="DamageBox" Grid.Column="3" Margin="6,4" />
+          </Grid>
+        </GroupBox>
+
+        <GroupBox x:Name="PlantFields" Header="植物属性">
+          <Grid Margin="4">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="150" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="150" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <TextBlock VerticalAlignment="Center" Text="阳光" />
+            <TextBox x:Name="CostBox" Grid.Column="1" Margin="6,4" />
+            <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="冷却" />
+            <TextBox x:Name="RechargeBox" Grid.Column="3" Margin="6,4" />
+            <TextBlock Grid.Row="1" VerticalAlignment="Center" Text="攻击间隔" />
+            <TextBox x:Name="LaunchRateBox" Grid.Row="1" Grid.Column="1" Margin="6,4" />
+            <TextBlock Grid.Row="1" Grid.Column="2" VerticalAlignment="Center" Text="子弹类型" />
+            <TextBox x:Name="ProjectileTypeBox" Grid.Row="1" Grid.Column="3" Margin="6,4" />
+            <TextBlock Grid.Row="2" VerticalAlignment="Center" Text="每次发射数" />
+            <TextBox x:Name="ShotsBox" Grid.Row="2" Grid.Column="1" Margin="6,4" />
+          </Grid>
+        </GroupBox>
+
+        <Border Margin="6" Padding="10" CornerRadius="5" Background="#202933" BorderBrush="#455565" BorderThickness="1">
+          <StackPanel>
+            <TextBlock x:Name="ProjectSummaryText" FontWeight="SemiBold" />
+            <TextBlock x:Name="TargetPathText" Margin="0,4,0,0" Foreground="#AFC0CE" TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+
+        <Border x:Name="ValidationBorder" Margin="6" Padding="10" CornerRadius="5"
+                Background="#3A2525" BorderBrush="#B95D5D" BorderThickness="1" Visibility="Collapsed">
+          <TextBlock x:Name="ValidationText" Foreground="#FFD0D0" TextWrapping="Wrap" />
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+
+    <Grid Grid.Row="3" Margin="0,12,0,0">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <CheckBox x:Name="AcknowledgeBox" VerticalAlignment="Center"
+                Content="我已核对实体类型、ID、模板和数值" />
+      <StackPanel Grid.Column="1" Orientation="Horizontal">
+        <Button MinWidth="92" Content="取消" IsCancel="True" />
+        <Button MinWidth="126" Margin="8,0,0,0" Content="确认并继续" IsDefault="True"
+                Style="{StaticResource PrimaryButtonStyle}" Click="Confirm_Click" />
+      </StackPanel>
+    </Grid>
+  </Grid>
+</Window>

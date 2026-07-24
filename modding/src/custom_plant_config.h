@@ -20,6 +20,7 @@ struct CustomPlantDefinition {
     std::string name = "Custom Peashooter";
     std::string description;
     std::string animationId;
+    bool hideTemplateAttachments = true;
     int templatePlantId = 0;
     bool unlocked = true;
     int chooserX = 470;

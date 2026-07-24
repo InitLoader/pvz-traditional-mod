@@ -17,15 +17,23 @@ public sealed record ImageResourceInfo(BitmapSource Bitmap, int Columns = 1, int
 public sealed class OriginalResourceService
 {
     private readonly Dictionary<string, string> _symbolIndex = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _originalSymbols = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, (int Columns, int Rows)> _resourceLayout = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ImageResourceInfo?> _imageCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, BitmapSource> _bitmapPathCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, BitmapSource?> _thumbnailCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, BitmapSource?> _celCache = new(StringComparer.OrdinalIgnoreCase);
     private string? _indexedRoot;
 
     public void RebuildIndex(string? gameRoot)
     {
         _symbolIndex.Clear();
+        _originalSymbols.Clear();
         _resourceLayout.Clear();
         _imageCache.Clear();
+        _bitmapPathCache.Clear();
+        _thumbnailCache.Clear();
+        _celCache.Clear();
         _indexedRoot = null;
         if (string.IsNullOrWhiteSpace(gameRoot) || !Directory.Exists(gameRoot)) return;
 
@@ -46,9 +54,11 @@ public sealed class OriginalResourceService
                                         Path.GetExtension(file).Equals(".JPEG", StringComparison.OrdinalIgnoreCase)))
             {
                 var stem = Path.GetFileNameWithoutExtension(file);
-                AddSymbol($"IMAGE_REANIM_{NormalizeSymbol(stem)}", file);
-                AddSymbol($"IMAGE_{NormalizeSymbol(stem)}", file);
-                AddSymbol(NormalizeSymbol(stem), file);
+                var isOriginal = !directory.Contains(
+                    Path.Combine("pvzmod", "images"), StringComparison.OrdinalIgnoreCase);
+                AddSymbol($"IMAGE_REANIM_{NormalizeSymbol(stem)}", file, isOriginal);
+                AddSymbol($"IMAGE_{NormalizeSymbol(stem)}", file, isOriginal);
+                AddSymbol(NormalizeSymbol(stem), file, isOriginal);
             }
         }
         _indexedRoot = fullRoot;
@@ -56,6 +66,7 @@ public sealed class OriginalResourceService
 
     public string ImportImage(EditorProject project, string file)
     {
+        ValidateImportImage(file);
         var stem = NormalizeSymbol(Path.GetFileNameWithoutExtension(file));
         var symbol = stem.StartsWith("IMAGE_REANIM_", StringComparison.OrdinalIgnoreCase)
             ? stem
@@ -65,9 +76,32 @@ public sealed class OriginalResourceService
         while (project.ImageBindings.ContainsKey(candidate))
             candidate = $"{symbol}_{suffix++}";
         project.ImageBindings[candidate] = Path.GetFullPath(file);
+        project.OriginalImageReferences.Remove(candidate);
         project.ImageLayouts[candidate] = new ImageLayoutDefinition();
         _imageCache.Remove(candidate);
+        _thumbnailCache.Remove(candidate);
         return candidate;
+    }
+
+    public void ValidateImportImage(string file)
+    {
+        if (string.IsNullOrWhiteSpace(file) || !File.Exists(file))
+            throw new FileNotFoundException("找不到要导入的图片。", file);
+        var extension = Path.GetExtension(file);
+        if (!extension.Equals(".png", StringComparison.OrdinalIgnoreCase) &&
+            !extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase) &&
+            !extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("只支持真正的 PNG、JPG 或 JPEG 图片。不能只修改文件扩展名。 ");
+        try
+        {
+            _ = LoadBitmap(Path.GetFullPath(file));
+        }
+        catch (Exception exception)
+        {
+            throw new InvalidDataException(
+                "图片内容无法解码。请用画图或图像软件真正另存为 PNG/JPG，不能把 AVIF、WebP 等文件直接改扩展名。",
+                exception);
+        }
     }
 
     public string? ResolvePath(EditorProject project, string? symbol)
@@ -86,6 +120,40 @@ public sealed class OriginalResourceService
         return _symbolIndex.TryGetValue(normalized, out var original) && File.Exists(original) ? original : null;
     }
 
+    public bool IsOriginalGameSymbol(EditorProject project, string? symbol)
+    {
+        if (string.IsNullOrWhiteSpace(symbol)) return false;
+        if (!string.Equals(_indexedRoot, project.GameRoot, StringComparison.OrdinalIgnoreCase))
+            RebuildIndex(project.GameRoot);
+        return _originalSymbols.Contains(NormalizeSymbol(symbol));
+    }
+
+    public void MarkOriginalReferences(EditorProject project, bool preferOriginalResources = false)
+    {
+        foreach (var symbol in project.Animation.Tracks.SelectMany(track => track.Frames)
+                     .Select(frame => frame.Image)
+                     .Where(symbol => !string.IsNullOrWhiteSpace(symbol))
+                     .Select(symbol => symbol!)
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (!IsOriginalGameSymbol(project, symbol)) continue;
+            var normalized = NormalizeSymbol(symbol);
+            if (!_symbolIndex.TryGetValue(normalized, out var originalPath) || !File.Exists(originalPath)) continue;
+            if (preferOriginalResources)
+            {
+                project.ImageBindings[symbol] = originalPath;
+                project.ImageLayouts.Remove(symbol);
+                project.OriginalImageReferences.Add(symbol);
+                continue;
+            }
+            if (!project.ImageBindings.ContainsKey(symbol))
+            {
+                project.ImageBindings[symbol] = originalPath;
+                project.OriginalImageReferences.Add(symbol);
+            }
+        }
+    }
+
     public ImageResourceInfo? ResolveImage(EditorProject project, string? symbol)
     {
         if (string.IsNullOrWhiteSpace(symbol)) return null;
@@ -94,8 +162,11 @@ public sealed class OriginalResourceService
         if (path is null) return _imageCache[symbol] = null;
         try
         {
-            var image = LoadBitmap(path);
-            image = ApplyLegacyAlphaMask(path, image);
+            if (!_bitmapPathCache.TryGetValue(path, out var image))
+            {
+                image = ApplyLegacyAlphaMask(path, LoadBitmap(path));
+                _bitmapPathCache[path] = image;
+            }
             var normalized = NormalizeSymbol(symbol);
             var layout = project.ImageLayouts.TryGetValue(symbol, out var embeddedLayout)
                 ? (Math.Max(1, embeddedLayout.Columns), Math.Max(1, embeddedLayout.Rows))
@@ -110,6 +181,50 @@ public sealed class OriginalResourceService
 
     public BitmapSource? ResolveBitmap(EditorProject project, string? symbol) =>
         ResolveImage(project, symbol)?.Bitmap;
+
+    public BitmapSource? ResolveThumbnail(EditorProject project, string? symbol)
+    {
+        if (string.IsNullOrWhiteSpace(symbol)) return null;
+        if (_thumbnailCache.TryGetValue(symbol, out var cached)) return cached;
+        var resource = ResolveImage(project, symbol);
+        if (resource is null) return _thumbnailCache[symbol] = null;
+        try
+        {
+            var width = Math.Max(1, (int)Math.Floor(resource.CelWidth));
+            var height = Math.Max(1, (int)Math.Floor(resource.CelHeight));
+            var crop = new CroppedBitmap(resource.Bitmap,
+                new System.Windows.Int32Rect(0, 0,
+                    Math.Min(width, resource.Bitmap.PixelWidth), Math.Min(height, resource.Bitmap.PixelHeight)));
+            crop.Freeze();
+            return _thumbnailCache[symbol] = crop;
+        }
+        catch
+        {
+            return _thumbnailCache[symbol] = resource.Bitmap;
+        }
+    }
+
+    public BitmapSource? ResolveCelBitmap(EditorProject project, string? symbol, float frame)
+    {
+        if (string.IsNullOrWhiteSpace(symbol)) return null;
+        var resource = ResolveImage(project, symbol);
+        if (resource is null) return null;
+        var rect = ReanimationRenderMath.GetCelRect(resource, frame);
+        if (rect.Width == resource.Bitmap.PixelWidth && rect.Height == resource.Bitmap.PixelHeight)
+            return resource.Bitmap;
+        var key = $"{symbol}|{rect.X}|{rect.Y}|{rect.Width}|{rect.Height}";
+        if (_celCache.TryGetValue(key, out var cached)) return cached;
+        try
+        {
+            var cropped = new CroppedBitmap(resource.Bitmap, rect);
+            cropped.Freeze();
+            return _celCache[key] = cropped;
+        }
+        catch
+        {
+            return _celCache[key] = null;
+        }
+    }
 
     private void ReadResourceManifest(string manifestPath)
     {
@@ -145,7 +260,7 @@ public sealed class OriginalResourceService
                     var assetBase = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(manifestPath))!, defaultPath, path);
                     var absolute = new[] { assetBase + ".png", assetBase + ".jpg", assetBase + ".jpeg" }
                         .FirstOrDefault(File.Exists);
-                    if (absolute is not null) AddSymbol(symbol, absolute);
+                    if (absolute is not null) AddSymbol(symbol, absolute, true);
                 }
             }
         }
@@ -155,14 +270,21 @@ public sealed class OriginalResourceService
         }
     }
 
-    private void AddSymbol(string symbol, string path) => _symbolIndex.TryAdd(NormalizeSymbol(symbol), path);
+    private void AddSymbol(string symbol, string path, bool isOriginal)
+    {
+        var normalized = NormalizeSymbol(symbol);
+        _symbolIndex.TryAdd(normalized, path);
+        if (isOriginal) _originalSymbols.Add(normalized);
+    }
 
     private static BitmapSource LoadBitmap(string path)
     {
+        using var stream = new FileStream(
+            path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
         var image = new BitmapImage();
         image.BeginInit();
         image.CacheOption = BitmapCacheOption.OnLoad;
-        image.UriSource = new Uri(path, UriKind.Absolute);
+        image.StreamSource = stream;
         image.EndInit();
         image.Freeze();
         return image;

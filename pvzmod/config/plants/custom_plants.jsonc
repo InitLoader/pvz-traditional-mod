@@ -1,64 +1,6 @@
 {
   "schemaVersion": 1,
 
-  // 新植物默认解锁。每 40 张组成一个选卡分页，最多可定义 512 张。
-  // 修改本文件后需完全退出并重启游戏，运行中的选卡界面不会热重载。
-  "plants": [
-    {
-      "id": 1000,
-      "name": "测试豌豆射手·改",
-      "description": "独立逻辑植物；当前暂用豌豆射手动画和动作。",
-
-      // 仅决定当前套用的原版动画、动作和目标选择逻辑；0=豌豆射手。
-      "templatePlantId": 0,
-      "unlocked": true,
-
-      // 以下是新植物自己的完整数值，不会修改原版豌豆射手。
-      "cost": 120,
-      "rechargeTime": 750,
-      "health": 300,
-      "launchRate": 150,
-      "initialLaunchDelay": {
-        "min": 0,
-        "max": 150
-      },
-
-      "attack": {
-        // projectile=使用下面的独立子弹配置；template=完全沿用模板攻击。
-        "mode": "projectile",
-        "projectileType": 2,
-        "damage": 1990,
-        "shotsPerAttack": 1,
-        "damageRangeFlags": -1
-      }
-    },
-     {
-      "id": 2000,
-      "name": "sdfsefjkse",
-      "description": "独立逻辑植物；当前暂用豌豆射手动画和动作。",
-
-      // 仅决定当前套用的原版动画、动作和目标选择逻辑；0=豌豆射手。
-      "templatePlantId": 4,
-      "unlocked": true,
-
-      // 以下是新植物自己的完整数值，不会修改原版豌豆射手。
-      "cost": 10,
-      "rechargeTime": 150,
-      "health": 300,
-      "launchRate": 150,
-      "initialLaunchDelay": {
-        "min": 0,
-        "max": 150
-      },
-
-      "attack": {
-        // projectile=使用下面的独立子弹配置；template=完全沿用模板攻击。
-        "mode": "projectile",
-        "projectileType": 0,
-        "damage": 1990,
-        "shotsPerAttack": 1,
-        "damageRangeFlags": -1
-      }
-    }
-  ]
+  // 当前不启用任何自定义植物。保留空数组可避免运行时把“主动停用”误报成配置丢失。
+  "plants": []
 }

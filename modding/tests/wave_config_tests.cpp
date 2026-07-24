@@ -1,3 +1,5 @@
+#include "audio_replacement_config.h"
+#include "audio_sample_config.h"
 #include "compiled_reanim.h"
 #include "global_config.h"
 #include "custom_plant_config.h"
@@ -5,7 +7,12 @@
 #include "external_animation_config.h"
 #include "external_texture_config.h"
 #include "plant_attack_config.h"
+#include "plant_animation_override_config.h"
+#include "original_sound_catalog.h"
 #include "raw_reanim.h"
+#include "reanimation_carrier_catalog.h"
+#include "reanimation_playback_state.h"
+#include "reanimation_track_instance_state.h"
 #include "reanim_loader.h"
 #include "runtime_reanim_definition.h"
 #include "seed_ui_config.h"
@@ -33,6 +40,56 @@
 namespace {
 
 int g_failures = 0;
+void Expect(bool condition, const std::string& message);
+
+void TestAudioConfigs() {
+    const std::filesystem::path root = std::filesystem::temp_directory_path();
+    const std::filesystem::path samplesPath = root / "pvzmod_audio_samples_test.jsonc";
+    const std::filesystem::path replacementsPath = root / "pvzmod_audio_replacements_test.jsonc";
+    {
+        std::ofstream output(samplesPath, std::ios::binary | std::ios::trunc);
+        output << R"({
+            "schemaVersion": 1,
+            "samples": {
+                "rage_roar": {"path": "pvzmod/audio/samples/rage.ogg"},
+                "Ui_Click": {"path": "pvzmod/audio/samples/click.wav", "enabled": false}
+            }
+        })";
+    }
+    {
+        std::ofstream output(replacementsPath, std::ios::binary | std::ios::trunc);
+        output << R"({
+            "schemaVersion": 1,
+            "replaceOriginal": {
+                "sound_chomp": {"sampleId": "rage_roar"}
+            }
+        })";
+    }
+    const auto samples = pvzmod::LoadAudioSampleConfig(samplesPath);
+    const auto replacements = pvzmod::LoadAudioReplacementConfig(replacementsPath);
+    std::error_code error;
+    std::filesystem::remove(samplesPath, error);
+    std::filesystem::remove(replacementsPath, error);
+    Expect(samples.Ok(), "valid external audio sample config should load");
+    Expect(replacements.Ok(), "valid sparse audio replacement config should load");
+    if (samples.Ok()) {
+        Expect(samples.config->Find("RAGE_ROAR") != nullptr,
+               "audio IDs should be case-insensitive and normalized");
+        Expect(samples.config->Find("ui_click") != nullptr && !samples.config->Find("ui_click")->enabled,
+               "disabled samples should remain registered but inactive");
+    }
+    if (replacements.Ok()) {
+        const auto* replacement = replacements.config->Find("SOUND_CHOMP");
+        Expect(replacement != nullptr && replacement->sampleId == "RAGE_ROAR",
+               "replacement should preserve sparse SOUND_* to external ID routing");
+    }
+    Expect(pvzmod::FindOriginalSoundGlobalRva("sound_chomp") == std::optional<std::uintptr_t>(0x002A74D8),
+           "original sound catalog should resolve the verified CHOMP global RVA");
+    Expect(pvzmod::IsKnownOriginalSound("SOUND_BUTTONCLICK") &&
+           pvzmod::IsKnownOriginalSound("SOUND_ZOMBIE_FALLING_2") &&
+           !pvzmod::IsKnownOriginalSound("SOUND_NOT_REAL"),
+           "original sound catalog should cover both resource groups and reject unknown symbols");
+}
 
 void Expect(const bool condition, const std::string& message) {
     if (!condition) {
@@ -343,6 +400,7 @@ void TestZombieAttributeConfigAndArmorChances() {
                 "0": {
                     "bodyHealth": 540,
                     "attackDamage": 8,
+                    "animationId": "CUSTOM_NORMAL_ZOMBIE",
                     "armorRolls": [
                         {"armorId":1001,"chance":0},
                         {"armorId":2001,"chance":100}
@@ -381,6 +439,8 @@ void TestZombieAttributeConfigAndArmorChances() {
            "omitted original armor catalog values should remain fully sparse");
     Expect(normal && normal->bodyHealth == 540, "body health override should be parsed");
     Expect(normal && normal->attackDamage == 8, "independent attack damage should be parsed");
+    Expect(normal && normal->animationId == "CUSTOM_NORMAL_ZOMBIE",
+           "sparse zombie animationId should be parsed without affecting omitted zombie ids");
     const pvzmod::ArmorDefinition* wallnut = loaded.config->FindArmor(3001);
     Expect(wallnut && wallnut->visual == pvzmod::ArmorVisual::WallnutHead &&
                wallnut->slot == pvzmod::ArmorSlot::Helmet && wallnut->health == 900,
@@ -510,6 +570,59 @@ void TestSeedUiAndCustomPlantConfig() {
                plant.attack.shotsPerAttack == 2,
                "custom projectile fields should be retained");
     }
+}
+
+void TestPlantAnimationOverrideConfig() {
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "pvzmod_plant_animation_override_test.jsonc";
+    {
+        std::ofstream output(path, std::ios::binary | std::ios::trunc);
+        output << R"({
+            "schemaVersion": 1,
+            // Only Chomper is replaced; every omitted plant remains original.
+            "plants": {
+                "6": { "animationId": "MY_CHOMPER" }
+            }
+        })";
+    }
+    const auto loaded = pvzmod::LoadPlantAnimationOverrideConfig(path);
+    Expect(loaded.Ok(), "valid sparse original-plant animation config should load");
+    if (loaded.Ok()) {
+        const auto* chomper = loaded.config->FindPlant(6);
+        Expect(chomper != nullptr && chomper->animationId == "MY_CHOMPER",
+               "configured original plant should expose its animationId");
+        Expect(loaded.config->FindPlant(0) == nullptr && loaded.config->plants.size() == 1,
+               "omitted original plants must remain untouched");
+    }
+
+    {
+        std::ofstream output(path, std::ios::binary | std::ios::trunc);
+        output << R"({"schemaVersion":1,"plants":{"49":{"animationId":"BAD"}}})";
+    }
+    const auto invalidType = pvzmod::LoadPlantAnimationOverrideConfig(path);
+    Expect(!invalidType.Ok(), "plant animation override IDs outside 0-48 should be rejected");
+
+    {
+        std::ofstream output(path, std::ios::binary | std::ios::trunc);
+        output << R"({"schemaVersion":1,"plants":{"6":{"animationId":"../BAD"}}})";
+    }
+    const auto invalidAnimation = pvzmod::LoadPlantAnimationOverrideConfig(path);
+    Expect(!invalidAnimation.Ok(), "unsafe original-plant animation IDs should be rejected");
+    std::error_code error;
+    std::filesystem::remove(path, error);
+}
+
+void TestZombieConfigRejectsInvalidAnimationId() {
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "pvzmod_zombie_bad_animation_id_test.jsonc";
+    {
+        std::ofstream output(path, std::ios::binary | std::ios::trunc);
+        output << R"({"schemaVersion":1,"zombies":{"0":{"animationId":"bad/path"}}})";
+    }
+    const pvzmod::ZombieConfigLoadResult loaded = pvzmod::LoadZombieConfig(path);
+    std::error_code error;
+    std::filesystem::remove(path, error);
+    Expect(!loaded.Ok(), "zombie animationId must use the shared external resource ID grammar");
 }
 
 void AppendU32(std::vector<std::uint8_t>& output, const std::uint32_t value) {
@@ -648,11 +761,15 @@ void TestExternalAnimationConfigAndRawReanim() {
             "id":"PLANT_DEMO_01",
             "path":"pvzmod/animations/plants/demo/demo.reanim",
             "carrierReanimation":"REANIM_PEASHOOTER",
+            "initialAction":"idle",
+            "savedGameRecovery":true,
             "images":{"IMAGE_REANIM_DEMO_BODY":"KILL"},
             "actions":{
               "idle":{"track":"anim_idle","loop":"loop","rate":1.25},
               "attack":{"track":"anim_attack","loop":"once_hold","blendFrames":3,
-                "events":[{"id":"FIRE_PROJECTILE","frame":1}]}
+                "replaces":["anim_shooting","anim_head_shooting"],
+                "events":[{"id":"FIRE_PROJECTILE","frame":1},
+                          {"id":"PLAY_ACTION","normalizedTime":0.9,"action":"idle"}]}
             },
             "locators":{"projectile":"locator_mouth"}
           }]
@@ -686,12 +803,15 @@ void TestExternalAnimationConfigAndRawReanim() {
            "external animation metadata should parse");
     if (config.Ok()) {
         const auto* animation = config.config->Find("PLANT_DEMO_01");
-        Expect(animation != nullptr && animation->images.at("IMAGE_REANIM_DEMO_BODY") == "KILL",
-               "animation image symbols should retain external texture ids");
+        Expect(animation != nullptr && animation->savedGameRecovery &&
+                   animation->images.at("IMAGE_REANIM_DEMO_BODY") == "KILL",
+               "animation recovery metadata and image symbols should parse");
         const auto* attack = animation == nullptr ? nullptr : animation->FindAction("attack");
         Expect(attack != nullptr && attack->loop == pvzmod::ExternalAnimationLoopMode::OnceHold &&
-                   attack->blendFrames == 3 && attack->events.size() == 1,
-               "animation action playback and event metadata should parse");
+                   attack->blendFrames == 3 && attack->events.size() == 2 &&
+                   attack->events[1].targetAction == "idle" &&
+                   animation->FindActionForTrack("ANIM_HEAD_SHOOTING") == attack,
+                "animation action playback and event metadata should parse");
     }
     Expect(raw.Ok() && raw.definition->FrameCount() == 4,
            "Raw reanimation tracks with equal frame counts should parse");
@@ -743,9 +863,16 @@ void TestRuntimeReanimDefinitionBuild() {
     }
 
     pvzmod::ExternalAnimationDefinition missingBinding;
+    const auto originalFallback = pvzmod::BuildRuntimeReanimDefinition(
+        raw, missingBinding, [expectedImage](const std::string_view id) {
+            return id == "IMAGE_REANIM_TEST_BODY" ? expectedImage : nullptr;
+        });
+    Expect(originalFallback.Ok() &&
+               originalFallback.storage->Definition()->tracks[0].transforms[0].image == expectedImage,
+           "unbound IMAGE_REANIM symbols should be reusable through the original-image resolver");
     const auto rejected = pvzmod::BuildRuntimeReanimDefinition(
         raw, missingBinding, [](const std::string_view) { return static_cast<void*>(nullptr); });
-    Expect(!rejected.Ok(), "runtime Definition build must reject unmapped external image symbols");
+    Expect(!rejected.Ok(), "runtime Definition build must reject unresolved image symbols");
 }
 
 void TestExternalAnimationConfigRejectsUnsafeInput() {
@@ -765,6 +892,26 @@ void TestExternalAnimationConfigRejectsUnsafeInput() {
     std::error_code error;
     std::filesystem::remove(path, error);
     Expect(!loaded.Ok(), "external animation traversal and ambiguous event times must be rejected");
+}
+
+void TestExternalAnimationConfigRejectsConflictingMappings() {
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "pvzmod_external_animation_conflict_test.jsonc";
+    {
+        std::ofstream output(path, std::ios::binary | std::ios::trunc);
+        output << R"({"schemaVersion":1,"animations":[{
+          "id":"BAD","path":"pvzmod/animations/plants/bad.reanim",
+          "carrierReanimation":"REANIM_PEASHOOTER","initialAction":"idle",
+          "actions":{
+            "idle":{"track":"anim_idle","replaces":["anim_shared"]},
+            "attack":{"track":"anim_attack","replaces":["ANIM_SHARED"]}
+          }
+        }]})";
+    }
+    const auto loaded = pvzmod::LoadExternalAnimationConfig(path);
+    std::error_code error;
+    std::filesystem::remove(path, error);
+    Expect(!loaded.Ok(), "multiple custom actions must not claim the same template track");
 }
 
 void TestRawReanimRejectsUnsafeOrMalformedInput() {
@@ -953,10 +1100,100 @@ void TestEliteZombieConfigAndPriority() {
            "advanced track validation should accept original names and reject traversal-like input");
 }
 
+void TestReanimationCarrierCatalog() {
+    Expect(pvzmod::ResolveCarrierReanimationType("REANIM_CATTAIL") == 81,
+           "Cattail carrier symbol should resolve to ReanimationType 81");
+    Expect(pvzmod::ResolvePlantTemplateCarrierReanimationType(43) == 81,
+           "plant template 43 must use the Cattail carrier for saved games");
+    Expect(pvzmod::ResolveZombieTypeCarrierReanimationType(0) == 21 &&
+           pvzmod::ResolveZombieTypeCarrierReanimationType(3) == 54 &&
+           pvzmod::ResolveZombieTypeCarrierReanimationType(32) == 56,
+           "zombie template carriers should cover ordinary, pole-vaulter and red-eye bodies");
+    Expect(pvzmod::ResolvePlantTemplateCarrierReanimationType(49) == -1 &&
+           pvzmod::ResolveZombieTypeCarrierReanimationType(33) == -1,
+           "unsupported template IDs must not silently select a carrier");
+}
+
+void TestReanimationTrackInstanceStateTransfer() {
+    struct FakeDefinition {
+        pvzmod::RuntimeReanimatorTrack* tracks;
+        int trackCount;
+        float fps;
+        void* atlas;
+    };
+    std::array<pvzmod::RuntimeReanimatorTrack, 2> tracks = {{
+        {"anim_bucket", nullptr, 0},
+        {"Zombie_body", nullptr, 0}
+    }};
+    FakeDefinition definition{tracks.data(), static_cast<int>(tracks.size()), 12.0f, nullptr};
+    alignas(8) std::array<std::byte, 0x60 * 2> instances{};
+    alignas(8) std::array<std::byte, 0x60> reanimation{};
+    *reinterpret_cast<void**>(reanimation.data() + 0x0C) = &definition;
+    *reinterpret_cast<void**>(reanimation.data() + 0x58) = instances.data();
+    *reinterpret_cast<int*>(instances.data() + 0x48) = -1;
+    *reinterpret_cast<bool*>(instances.data() + 0x5C) = true;
+    *reinterpret_cast<bool*>(instances.data() + 0x5D) = false;
+    *reinterpret_cast<int*>(instances.data() + 0x60 + 0x48) = 3;
+
+    const auto captured = pvzmod::CaptureReanimationTrackInstanceState(reanimation.data());
+    *reinterpret_cast<int*>(instances.data() + 0x48) = 0;
+    *reinterpret_cast<bool*>(instances.data() + 0x5C) = false;
+    *reinterpret_cast<bool*>(instances.data() + 0x5D) = true;
+    *reinterpret_cast<int*>(instances.data() + 0x60 + 0x48) = 0;
+    pvzmod::RestoreReanimationTrackInstanceState(reanimation.data(), captured);
+
+    Expect(*reinterpret_cast<int*>(instances.data() + 0x48) == -1 &&
+           *reinterpret_cast<bool*>(instances.data() + 0x5C) &&
+           !*reinterpret_cast<bool*>(instances.data() + 0x5D),
+           "body replacement should preserve hidden equipment and per-track clipping state");
+    Expect(*reinterpret_cast<int*>(instances.data() + 0x60 + 0x48) == 3,
+           "body replacement should preserve original shield draw order");
+}
+
+void TestReanimationPlaybackStateCapture() {
+    std::array<pvzmod::RuntimeReanimatorTransform, 6> idleTransforms{};
+    std::array<pvzmod::RuntimeReanimatorTransform, 6> walkTransforms{};
+    for (auto& transform : idleTransforms) transform.frame = -10000.0f;
+    for (auto& transform : walkTransforms) transform.frame = -10000.0f;
+    idleTransforms[0].frame = 0.0f;
+    idleTransforms[2].frame = -1.0f;
+    walkTransforms[0].frame = -1.0f;
+    walkTransforms[2].frame = 0.0f;
+    walkTransforms[5].frame = -1.0f;
+    std::array<pvzmod::RuntimeReanimatorTrack, 2> tracks = {{
+        {"anim_idle", idleTransforms.data(), static_cast<int>(idleTransforms.size())},
+        {"anim_walk", walkTransforms.data(), static_cast<int>(walkTransforms.size())}
+    }};
+    pvzmod::RuntimeReanimatorDefinition definition{
+        tracks.data(), static_cast<int>(tracks.size()), 12.0f, nullptr};
+    alignas(8) std::array<std::byte, 0x60> reanimation{};
+    *reinterpret_cast<float*>(reanimation.data() + 0x04) = 0.35f;
+    *reinterpret_cast<float*>(reanimation.data() + 0x08) = 11.5f;
+    *reinterpret_cast<void**>(reanimation.data() + 0x0C) = &definition;
+    *reinterpret_cast<int*>(reanimation.data() + 0x10) = 0;
+    *reinterpret_cast<int*>(reanimation.data() + 0x18) = 2;
+    *reinterpret_cast<int*>(reanimation.data() + 0x1C) = 3;
+    *reinterpret_cast<int*>(reanimation.data() + 0x5C) = 4;
+
+    const auto captured = pvzmod::CaptureReanimationPlaybackState(reanimation.data());
+    Expect(captured.actionTrack == "anim_walk" &&
+           std::abs(captured.animationTime - 0.35f) < 0.001f &&
+           std::abs(captured.animationRate - 11.5f) < 0.001f &&
+           captured.loopType == 0 && captured.loopCount == 4,
+           "body replacement should identify and preserve the active walking action");
+
+    *reinterpret_cast<int*>(reanimation.data() + 0x18) = 5;
+    *reinterpret_cast<int*>(reanimation.data() + 0x1C) = 1;
+    Expect(!pvzmod::CaptureReanimationPlaybackState(reanimation.data()).HasAction(),
+           "unknown frame ranges should fall back to the configured initial action");
+}
+
 }  // namespace
 
 int main() {
+    TestAudioConfigs();
     TestSparseConfigParsing();
+    TestPlantAnimationOverrideConfig();
     TestDeterministicWeights();
     TestWaveTerminatorsAndSpecialPreservation();
     TestActiveWaveLimitAndMinimumCount();
@@ -970,6 +1207,7 @@ int main() {
     TestZombieAttributeConfigAndArmorChances();
     TestAllOriginalArmorVisualAdapters();
     TestZombieConfigRejectsMissingArmorDefinition();
+    TestZombieConfigRejectsInvalidAnimationId();
     TestZombieConfigRejectsUnknownOriginalArmor();
     TestSeedUiAndCustomPlantConfig();
     TestExternalTextureConfigAndAliases();
@@ -977,11 +1215,15 @@ int main() {
     TestExternalAnimationConfigAndRawReanim();
     TestRuntimeReanimDefinitionBuild();
     TestExternalAnimationConfigRejectsUnsafeInput();
+    TestExternalAnimationConfigRejectsConflictingMappings();
     TestRawReanimRejectsUnsafeOrMalformedInput();
     TestCompiledReanimDecoding();
     TestExternalAnimationConfigAcceptsCompiledPaths();
     TestRepositoryExternalAnimationExample();
     TestEliteZombieConfigAndPriority();
+    TestReanimationCarrierCatalog();
+    TestReanimationTrackInstanceStateTransfer();
+    TestReanimationPlaybackStateCapture();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " test(s) failed.\n";

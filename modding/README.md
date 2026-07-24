@@ -338,6 +338,9 @@ Mod 存档放在 `pvzmod/saves`，日志放在 `pvzmod/logs`，两者都不能�
 - 当前视觉适配器支持 `cone`、`bucket`、`door`；`wallnutHead` 适配普通僵尸 ID `0`。坚果头会建立原版 `REANIM_WALLNUT` 附着动画，沿用裂纹受伤效果和掉头清理，不只是写入头盔生命字段。特殊动画族会跳过不兼容防具并写日志。
 - `wallnutHead` 与铁桶都占头盔槽。示例中两者同为 `tier=1`，若铁桶的 50% 抽取成功，则同级较小 ID `1001` 胜出；否则装备 `3001`。若要普通僵尸必定使用坚果头，可提高 `3001.tier` 或把其他头盔槽概率设为 0。
 - `armorRolls` 省略时不改原版防具；写入概率 0 表示该定义不会额外出现，不会剥掉某类僵尸身份自带的原版装备。
+- `animationId` 省略时保持原版主体；填写时引用 `resources/animations.jsonc` 的 ID。Definition 的 `carrierReanimation` 必须与该僵尸实际主体类型一致，例如普通/路障/铁桶/铁门使用 `REANIM_ZOMBIE`。外部动画必须保留原版 AI 会调用的 `anim_walk`、`anim_eat`、受伤、死亡和掉头等同名动作轨道；当前不执行 `replaces` 任意动作重命名。
+- 原版植物主体替换使用 `pvzmod/config/plants/attributes.jsonc`，按植物 ID `0–48` 稀疏填写 `animationId`。运行时只替换 body Reanimation，阳光、冷却、生命、攻击、子弹、卡片和 AI 保持原版；未列出的植物不安装实例状态。
+- 不同 `carrierReanimation` 可同时使用不同外部 Definition；同一载体只能绑定一个，否则后绑定项被禁用并保留原版，以保证原版关卡存档可恢复。
 
 运行时架构和新增模块约束见 [ARCHITECTURE.md](H:/pvz/modding/ARCHITECTURE.md)。
 

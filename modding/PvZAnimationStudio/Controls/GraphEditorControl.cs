@@ -188,10 +188,11 @@ public sealed class GraphEditorControl : FrameworkElement
         {
             var curve = _viewModel!.GetCurveForDisplay(channel);
             if (curve is null) continue;
-            values.AddRange(curve.Keys.Select(key => key.Value));
-            foreach (var key in curve.Keys)
+            var sortedKeys = curve.Keys.OrderBy(key => key.Frame).ToArray();
+            values.AddRange(sortedKeys.Select(key => key.Value));
+            foreach (var key in sortedKeys)
             {
-                var handles = _viewModel.GetCurveHandles(channel, curve, key);
+                var handles = _viewModel.GetCurveHandles(channel, curve, key, sortedKeys);
                 values.Add(handles.Left.Value);
                 values.Add(handles.Right.Value);
             }
@@ -251,8 +252,8 @@ public sealed class GraphEditorControl : FrameworkElement
                 var current = keys[index];
                 if (curve.Interpolation == CurveInterpolationMode.Bezier)
                 {
-                    var previousHandles = _viewModel.GetCurveHandles(style.Channel, curve, previous);
-                    var currentHandles = _viewModel.GetCurveHandles(style.Channel, curve, current);
+                    var previousHandles = _viewModel.GetCurveHandles(style.Channel, curve, previous, keys);
+                    var currentHandles = _viewModel.GetCurveHandles(style.Channel, curve, current, keys);
                     writer.BezierTo(ToPoint(previousHandles.Right.Frame, previousHandles.Right.Value),
                         ToPoint(currentHandles.Left.Frame, currentHandles.Left.Value),
                         ToPoint(current.Frame, current.Value), true, false);
@@ -422,6 +423,12 @@ public sealed class GraphEditorControl : FrameworkElement
         if (eventArgs.LeftButton != MouseButtonState.Pressed || !_selectedChannel.HasValue) return;
         if (!_dragTransaction && (point - _dragStart).Length >= 3)
         {
+            if (_viewModel.SelectedTrackIsLocked)
+            {
+                _dragTarget = DragTarget.None;
+                if (IsMouseCaptured) ReleaseMouseCapture();
+                return;
+            }
             _viewModel.BeginEditTransaction(_dragTarget == DragTarget.Key
                 ? "拖动曲线关键点" : "拖动 Bezier 曲线手柄");
             _dragTransaction = true;

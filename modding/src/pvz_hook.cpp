@@ -1,10 +1,13 @@
 #include "pvz_hook.h"
 
+#include "audio_replacement_hook.h"
 #include "hook_modules.h"
 #include "hook_utils.h"
 #include "logger.h"
 #include "external_animation_runtime.h"
+#include "external_body_animation_runtime.h"
 #include "external_texture_runtime.h"
+#include "plant_catalog_runtime.h"
 
 #include <MinHook.h>
 
@@ -19,12 +22,20 @@ bool InstallPvZHooks() {
     }
 
     bool success = true;
+    if (!InstallAudioReplacementRuntime(moduleBase)) {
+        LogError("Audio registration/replacement runtime failed to install.");
+        success = false;
+    }
     if (!InitializeExternalTextureRuntime(moduleBase)) {
         LogError("External texture runtime failed to initialize.");
         success = false;
     }
     if (!InitializeExternalAnimationRuntime(moduleBase)) {
         LogError("One or more external animations failed validation; animation injection remains inactive.");
+        success = false;
+    }
+    if (!InitializeExternalBodyAnimationRuntime(moduleBase)) {
+        LogError("External body animation runtime failed to initialize.");
         success = false;
     }
     if (!InstallEliteZombieHooks(moduleBase)) {
@@ -47,28 +58,34 @@ bool InstallPvZHooks() {
         LogError("Zombie attribute hook module failed to install.");
         success = false;
     }
+    if (!InstallCustomZombieAnimationRuntime(moduleBase)) {
+        LogError("Custom zombie animation runtime failed to install.");
+        success = false;
+    }
     if (!InstallSeedUiHooks(moduleBase)) {
         LogError("Seed chooser UI hook module failed to install.");
         success = false;
     }
     if (!InstallCustomPlantHooks(moduleBase)) {
-        LogError("Custom plant hook module failed to install.");
+        LogError("Plant instance/animation hook module failed to install.");
         success = false;
     }
-    if (!InstallCustomPlantTextHooks(moduleBase)) {
-        LogError("Custom plant text hook module failed to install.");
-        success = false;
+    if (CustomChooserPlantCount() > 0) {
+        if (!InstallCustomPlantTextHooks(moduleBase)) {
+            LogError("Custom plant text hook module failed to install.");
+            success = false;
+        }
     }
 
     if (success) {
-        LogInfo("Installed wave, sun, plant attack, zombie, elite, external texture/animation registry, paged chooser, and custom plant modules for PvZ 1.0.0.1051.");
+        LogInfo("Installed audio, wave, sun, plant attack, zombie, elite, external texture/body-animation registry, and seed chooser modules for PvZ 1.0.0.1051.");
     }
     return success;
 }
 
 DWORD WINAPI InitializeModThread(void* moduleParameter) {
     InitializeLogger(static_cast<HMODULE>(moduleParameter));
-    LogInfo("pvzmod.dll loaded; mod runtime version 0.10.2-dev.");
+    LogInfo("pvzmod.dll loaded; mod runtime version 0.10.5-dev.");
     if (!InstallPvZHooks()) {
         LogError("One or more isolated hook modules are inactive; see earlier log entries.");
     }

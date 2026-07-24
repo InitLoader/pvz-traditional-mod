@@ -73,6 +73,7 @@ CustomPlantConfigLoadResult LoadCustomPlantConfig(const std::filesystem::path& p
             if (!plant.animationId.empty() && !IsExternalResourceId(plant.animationId)) {
                 throw std::runtime_error("animationId must match [A-Za-z0-9_]+ and contain 1-64 characters");
             }
+            plant.hideTemplateAttachments = Boolean(item, "hideTemplateAttachments", true);
             plant.templatePlantId = Integer(item, "templatePlantId", 0, 0, 48);
             plant.unlocked = Boolean(item, "unlocked", true);
             plant.cost = Integer(item, "cost", 100, 0, 9999);

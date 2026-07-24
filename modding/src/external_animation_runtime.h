@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <memory>
 #include <string_view>
+#include <vector>
 
 namespace pvzmod {
 
@@ -21,6 +22,7 @@ struct LoadedExternalAnimation {
     std::string_view animationId);
 [[nodiscard]] RuntimeReanimatorDefinition* PrepareExternalReanimationDefinition(
     std::string_view animationId, void* lawnApp);
+[[nodiscard]] std::vector<std::string> SavedGameRecoveryAnimationIds();
 [[nodiscard]] std::size_t ExternalAnimationCount();
 
 }  // namespace pvzmod

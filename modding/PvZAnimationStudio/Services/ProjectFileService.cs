@@ -62,21 +62,26 @@ public sealed class ProjectFileService
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var temporaryPath = path + $".{Guid.NewGuid():N}.tmp";
         var portable = _clone.Clone(project);
-        portable.SchemaVersion = Math.Max(3, portable.SchemaVersion);
+        portable.SchemaVersion = Math.Max(5, portable.SchemaVersion);
         portable.ProjectPath = null;
         portable.ImageBindings.Clear();
         portable.ImageLayouts.Clear();
+        portable.OriginalImageReferences.Clear();
 
         try
         {
             using (var file = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
             using (var archive = new ZipArchive(file, ZipArchiveMode.Create, true, Encoding.UTF8))
             {
-                var symbols = project.ImageBindings.Keys
-                    .Concat(project.Animation.Tracks.SelectMany(track => track.Frames)
+                var usedSymbols = project.Animation.Tracks.SelectMany(track => track.Frames)
                         .Select(frame => frame.Image)
                         .Where(symbol => !string.IsNullOrWhiteSpace(symbol))
-                        .Select(symbol => symbol!))
+                        .Select(symbol => symbol!)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+                var symbols = project.ImageBindings.Keys
+                    .Where(symbol => !project.OriginalImageReferences.Contains(symbol))
+                    .Concat(usedSymbols)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .OrderBy(symbol => symbol, StringComparer.OrdinalIgnoreCase)
                     .ToArray();
@@ -106,6 +111,9 @@ public sealed class ProjectFileService
                         Columns = image.SafeColumns,
                         Rows = image.SafeRows
                     };
+                    if (project.OriginalImageReferences.Contains(symbol) ||
+                        (!project.ImageBindings.ContainsKey(symbol) && _resources.IsOriginalGameSymbol(project, symbol)))
+                        portable.OriginalImageReferences.Add(symbol);
                 }
 
                 var projectEntry = archive.CreateEntry("project.json", CompressionLevel.Optimal);
@@ -165,18 +173,42 @@ public sealed class ProjectFileService
         JsonSerializer.Deserialize<EditorProject>(json, Options)
         ?? throw new InvalidDataException("工程文件内容为空。 ");
 
-    private static void PrepareLoadedProject(EditorProject project, string path)
+    private void PrepareLoadedProject(EditorProject project, string path)
     {
+        var loadedSchemaVersion = project.SchemaVersion;
         project.ProjectPath = path;
         project.ImageBindings = new Dictionary<string, string>(project.ImageBindings ?? [], StringComparer.OrdinalIgnoreCase);
         project.ImageLayouts = new Dictionary<string, ImageLayoutDefinition>(project.ImageLayouts ?? [], StringComparer.OrdinalIgnoreCase);
+        project.OriginalImageReferences = new HashSet<string>(
+            project.OriginalImageReferences ?? [], StringComparer.OrdinalIgnoreCase);
         project.Curves ??= [];
         foreach (var track in project.Animation.Tracks)
         {
             if (string.IsNullOrWhiteSpace(track.EditorId)) track.EditorId = Guid.NewGuid().ToString("N");
         }
         foreach (var curve in project.Curves) curve.Keys ??= [];
+        project.Actions ??= [];
+        foreach (var action in project.Actions)
+        {
+            action.Replaces ??= [];
+            action.Events ??= [];
+        }
+        if (string.IsNullOrWhiteSpace(project.InitialActionId)) project.InitialActionId = "idle";
         project.WorkspaceLayout ??= new WorkspaceLayoutPresetService().Create(WorkspacePreset.Animation);
+        if (loadedSchemaVersion < 5 && !string.IsNullOrWhiteSpace(project.GameRoot))
+        {
+            _resources.RebuildIndex(project.GameRoot);
+            foreach (var symbol in project.Animation.Tracks.SelectMany(track => track.Frames)
+                         .Select(frame => frame.Image)
+                         .Where(symbol => !string.IsNullOrWhiteSpace(symbol))
+                         .Select(symbol => symbol!)
+                         .Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (_resources.IsOriginalGameSymbol(project, symbol))
+                    project.OriginalImageReferences.Add(symbol);
+            }
+        }
+        project.SchemaVersion = Math.Max(5, project.SchemaVersion);
     }
 
     private static bool IsZip(string path)

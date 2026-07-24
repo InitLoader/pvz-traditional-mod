@@ -4,11 +4,44 @@
   <TabControl>
     <TabItem Header="轨道">
       <DockPanel Margin="5">
-        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal">
+        <WrapPanel DockPanel.Dock="Bottom">
           <Button Content="＋ 轨道" Click="AddTrack_Click" />
-          <Button Content="－ 轨道" Click="RemoveTrack_Click" />
-        </StackPanel>
-        <ListBox ItemsSource="{Binding Tracks}" SelectedItem="{Binding SelectedTrack, Mode=TwoWay}" DisplayMemberPath="Name" />
+          <Button Content="更换轨道图片" Click="ReplaceTrackImage_Click"
+                  ToolTip="只更换当前轨道所用图片，保留动作、帧、关键帧、变换和曲线" />
+          <Button Content="删除整个轨道" Click="RemoveTrack_Click"
+                  ToolTip="删除轨道及关联曲线/动作；可用 Ctrl+Z 恢复" />
+        </WrapPanel>
+        <ListBox ItemsSource="{Binding Tracks}" SelectedItem="{Binding SelectedTrack, Mode=TwoWay}">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <DockPanel LastChildFill="True">
+                <Button DockPanel.Dock="Left" Width="25" Height="22" Margin="0,0,5,0" Padding="0"
+                        Tag="{Binding}" Click="TrackVisibility_Click" ToolTip="仅在编辑器预览中显示或隐藏该轨道">
+                  <TextBlock Text="{Binding EditorVisibilityGlyph}" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+                </Button>
+                <Button DockPanel.Dock="Left" Width="25" Height="22" Margin="0,0,5,0" Padding="0"
+                        Tag="{Binding}" Click="TrackAlwaysVisible_Click"
+                        ToolTip="常显：绕过防具/附属层自动过滤，切换到其他轨道后仍显示">
+                  <TextBlock Text="{Binding EditorAlwaysVisibleGlyph}" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+                </Button>
+                <Button DockPanel.Dock="Left" Width="25" Height="22" Margin="0,0,5,0" Padding="0"
+                        Tag="{Binding}" Click="TrackLock_Click" ToolTip="锁定后禁止修改、移动或删除该轨道的关键帧">
+                  <TextBlock Text="{Binding EditorLockGlyph}" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+                </Button>
+                <Border DockPanel.Dock="Left" Width="24" Height="24" Margin="0,0,6,0"
+                        Background="#222B34" BorderBrush="#536171" BorderThickness="1"
+                        ToolTip="{Binding EditorImageSymbol}">
+                  <Grid>
+                    <TextBlock Text="{Binding EditorFallbackGlyph}" Foreground="#4DC8FF" FontSize="17"
+                               FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <Image Source="{Binding EditorThumbnail}" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
+                  </Grid>
+                </Border>
+                <TextBlock Text="{Binding EditorDisplayName}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+              </DockPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
       </DockPanel>
     </TabItem>
     <TabItem Header="动作">
@@ -28,8 +61,26 @@
     <TabItem Header="图片资源">
       <DockPanel Margin="5">
         <Button DockPanel.Dock="Bottom" Content="导入 PNG / JPG 图片" Click="ImportImages_Click" />
-        <ListBox x:Name="ImageBindingsList" ItemsSource="{Binding Project.ImageBindings}" DisplayMemberPath="Key"
-                 MouseDoubleClick="ImageBindingsList_MouseDoubleClick" />
+        <TextBlock DockPanel.Dock="Top" Margin="3,2,3,6" Foreground="#9FC3D8"
+                   Text="{Binding ProjectImageResourcesSummary}"/>
+        <ListBox x:Name="ImageResourcesList" MouseDoubleClick="ImageResourcesList_MouseDoubleClick">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <DockPanel Margin="2" LastChildFill="True" ToolTip="{Binding SourcePath}">
+                <Border DockPanel.Dock="Left" Width="42" Height="42" Margin="0,0,7,0"
+                        Background="#202832" BorderBrush="#536171" BorderThickness="1">
+                  <Image Source="{Binding Thumbnail}" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
+                </Border>
+                <StackPanel>
+                  <TextBlock Text="{Binding Symbol}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                  <TextBlock Text="{Binding OwnershipLabel}" Foreground="#78C9EC" FontSize="11"/>
+                  <TextBlock Text="{Binding SourcePath}" Foreground="#9EABB8" FontSize="10"
+                             TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+              </DockPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
       </DockPanel>
     </TabItem>
     <TabItem Header="工程">

@@ -12,6 +12,7 @@ public partial class WorkspaceBrowserControl : UserControl
     private EditorViewModel? _viewModel;
 
     public event EventHandler? ImportImagesRequested;
+    public event EventHandler? ReplaceTrackImageRequested;
     public event EventHandler? ChooseGameRootRequested;
 
     public WorkspaceBrowserControl()
@@ -26,12 +27,37 @@ public partial class WorkspaceBrowserControl : UserControl
     {
         _viewModel = viewModel;
         DataContext = viewModel;
+        RefreshImageBindings();
     }
 
-    public void RefreshImageBindings() => ImageBindingsList.Items.Refresh();
+    public void RefreshImageBindings()
+    {
+        if (_viewModel is null) return;
+        ImageResourcesList.ItemsSource = _viewModel.ProjectImageResources;
+    }
 
     private void AddTrack_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.AddTrack("新部件");
     private void RemoveTrack_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.RemoveSelectedTrack();
+    private void ReplaceTrackImage_Click(object sender, RoutedEventArgs eventArgs) =>
+        ReplaceTrackImageRequested?.Invoke(this, EventArgs.Empty);
+    private void TrackVisibility_Click(object sender, RoutedEventArgs eventArgs)
+    {
+        if (_viewModel is not null && sender is FrameworkElement { Tag: AnimationTrack track })
+            _viewModel.ToggleTrackEditorVisibility(track);
+        eventArgs.Handled = true;
+    }
+    private void TrackAlwaysVisible_Click(object sender, RoutedEventArgs eventArgs)
+    {
+        if (_viewModel is not null && sender is FrameworkElement { Tag: AnimationTrack track })
+            _viewModel.ToggleTrackEditorAlwaysVisible(track);
+        eventArgs.Handled = true;
+    }
+    private void TrackLock_Click(object sender, RoutedEventArgs eventArgs)
+    {
+        if (_viewModel is not null && sender is FrameworkElement { Tag: AnimationTrack track })
+            _viewModel.ToggleTrackEditorLock(track);
+        eventArgs.Handled = true;
+    }
     private void FullTimeline_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.ClearActionView();
     private void RemoveAction_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.RemoveSelectedAction();
     private void InferActions_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.InferActions();
@@ -48,9 +74,9 @@ public partial class WorkspaceBrowserControl : UserControl
     private void ChooseGameRoot_Click(object sender, RoutedEventArgs eventArgs) =>
         ChooseGameRootRequested?.Invoke(this, EventArgs.Empty);
 
-    private void ImageBindingsList_MouseDoubleClick(object sender, MouseButtonEventArgs eventArgs)
+    private void ImageResourcesList_MouseDoubleClick(object sender, MouseButtonEventArgs eventArgs)
     {
-        if (_viewModel is not null && ImageBindingsList.SelectedItem is KeyValuePair<string, string> selected)
-            _viewModel.CurrentImage = selected.Key;
+        if (_viewModel is not null && ImageResourcesList.SelectedItem is ProjectImageResourceItem selected)
+            _viewModel.CurrentImage = selected.Symbol;
     }
 }

@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Text.Json.Serialization;
+using System.Windows.Media.Imaging;
 
 namespace PvZAnimationStudio.Models;
 
@@ -9,6 +11,12 @@ public enum EntityKind
     Zombie,
     Ui,
     Other
+}
+
+public enum EntityIntegrationMode
+{
+    ReplaceOriginal,
+    AddEntity
 }
 
 public enum AnimationOutputFormat
@@ -99,17 +107,32 @@ public sealed class AnimationCurveDefinition
 
 public sealed class AnimationFrame
 {
-    public float? X { get; set; }
-    public float? Y { get; set; }
-    public float? SkewX { get; set; }
-    public float? SkewY { get; set; }
-    public float? ScaleX { get; set; }
-    public float? ScaleY { get; set; }
-    public float? Frame { get; set; }
-    public float? Alpha { get; set; }
-    public string? Image { get; set; }
-    public string? Font { get; set; }
-    public string? Text { get; set; }
+    private float? _x;
+    private float? _y;
+    private float? _skewX;
+    private float? _skewY;
+    private float? _scaleX;
+    private float? _scaleY;
+    private float? _frame;
+    private float? _alpha;
+    private string? _image;
+    private string? _font;
+    private string? _text;
+
+    [JsonIgnore]
+    internal Action? Changed { get; set; }
+
+    public float? X { get => _x; set => SetField(ref _x, value); }
+    public float? Y { get => _y; set => SetField(ref _y, value); }
+    public float? SkewX { get => _skewX; set => SetField(ref _skewX, value); }
+    public float? SkewY { get => _skewY; set => SetField(ref _skewY, value); }
+    public float? ScaleX { get => _scaleX; set => SetField(ref _scaleX, value); }
+    public float? ScaleY { get => _scaleY; set => SetField(ref _scaleY, value); }
+    public float? Frame { get => _frame; set => SetField(ref _frame, value); }
+    public float? Alpha { get => _alpha; set => SetField(ref _alpha, value); }
+    public string? Image { get => _image; set => SetField(ref _image, value); }
+    public string? Font { get => _font; set => SetField(ref _font, value); }
+    public string? Text { get => _text; set => SetField(ref _text, value); }
 
     [JsonIgnore]
     public bool HasKey =>
@@ -136,6 +159,13 @@ public sealed class AnimationFrame
     {
         X = Y = SkewX = SkewY = ScaleX = ScaleY = Frame = Alpha = null;
         Image = Font = Text = null;
+    }
+
+    private void SetField<T>(ref T field, T value)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value)) return;
+        field = value;
+        Changed?.Invoke();
     }
 }
 
@@ -172,24 +202,125 @@ public sealed class ResolvedAnimationFrame
 public sealed class AnimationTrack : ObservableObject
 {
     private string _name = "track";
+    private bool _isVisibleInEditor = true;
+    private bool _isAlwaysVisibleInEditor;
+    private bool _isLockedInEditor;
+    private ObservableCollection<AnimationFrame> _frames = [];
+    private ResolvedAnimationFrame[]? _resolvedFrameCache;
+    private bool? _hasRenderableContentCache;
+    private BitmapSource? _editorThumbnail;
+    private string? _editorImageSymbol;
+
+    public AnimationTrack()
+    {
+        _frames.CollectionChanged += OnFramesCollectionChanged;
+    }
 
     public string EditorId { get; set; } = Guid.NewGuid().ToString("N");
 
     public string Name
     {
         get => _name;
-        set => SetField(ref _name, value);
+        set
+        {
+            if (!SetField(ref _name, value)) return;
+            RaisePropertyChanged(nameof(IsActionTrack));
+            RaisePropertyChanged(nameof(IsGroundTrack));
+            RaisePropertyChanged(nameof(EditorDisplayName));
+            RaisePropertyChanged(nameof(EditorFallbackGlyph));
+        }
     }
 
-    public ObservableCollection<AnimationFrame> Frames { get; set; } = [];
+    public ObservableCollection<AnimationFrame> Frames
+    {
+        get => _frames;
+        set
+        {
+            if (ReferenceEquals(_frames, value)) return;
+            _frames.CollectionChanged -= OnFramesCollectionChanged;
+            foreach (var frame in _frames) frame.Changed = null;
+            _frames = value ?? [];
+            _frames.CollectionChanged += OnFramesCollectionChanged;
+            AttachFrameCallbacks();
+            InvalidateFrameCache();
+        }
+    }
+
+    // Preview-only state. Raw/compiled codecs export only Reanimation fields,
+    // so hiding a layer here never changes the in-game animation.
+    public bool IsVisibleInEditor
+    {
+        get => _isVisibleInEditor;
+        set
+        {
+            if (SetField(ref _isVisibleInEditor, value))
+                RaisePropertyChanged(nameof(EditorVisibilityGlyph));
+        }
+    }
 
     [JsonIgnore]
-    public bool HasRenderableContent => Frames.Any(frame =>
+    public string EditorVisibilityGlyph => IsVisibleInEditor ? "\uE7B3" : "\uED1A";
+
+    // Preview-only override for optional equipment and accessory layers. This
+    // bypasses entity-profile filtering without changing raw/compiled output.
+    public bool IsAlwaysVisibleInEditor
+    {
+        get => _isAlwaysVisibleInEditor;
+        set
+        {
+            if (SetField(ref _isAlwaysVisibleInEditor, value))
+                RaisePropertyChanged(nameof(EditorAlwaysVisibleGlyph));
+        }
+    }
+
+    [JsonIgnore]
+    public string EditorAlwaysVisibleGlyph => IsAlwaysVisibleInEditor ? "\uE718" : "\uE77A";
+
+    // Editor-only protection. It is persisted in .pvza projects but ignored by
+    // raw/compiled Reanimation codecs and therefore never changes game data.
+    public bool IsLockedInEditor
+    {
+        get => _isLockedInEditor;
+        set
+        {
+            if (SetField(ref _isLockedInEditor, value))
+                RaisePropertyChanged(nameof(EditorLockGlyph));
+        }
+    }
+
+    [JsonIgnore]
+    public string EditorLockGlyph => IsLockedInEditor ? "\uE72E" : "\uE785";
+
+    [JsonIgnore]
+    public BitmapSource? EditorThumbnail
+    {
+        get => _editorThumbnail;
+        set => SetField(ref _editorThumbnail, value);
+    }
+
+    [JsonIgnore]
+    public string? EditorImageSymbol
+    {
+        get => _editorImageSymbol;
+        set => SetField(ref _editorImageSymbol, value);
+    }
+
+    [JsonIgnore]
+    public bool HasRenderableContent => _hasRenderableContentCache ??= Frames.Any(frame =>
         !string.IsNullOrEmpty(frame.Image) || !string.IsNullOrEmpty(frame.Font) || !string.IsNullOrEmpty(frame.Text));
 
     [JsonIgnore]
     public bool IsActionTrack =>
         Name.StartsWith("anim_", StringComparison.OrdinalIgnoreCase) && !HasRenderableContent;
+
+    [JsonIgnore]
+    public bool IsGroundTrack => string.Equals(Name, "_ground", StringComparison.OrdinalIgnoreCase);
+
+    [JsonIgnore]
+    public string EditorDisplayName => IsGroundTrack ? "地面位移 / 速度  _ground" : Name;
+
+    [JsonIgnore]
+    public string EditorFallbackGlyph => IsGroundTrack ? "↔" : string.Empty;
 
     public void EnsureFrameCount(int count)
     {
@@ -201,11 +332,30 @@ public sealed class AnimationTrack : ObservableObject
 
     public ResolvedAnimationFrame ResolveFrame(int index)
     {
-        var resolved = new ResolvedAnimationFrame();
-        if (Frames.Count == 0)
-            return resolved;
+        if (Frames.Count == 0) return new ResolvedAnimationFrame();
         index = Math.Clamp(index, 0, Frames.Count - 1);
-        for (var frameIndex = 0; frameIndex <= index; frameIndex++)
+        EnsureResolvedFrameCache();
+        return _resolvedFrameCache![index];
+    }
+
+    public void InvalidateFrameCache()
+    {
+        _resolvedFrameCache = null;
+        _hasRenderableContentCache = null;
+    }
+
+    public void WarmFrameCache()
+    {
+        if (Frames.Count > 0) EnsureResolvedFrameCache();
+    }
+
+    private void EnsureResolvedFrameCache()
+    {
+        if (_resolvedFrameCache is { Length: var length } && length == Frames.Count) return;
+        AttachFrameCallbacks();
+        var cache = new ResolvedAnimationFrame[Frames.Count];
+        var resolved = new ResolvedAnimationFrame();
+        for (var frameIndex = 0; frameIndex < Frames.Count; frameIndex++)
         {
             var frame = Frames[frameIndex];
             if (frame.X.HasValue) resolved.X = frame.X.Value;
@@ -219,8 +369,39 @@ public sealed class AnimationTrack : ObservableObject
             if (frame.Image is not null) resolved.Image = frame.Image.Length == 0 ? null : frame.Image;
             if (frame.Font is not null) resolved.Font = frame.Font.Length == 0 ? null : frame.Font;
             if (frame.Text is not null) resolved.Text = frame.Text.Length == 0 ? null : frame.Text;
+            cache[frameIndex] = new ResolvedAnimationFrame
+            {
+                X = resolved.X, Y = resolved.Y, SkewX = resolved.SkewX, SkewY = resolved.SkewY,
+                ScaleX = resolved.ScaleX, ScaleY = resolved.ScaleY, Frame = resolved.Frame,
+                Alpha = resolved.Alpha, Image = resolved.Image, Font = resolved.Font, Text = resolved.Text
+            };
         }
-        return resolved;
+        _resolvedFrameCache = cache;
+    }
+
+    private void AttachFrameCallbacks()
+    {
+        foreach (var frame in Frames) frame.Changed = InvalidateFrameCache;
+    }
+
+    private void OnFramesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs eventArgs)
+    {
+        if (eventArgs.Action is NotifyCollectionChangedAction.Replace or NotifyCollectionChangedAction.Reset)
+        {
+            // Swap operations can temporarily place one frame in two
+            // positions. Rebind the complete final collection so neither
+            // frame loses its callback. Adds stay O(1), which matters while
+            // cloning large projects into the undo history.
+            AttachFrameCallbacks();
+        }
+        else
+        {
+            if (eventArgs.OldItems is not null)
+                foreach (AnimationFrame frame in eventArgs.OldItems) frame.Changed = null;
+            if (eventArgs.NewItems is not null)
+                foreach (AnimationFrame frame in eventArgs.NewItems) frame.Changed = InvalidateFrameCache;
+        }
+        InvalidateFrameCache();
     }
 }
 
@@ -254,16 +435,33 @@ public sealed class AnimationDocument : ObservableObject
         RaisePropertyChanged(nameof(FrameCount));
     }
 
+    public void WarmFrameCaches()
+    {
+        foreach (var track in Tracks) track.WarmFrameCache();
+    }
+
     public AnimationTrack? FindTrack(string name) =>
         Tracks.FirstOrDefault(track => string.Equals(track.Name, name, StringComparison.OrdinalIgnoreCase));
 }
 
-public sealed class AnimationEventDefinition
+public sealed class AnimationEventDefinition : ObservableObject
 {
-    public string Id { get; set; } = "EVENT";
-    public int? Frame { get; set; }
-    public double? NormalizedTime { get; set; }
-    public bool OncePerLoop { get; set; } = true;
+    private string _id = "FIRE_PROJECTILE";
+    private int? _frame;
+    private double? _normalizedTime;
+    private bool _oncePerLoop = true;
+    private string _targetAction = string.Empty;
+
+    public string Id { get => _id; set { if (SetField(ref _id, value)) RaisePropertyChanged(nameof(Summary)); } }
+    public int? Frame { get => _frame; set { if (SetField(ref _frame, value)) RaisePropertyChanged(nameof(Summary)); } }
+    public double? NormalizedTime { get => _normalizedTime; set { if (SetField(ref _normalizedTime, value)) RaisePropertyChanged(nameof(Summary)); } }
+    public bool OncePerLoop { get => _oncePerLoop; set => SetField(ref _oncePerLoop, value); }
+    public string TargetAction { get => _targetAction; set { if (SetField(ref _targetAction, value)) RaisePropertyChanged(nameof(Summary)); } }
+
+    [JsonIgnore]
+    public string Summary => Frame.HasValue
+        ? $"{Id} · 第 {Frame.Value + 1} 帧"
+        : $"{Id} · {NormalizedTime.GetValueOrDefault():0.###}";
 }
 
 public sealed class ActionDefinition : ObservableObject
@@ -308,6 +506,7 @@ public sealed class ActionDefinition : ObservableObject
     public AnimationLoopMode Loop { get => _loop; set => SetField(ref _loop, value); }
     public double Rate { get => _rate; set => SetField(ref _rate, value); }
     public int BlendFrames { get => _blendFrames; set => SetField(ref _blendFrames, value); }
+    public ObservableCollection<string> Replaces { get; set; } = [];
     public ObservableCollection<AnimationEventDefinition> Events { get; set; } = [];
 
     [JsonIgnore]
@@ -325,8 +524,11 @@ public sealed class EditorProject : ObservableObject
     private string? _gameRoot;
     private string? _projectPath;
     private string? _sourceAnimationPath;
+    private string _initialActionId = "idle";
+    private bool _hideTemplateAttachments = true;
+    private EntityIntegrationMode _integrationMode = EntityIntegrationMode.AddEntity;
 
-    public int SchemaVersion { get; set; } = 3;
+    public int SchemaVersion { get; set; } = 5;
     public string Id { get => _id; set => SetField(ref _id, value); }
     public string DisplayName { get => _displayName; set => SetField(ref _displayName, value); }
     public string Description { get => _description; set => SetField(ref _description, value); }
@@ -336,6 +538,9 @@ public sealed class EditorProject : ObservableObject
     public string? GameRoot { get => _gameRoot; set => SetField(ref _gameRoot, value); }
     public string? ProjectPath { get => _projectPath; set => SetField(ref _projectPath, value); }
     public string? SourceAnimationPath { get => _sourceAnimationPath; set => SetField(ref _sourceAnimationPath, value); }
+    public string InitialActionId { get => _initialActionId; set => SetField(ref _initialActionId, value); }
+    public bool HideTemplateAttachments { get => _hideTemplateAttachments; set => SetField(ref _hideTemplateAttachments, value); }
+    public EntityIntegrationMode IntegrationMode { get => _integrationMode; set => SetField(ref _integrationMode, value); }
 
     public int NumericEntityId { get; set; } = 1000;
     public int TemplateEntityId { get; set; }
@@ -352,5 +557,6 @@ public sealed class EditorProject : ObservableObject
     public ObservableCollection<AnimationCurveDefinition> Curves { get; set; } = [];
     public Dictionary<string, string> ImageBindings { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, ImageLayoutDefinition> ImageLayouts { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public HashSet<string> OriginalImageReferences { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public WorkspaceLayoutState WorkspaceLayout { get; set; } = WorkspaceLayoutState.CreateDefault();
 }

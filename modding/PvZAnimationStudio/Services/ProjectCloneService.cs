@@ -19,6 +19,9 @@ public sealed class ProjectCloneService
             GameRoot = source.GameRoot,
             ProjectPath = source.ProjectPath,
             SourceAnimationPath = source.SourceAnimationPath,
+            InitialActionId = source.InitialActionId,
+            HideTemplateAttachments = source.HideTemplateAttachments,
+            IntegrationMode = source.IntegrationMode,
             NumericEntityId = source.NumericEntityId,
             TemplateEntityId = source.TemplateEntityId,
             Cost = source.Cost,
@@ -35,6 +38,7 @@ public sealed class ProjectCloneService
                 item => item.Key,
                 item => new ImageLayoutDefinition { Columns = item.Value.Columns, Rows = item.Value.Rows },
                 StringComparer.OrdinalIgnoreCase),
+            OriginalImageReferences = new HashSet<string>(source.OriginalImageReferences, StringComparer.OrdinalIgnoreCase),
             WorkspaceLayout = source.WorkspaceLayout.Clone()
         };
         clone.Actions = new ObservableCollection<ActionDefinition>(source.Actions.Select(CloneAction));
@@ -46,7 +50,14 @@ public sealed class ProjectCloneService
         var result = new AnimationDocument { Fps = source.Fps, DoScale = source.DoScale };
         foreach (var sourceTrack in source.Tracks)
         {
-            var track = new AnimationTrack { Name = sourceTrack.Name, EditorId = sourceTrack.EditorId };
+            var track = new AnimationTrack
+            {
+                Name = sourceTrack.Name,
+                EditorId = sourceTrack.EditorId,
+                IsVisibleInEditor = sourceTrack.IsVisibleInEditor,
+                IsAlwaysVisibleInEditor = sourceTrack.IsAlwaysVisibleInEditor,
+                IsLockedInEditor = sourceTrack.IsLockedInEditor
+            };
             foreach (var frame in sourceTrack.Frames) track.Frames.Add(frame.Clone());
             result.Tracks.Add(track);
         }
@@ -65,6 +76,7 @@ public sealed class ProjectCloneService
             Rate = source.Rate,
             BlendFrames = source.BlendFrames
         };
+        result.Replaces = new ObservableCollection<string>(source.Replaces);
         foreach (var item in source.Events)
         {
             result.Events.Add(new AnimationEventDefinition
@@ -72,7 +84,8 @@ public sealed class ProjectCloneService
                 Id = item.Id,
                 Frame = item.Frame,
                 NormalizedTime = item.NormalizedTime,
-                OncePerLoop = item.OncePerLoop
+                OncePerLoop = item.OncePerLoop,
+                TargetAction = item.TargetAction
             });
         }
         return result;

@@ -39,6 +39,9 @@
 !/pvzmod/images/
 /pvzmod/images/*
 !/pvzmod/images/README.md
+!/pvzmod/audio/
+/pvzmod/audio/*
+!/pvzmod/audio/README.md
 
 # Editor and compiler debris that may appear inside allowed trees.
 **/.vs/

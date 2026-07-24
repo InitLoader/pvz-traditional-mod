@@ -42,7 +42,7 @@ public sealed class EntityPreviewProfileService
     public EntityPreviewPlan? CreatePlan(EditorProject project, int currentFrame, ActionDefinition? selectedAction)
     {
         if (selectedAction is not null) return null;
-        var profile = FindProfile(project.SourceAnimationPath);
+        var profile = FindProfile(project);
         if (profile is null) return null;
         var baseRange = GetRange(project.Animation, profile.BaseActionTrack);
         if (currentFrame < baseRange.Start || currentFrame > baseRange.End) return null;
@@ -56,17 +56,24 @@ public sealed class EntityPreviewProfileService
 
     public int? GetRepresentativeFrame(EditorProject project)
     {
-        var profile = FindProfile(project.SourceAnimationPath);
+        var profile = FindProfile(project);
         if (profile is null) return null;
         return profile.UseMostVisibleFrame
             ? FindMostVisibleFrame(project.Animation)
             : GetMidpoint(project.Animation, profile.BaseActionTrack);
     }
 
-    public bool IsTrackVisible(EditorProject project, AnimationTrack track, ActionDefinition? selectedAction)
+    public bool IsTrackVisible(
+        EditorProject project,
+        AnimationTrack track,
+        ActionDefinition? selectedAction,
+        AnimationTrack? selectedTrack = null)
     {
-        if (selectedAction is not null) return true;
-        var hiddenPrefixes = FindProfile(project.SourceAnimationPath)?.HiddenTrackPrefixes;
+        // Optional equipment is hidden for a normal entity preview even while
+        // editing an action. Selecting the equipment track itself temporarily
+        // reveals it so it can still be authored.
+        if (track.IsAlwaysVisibleInEditor || ReferenceEquals(track, selectedTrack)) return true;
+        var hiddenPrefixes = FindProfile(project)?.HiddenTrackPrefixes;
         return hiddenPrefixes is null || hiddenPrefixes.All(prefix =>
             !track.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
     }
@@ -81,14 +88,22 @@ public sealed class EntityPreviewProfileService
         return range.Start + (range.Count - 1) / 2;
     }
 
-    private static Profile? FindProfile(string? sourceAnimationPath)
+    private static Profile? FindProfile(EditorProject project)
     {
-        if (string.IsNullOrWhiteSpace(sourceAnimationPath)) return null;
-        var fileName = Path.GetFileName(sourceAnimationPath);
-        var reanimIndex = fileName.IndexOf(".reanim", StringComparison.OrdinalIgnoreCase);
-        var sourceName = reanimIndex >= 0 ? fileName[..reanimIndex] : Path.GetFileNameWithoutExtension(fileName);
-        return Profiles.FirstOrDefault(profile =>
-            string.Equals(profile.SourceName, sourceName, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(project.SourceAnimationPath))
+        {
+            var fileName = Path.GetFileName(project.SourceAnimationPath);
+            var reanimIndex = fileName.IndexOf(".reanim", StringComparison.OrdinalIgnoreCase);
+            var sourceName = reanimIndex >= 0 ? fileName[..reanimIndex] : Path.GetFileNameWithoutExtension(fileName);
+            var named = Profiles.FirstOrDefault(profile =>
+                string.Equals(profile.SourceName, sourceName, StringComparison.OrdinalIgnoreCase));
+            if (named is not null) return named;
+        }
+        if (project.Animation.FindTrack("Zombie_body") is not null &&
+            project.Animation.FindTrack("anim_cone") is not null &&
+            project.Animation.FindTrack("anim_bucket") is not null)
+            return Profiles.First(profile => profile.SourceName == "Zombie");
+        return null;
     }
 
     private static int FindMostVisibleFrame(AnimationDocument document)

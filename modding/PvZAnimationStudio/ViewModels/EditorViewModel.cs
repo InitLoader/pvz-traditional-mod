@@ -6,9 +6,18 @@ namespace PvZAnimationStudio.ViewModels;
 
 public readonly record struct TimelineKeySelection(string TrackId, int Frame);
 public readonly record struct CurveKeySelection(CurveChannel Channel, int Frame);
+public sealed record ProjectImageResourceItem(
+    string Symbol,
+    string SourcePath,
+    bool IsOriginal,
+    string OwnershipLabel,
+    System.Windows.Media.Imaging.BitmapSource? Thumbnail);
+public sealed record EntityTemplateOption(int Id, string DisplayLabel);
 
 public sealed class EditorViewModel : ObservableObject
 {
+    public sealed record IntegrationModeOption(EntityIntegrationMode Mode, string Label);
+
     private sealed record CopiedCurveKey(
         CurveChannel Channel, CurveInterpolationMode Interpolation, CurveKeyDefinition Key);
 
@@ -18,30 +27,64 @@ public sealed class EditorViewModel : ObservableObject
     private sealed record TimelineKeyClipboard(
         bool IsActionTrack, IReadOnlyList<CopiedTimelineKey> Keys);
 
+    private sealed record CopiedTrackImage(
+        string Symbol, string? SourcePath, int Columns, int Rows);
+
+    private sealed record WholeTrackClipboard(
+        string Name,
+        bool IsAlwaysVisibleInEditor,
+        IReadOnlyList<AnimationFrame> Frames,
+        IReadOnlyList<AnimationCurveDefinition> Curves,
+        IReadOnlyList<CopiedTrackImage> Images);
+
+    private static WholeTrackClipboard? s_wholeTrackClipboard;
+
+    private static readonly IReadOnlyList<EntityTemplateOption> PlantTemplateOptions =
+        PlantTemplateCatalog.RuntimeTemplates
+            .Select(template => new EntityTemplateOption(template.Id, template.DisplayLabel))
+            .ToArray();
+
+    private static readonly IReadOnlyList<EntityTemplateOption> ZombieTemplateOptions =
+        ZombieTemplateCatalog.All
+            .Select(template => new EntityTemplateOption(
+                template.Id,
+                $"{template.Id:D2} · {template.ChineseName}（{template.InternalName}）"))
+            .ToArray();
+
     private readonly ActionCatalogService _actionCatalog;
     private readonly TweenService _tweenService = new();
     private readonly ActionViewService _actionView = new();
     private readonly ProjectCloneService _cloneService = new();
     private readonly EditHistoryService _history = new();
     private readonly AnimationCurveService _curveService = new();
+    private readonly GroundMotionService _groundMotion = new();
+    private readonly OriginalResourceService _resources;
     private EditorProject _project;
     private AnimationTrack? _selectedTrack;
     private ActionDefinition? _selectedAction;
+    private AnimationEventDefinition? _selectedEvent;
     private int _currentFrame;
     private bool _isPlaying;
     private string _status = "就绪";
     private EditorTool _activeTool = EditorTool.Move;
     private bool _editTransactionActive;
     private TimelineKeyClipboard? _timelineKeyClipboard;
+    private readonly Dictionary<string, int[]> _timelineKeyCache = new(StringComparer.Ordinal);
+    private IReadOnlyList<AnimationTrack>? _timelineTracksCache;
+    private ActionFrameRange? _activeRangeCache;
+    private readonly Dictionary<string, IReadOnlyList<CurveChannel>> _curveChannelCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<(string TrackId, CurveChannel Channel), AnimationCurveDefinition> _displayCurveCache = [];
 
-    public EditorViewModel(ActionCatalogService actionCatalog)
+    public EditorViewModel(ActionCatalogService actionCatalog, OriginalResourceService? resources = null)
     {
         _actionCatalog = actionCatalog;
+        _resources = resources ?? new OriginalResourceService();
         _project = CreateDefaultProject(EntityKind.Plant);
         _selectedTrack = _project.Animation.Tracks.FirstOrDefault(track => !track.IsActionTrack);
     }
 
     public event EventHandler? VisualStateChanged;
+    public event EventHandler? ImageBindingsChanged;
 
     public EditorProject Project
     {
@@ -56,24 +99,111 @@ public sealed class EditorViewModel : ObservableObject
     public ObservableCollection<AnimationTrack> Tracks => Project.Animation.Tracks;
     public ObservableCollection<ActionDefinition> Actions => Project.Actions;
     public IReadOnlyList<ActionTemplate> ActionTemplates => _actionCatalog.Templates;
-    public IReadOnlyList<PlantTemplateDefinition> PlantTemplates => PlantTemplateCatalog.RuntimeTemplates;
-    public IReadOnlyList<AnimationTrack> TimelineTracks => _actionView.GetTimelineTracks(Project.Animation, SelectedAction);
-    public ActionFrameRange ActiveRange => _actionView.GetRange(Project.Animation, SelectedAction);
+    public IReadOnlyList<EntityTemplateOption> EntityTemplates => Project.Kind switch
+    {
+        EntityKind.Plant => PlantTemplateOptions,
+        EntityKind.Zombie => ZombieTemplateOptions,
+        _ => []
+    };
+    public IReadOnlyList<IntegrationModeOption> IntegrationModes { get; } =
+    [
+        new(EntityIntegrationMode.ReplaceOriginal, "替换原版动画"),
+        new(EntityIntegrationMode.AddEntity, "新增实体")
+    ];
+    public IReadOnlyList<ProjectImageResourceItem> ProjectImageResources
+    {
+        get
+        {
+            var symbols = Project.Animation.Tracks.SelectMany(track => track.Frames)
+                .Select(frame => frame.Image)
+                .Where(symbol => !string.IsNullOrWhiteSpace(symbol))
+                .Select(symbol => symbol!)
+                .Concat(Project.ImageBindings.Keys)
+                .Concat(Project.OriginalImageReferences)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(symbol => symbol, StringComparer.OrdinalIgnoreCase);
+            return symbols.Select(symbol =>
+            {
+                var isOriginal = Project.OriginalImageReferences.Contains(symbol);
+                var path = _resources.ResolvePath(Project, symbol) ?? "未找到图片文件";
+                return new ProjectImageResourceItem(
+                    symbol,
+                    path,
+                    isOriginal,
+                    isOriginal ? "原版引用 · 发布时复用" : "Mod 图片 · 发布时复制",
+                    _resources.ResolveThumbnail(Project, symbol));
+            }).ToArray();
+        }
+    }
+    public string ProjectImageResourcesSummary
+    {
+        get
+        {
+            var resources = ProjectImageResources;
+            return $"共 {resources.Count} 张 · 原版 {resources.Count(item => item.IsOriginal)} · Mod {resources.Count(item => !item.IsOriginal)}";
+        }
+    }
+    public IReadOnlyList<AnimationTrack> TimelineTracks =>
+        _timelineTracksCache ??= _actionView.GetTimelineTracks(Project.Animation, SelectedAction);
+    public ActionFrameRange ActiveRange =>
+        _activeRangeCache ??= _actionView.GetRange(Project.Animation, SelectedAction);
     public int TimelineFrameStart => ActiveRange.Start;
     public int TimelineFrameEnd => ActiveRange.End;
     public int TimelineFrameCount => ActiveRange.Count;
     public bool IsActionView => SelectedAction is not null;
     public bool CanUndo => _history.CanUndo;
     public bool CanRedo => _history.CanRedo;
-    public bool IsPlantProject => Project.Kind == EntityKind.Plant;
+    public bool HasEntityTemplates => Project.Kind is EntityKind.Plant or EntityKind.Zombie;
+    public string ProjectTemplatePickerLabel => Project.Kind switch
+    {
+        EntityKind.Plant => "植物模板速选",
+        EntityKind.Zombie => "僵尸模板速选",
+        _ => "实体模板速选"
+    };
+    public string ProjectTemplatePickerHelp => Project.Kind switch
+    {
+        EntityKind.Plant => "全局植物目录 0–48；选择后同步模板 ID 与载体 Reanimation",
+        EntityKind.Zombie => "全局僵尸目录 0–32；选择后同步模板 ID 与载体 Reanimation",
+        _ => "UI 和其他动画不使用植物或僵尸模板"
+    };
     public string UndoLabel => _history.UndoName is null ? "撤销" : $"撤销：{_history.UndoName}";
     public string RedoLabel => _history.RedoName is null ? "重做" : $"重做：{_history.RedoName}";
 
-    public EntityKind ProjectKind { get => Project.Kind; set => SetProjectValue("修改实体类型", Project.Kind, value, item => Project.Kind = item); }
+    public EntityKind ProjectKind
+    {
+        get => Project.Kind;
+        set
+        {
+            if (Project.Kind == value) return;
+            RecordUndo("修改实体类型");
+            Project.Kind = value;
+            SynchronizeTemplateCarrier();
+            RaiseProjectEditProperties();
+            NotifyVisualChanged();
+        }
+    }
     public string ProjectId { get => Project.Id; set => SetProjectValue("修改字符串 ID", Project.Id, value, item => Project.Id = item); }
     public string ProjectDisplayName { get => Project.DisplayName; set => SetProjectValue("修改中文名称", Project.DisplayName, value, item => Project.DisplayName = item); }
     public string ProjectDescription { get => Project.Description; set => SetProjectValue("修改介绍", Project.Description, value, item => Project.Description = item); }
+    public EntityIntegrationMode ProjectIntegrationMode
+    {
+        get => Project.IntegrationMode;
+        set
+        {
+            if (Project.IntegrationMode == value) return;
+            SetProjectValue("修改接入模式", Project.IntegrationMode, value, item => Project.IntegrationMode = item);
+            RaisePropertyChanged(nameof(ProjectIntegrationModeSummary));
+        }
+    }
+    public string ProjectIntegrationModeSummary => Project.IntegrationMode switch
+    {
+        EntityIntegrationMode.ReplaceOriginal =>
+            "只替换所选原版实体的主体动画；不创建新数字 ID，不写新增实体配置，也不复制可复用的原版图片。",
+        _ => "创建新的实体资产骨架；植物当前仍走模板兼容运行时，真正新增僵尸运行时尚未完成。"
+    };
     public string ProjectCarrierReanimation { get => Project.CarrierReanimation; set => SetProjectValue("修改载体动画", Project.CarrierReanimation, value, item => Project.CarrierReanimation = item); }
+    public string ProjectInitialActionId { get => Project.InitialActionId; set => SetProjectValue("修改初始动作", Project.InitialActionId, value, item => Project.InitialActionId = item); }
+    public bool ProjectHideTemplateAttachments { get => Project.HideTemplateAttachments; set => SetProjectValue("修改模板附件显示", Project.HideTemplateAttachments, value, item => Project.HideTemplateAttachments = item); }
     public AnimationOutputFormat ProjectOutputFormat { get => Project.OutputFormat; set => SetProjectValue("修改导出格式", Project.OutputFormat, value, item => Project.OutputFormat = item); }
     public string? ProjectGameRoot { get => Project.GameRoot; set => SetProjectValue("修改游戏目录", Project.GameRoot, value, item => Project.GameRoot = item); }
     public int ProjectNumericEntityId { get => Project.NumericEntityId; set => SetProjectValue("修改数字 ID", Project.NumericEntityId, value, item => Project.NumericEntityId = item); }
@@ -85,9 +215,7 @@ public sealed class EditorViewModel : ObservableObject
             if (Project.TemplateEntityId == value) return;
             RecordUndo("修改模板 ID");
             Project.TemplateEntityId = value;
-            if (Project.Kind == EntityKind.Plant &&
-                PlantTemplateCatalog.Find(value) is { IsRuntimeTemplate: true } template)
-                Project.CarrierReanimation = template.CarrierReanimation;
+            SynchronizeTemplateCarrier();
             RaiseProjectEditProperties();
             NotifyVisualChanged();
         }
@@ -96,9 +224,17 @@ public sealed class EditorViewModel : ObservableObject
     {
         get
         {
-            if (!IsPlantProject) return "僵尸、UI 和其他工程不使用植物模板目录。";
-            var definition = PlantTemplateCatalog.Find(ProjectTemplateEntityId);
-            return definition?.Summary ?? $"未知植物模板 ID：{ProjectTemplateEntityId}。";
+            if (Project.Kind == EntityKind.Plant)
+            {
+                var plant = PlantTemplateCatalog.Find(ProjectTemplateEntityId);
+                return plant?.Summary ?? $"未知植物模板 ID：{ProjectTemplateEntityId}。";
+            }
+            if (Project.Kind == EntityKind.Zombie)
+            {
+                var zombie = ZombieTemplateCatalog.Find(ProjectTemplateEntityId);
+                return zombie?.Summary ?? $"未知僵尸模板 ID：{ProjectTemplateEntityId}。";
+            }
+            return "UI 和其他工程不使用实体模板目录。";
         }
     }
     public int ProjectCost { get => Project.Cost; set => SetProjectValue("修改阳光", Project.Cost, value, item => Project.Cost = item); }
@@ -109,6 +245,7 @@ public sealed class EditorViewModel : ObservableObject
     public int ProjectDamage { get => Project.Damage; set => SetProjectValue("修改伤害", Project.Damage, value, item => Project.Damage = item); }
     public int ProjectShotsPerAttack { get => Project.ShotsPerAttack; set => SetProjectValue("修改每次发射数", Project.ShotsPerAttack, value, item => Project.ShotsPerAttack = item); }
     public float AnimationFps { get => Project.Animation.Fps; set => SetProjectValue("修改 FPS", Project.Animation.Fps, value, item => Project.Animation.Fps = item); }
+    public double EffectivePlaybackRate => Math.Clamp(SelectedAction?.Rate ?? AnimationFps, 0.1, 120.0);
 
     public string? SelectedActionId { get => SelectedAction?.Id; set => SetActionValue("修改动作 ID", SelectedAction?.Id, value, item => SelectedAction!.Id = item ?? string.Empty); }
     public string? SelectedActionDisplayName { get => SelectedAction?.DisplayName; set => SetActionValue("修改动作中文名", SelectedAction?.DisplayName, value, item => SelectedAction!.DisplayName = item ?? string.Empty); }
@@ -116,6 +253,65 @@ public sealed class EditorViewModel : ObservableObject
     public AnimationLoopMode? SelectedActionLoop { get => SelectedAction?.Loop; set => SetActionValue("修改动作循环", SelectedAction?.Loop, value, item => SelectedAction!.Loop = item ?? AnimationLoopMode.Loop); }
     public double? SelectedActionRate { get => SelectedAction?.Rate; set => SetActionValue("修改动作速度", SelectedAction?.Rate, value, item => SelectedAction!.Rate = item ?? Project.Animation.Fps); }
     public int? SelectedActionBlendFrames { get => SelectedAction?.BlendFrames; set => SetActionValue("修改动作混合帧", SelectedAction?.BlendFrames, value, item => SelectedAction!.BlendFrames = item ?? 0); }
+    public string SelectedActionReplacesCsv
+    {
+        get => SelectedAction is null ? string.Empty : string.Join(", ", SelectedAction.Replaces);
+        set
+        {
+            if (SelectedAction is null) return;
+            var replacements = (value ?? string.Empty)
+                .Split([',', ';', '\r', '\n', '\t', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            var normalized = string.Join(", ", replacements);
+            if (string.Equals(SelectedActionReplacesCsv, normalized, StringComparison.OrdinalIgnoreCase)) return;
+            RecordUndo("修改原版动作映射");
+            SelectedAction.Replaces = new ObservableCollection<string>(replacements);
+            RaiseActionProperties();
+        }
+    }
+
+    public ObservableCollection<AnimationEventDefinition>? SelectedActionEvents => SelectedAction?.Events;
+
+    public AnimationEventDefinition? SelectedEvent
+    {
+        get => _selectedEvent;
+        set
+        {
+            if (!SetField(ref _selectedEvent, value)) return;
+            RaiseEventProperties();
+        }
+    }
+
+    public string? SelectedEventId { get => SelectedEvent?.Id; set => SetEventValue("修改事件 ID", SelectedEvent?.Id, value, item => SelectedEvent!.Id = item ?? string.Empty); }
+    public int? SelectedEventFrame
+    {
+        get => SelectedEvent?.Frame;
+        set
+        {
+            if (SelectedEvent is null || SelectedEvent.Frame == value) return;
+            RecordUndo("修改事件帧");
+            SelectedEvent.Frame = value;
+            if (value.HasValue) SelectedEvent.NormalizedTime = null;
+            RaiseEventProperties();
+            RaisePropertyChanged(nameof(SelectedActionEvents));
+        }
+    }
+    public double? SelectedEventNormalizedTime
+    {
+        get => SelectedEvent?.NormalizedTime;
+        set
+        {
+            if (SelectedEvent is null || SelectedEvent.NormalizedTime == value) return;
+            RecordUndo("修改事件时间");
+            SelectedEvent.NormalizedTime = value;
+            if (value.HasValue) SelectedEvent.Frame = null;
+            RaiseEventProperties();
+            RaisePropertyChanged(nameof(SelectedActionEvents));
+        }
+    }
+    public bool? SelectedEventOncePerLoop { get => SelectedEvent?.OncePerLoop; set => SetEventValue("修改事件循环设置", SelectedEvent?.OncePerLoop, value, item => SelectedEvent!.OncePerLoop = item ?? true); }
+    public string? SelectedEventTargetAction { get => SelectedEvent?.TargetAction; set => SetEventValue("修改事件目标动作", SelectedEvent?.TargetAction, value, item => SelectedEvent!.TargetAction = item ?? string.Empty); }
 
     public AnimationTrack? SelectedTrack
     {
@@ -124,6 +320,7 @@ public sealed class EditorViewModel : ObservableObject
         {
             if (!SetField(ref _selectedTrack, value)) return;
             RaiseFrameProperties();
+            RaiseTrackPresentationProperties();
             NotifyVisualChanged();
         }
     }
@@ -134,6 +331,9 @@ public sealed class EditorViewModel : ObservableObject
         set
         {
             if (!SetField(ref _selectedAction, value)) return;
+            _timelineTracksCache = null;
+            _activeRangeCache = null;
+            _selectedEvent = value?.Events.FirstOrDefault();
             var range = ActiveRange;
             _currentFrame = range.Start;
             var visible = TimelineTracks;
@@ -142,6 +342,7 @@ public sealed class EditorViewModel : ObservableObject
             RaisePropertyChanged(nameof(CurrentFrame));
             RaisePropertyChanged(nameof(SelectedTrack));
             RaiseActionProperties();
+            RaiseEventProperties();
             RaiseTimelineProperties();
             RaiseFrameProperties();
             Status = value is null
@@ -176,7 +377,12 @@ public sealed class EditorViewModel : ObservableObject
             var range = ActiveRange;
             value = Math.Clamp(value, range.Start, range.End);
             if (!SetField(ref _currentFrame, value)) return;
-            RaiseFrameProperties();
+            if (IsPlaying)
+            {
+                RaisePropertyChanged(nameof(FrameLabel));
+                RaisePropertyChanged(nameof(CurrentHasKey));
+            }
+            else RaiseFrameProperties();
             NotifyVisualChanged();
         }
     }
@@ -184,7 +390,11 @@ public sealed class EditorViewModel : ObservableObject
     public bool IsPlaying
     {
         get => _isPlaying;
-        set => SetField(ref _isPlaying, value);
+        set
+        {
+            if (!SetField(ref _isPlaying, value)) return;
+            if (!value) RaiseFrameProperties();
+        }
     }
 
     public string Status
@@ -193,11 +403,21 @@ public sealed class EditorViewModel : ObservableObject
         set => SetField(ref _status, value);
     }
 
-    public string FrameLabel => IsActionView
-        ? $"动作帧 {CurrentFrame - ActiveRange.Start + 1} / {ActiveRange.Count}（原始 {CurrentFrame + 1}）"
-        : $"帧 {CurrentFrame + 1} / {Math.Max(1, Project.Animation.FrameCount)}";
-    public bool CurrentHasKey => SelectedTrack is not null &&
-                                 _curveService.HasTimelineKey(Project, SelectedTrack, CurrentFrame);
+    public string FrameLabel
+    {
+        get
+        {
+            var fps = EffectivePlaybackRate;
+            var localFrame = IsActionView ? CurrentFrame - ActiveRange.Start : CurrentFrame;
+            var count = IsActionView ? ActiveRange.Count : Math.Max(1, Project.Animation.FrameCount);
+            var seconds = localFrame / fps;
+            var duration = Math.Max(0, count - 1) / fps;
+            return IsActionView
+                ? $"动作帧 {localFrame + 1} / {count}（原始 {CurrentFrame + 1}） · {seconds:0.###}秒 / {duration:0.###}秒"
+                : $"帧 {CurrentFrame + 1} / {count} · {seconds:0.###}秒 / {duration:0.###}秒";
+        }
+    }
+    public bool CurrentHasKey => SelectedTrack is not null && IsMeaningfulKey(SelectedTrack, CurrentFrame);
 
     public float? CurrentX { get => CurrentExplicitFrame?.X; set => SetFrameValue("修改 X 位移", CurveChannel.X, frame => frame.X = value); }
     public float? CurrentY { get => CurrentExplicitFrame?.Y; set => SetFrameValue("修改 Y 位移", CurveChannel.Y, frame => frame.Y = value); }
@@ -207,10 +427,124 @@ public sealed class EditorViewModel : ObservableObject
     public float? CurrentScaleY { get => CurrentExplicitFrame?.ScaleY; set => SetFrameValue("修改 Y 缩放", CurveChannel.ScaleY, frame => frame.ScaleY = value); }
     public float? CurrentVisibilityFrame { get => CurrentExplicitFrame?.Frame; set => SetFrameValue("修改图片子帧", CurveChannel.Frame, frame => frame.Frame = value); }
     public float? CurrentAlpha { get => CurrentExplicitFrame?.Alpha; set => SetFrameValue("修改透明度", CurveChannel.Alpha, frame => frame.Alpha = value); }
-    public string? CurrentImage { get => CurrentExplicitFrame?.Image; set => SetFrameValue("修改图片符号", null, frame => frame.Image = value); }
+    public string? CurrentImage
+    {
+        get => CurrentExplicitFrame?.Image ?? CurrentResolvedFrame?.Image;
+        set
+        {
+            if (string.Equals(CurrentImage, value, StringComparison.Ordinal)) return;
+            SetFrameValue("修改图片符号", null, frame => frame.Image = value);
+        }
+    }
+    public string CurrentImageValueSource
+    {
+        get
+        {
+            var explicitImage = CurrentExplicitFrame?.Image;
+            var effectiveImage = CurrentResolvedFrame?.Image;
+            if (explicitImage is not null)
+                return explicitImage.Length == 0 ? "本帧显式隐藏图片" : "本帧显式图片符号";
+            if (string.IsNullOrWhiteSpace(effectiveImage)) return "当前帧没有图片";
+            var ownership = Project.OriginalImageReferences.Contains(effectiveImage)
+                ? "原版引用"
+                : "Mod 图片";
+            return $"继承自前一帧 · {ownership}";
+        }
+    }
     public string? CurrentText { get => CurrentExplicitFrame?.Text; set => SetFrameValue("修改文字", null, frame => frame.Text = value); }
 
     public ResolvedAnimationFrame? CurrentResolvedFrame => SelectedTrack?.ResolveFrame(CurrentFrame);
+    public ActionDefinition? CurrentGroundAction
+    {
+        get
+        {
+            if (SelectedAction is not null) return SelectedAction;
+            return Actions.FirstOrDefault(action =>
+            {
+                var range = _actionView.GetRange(Project.Animation, action);
+                return CurrentFrame >= range.Start && CurrentFrame <= range.End;
+            });
+        }
+    }
+    public GroundMotionSample? CurrentGroundMotion =>
+        _groundMotion.Sample(Project.Animation, CurrentGroundAction, CurrentFrame);
+    public bool HasGroundMotion => CurrentGroundMotion is not null;
+    public string GroundMotionFrameText
+    {
+        get
+        {
+            var sample = CurrentGroundMotion;
+            if (sample is null) return "当前动画没有 _ground 轨道；原版不会从动画读取行走位移。";
+            return sample.Frame == sample.NextFrame
+                ? $"{CurrentGroundAction?.DisplayName ?? "当前范围"} · 原始帧 {sample.Frame + 1}：动作末帧，原版相邻帧速度为 0"
+                : $"{CurrentGroundAction?.DisplayName ?? "当前范围"} · 原始帧 {sample.Frame + 1} → {sample.NextFrame + 1}：ΔX {sample.DeltaX:+0.###;-0.###;0}，ΔY {sample.DeltaY:+0.###;-0.###;0}";
+        }
+    }
+    public string GroundMotionVelocityText
+    {
+        get
+        {
+            var sample = CurrentGroundMotion;
+            return sample is null
+                ? "GetTrackVelocity：不可用"
+                : $"GetTrackVelocity：{sample.PixelsPerUpdate:+0.###;-0.###;0} 像素/更新（{sample.PixelsPerSecond:+0.###;-0.###;0} 像素/秒）";
+        }
+    }
+    public string GroundMotionAverageText
+    {
+        get
+        {
+            var sample = CurrentGroundMotion;
+            return sample is null
+                ? "选择或创建名为 _ground 的轨道后可视化。"
+                : $"动作平均：{sample.AveragePixelsPerUpdate:+0.###;-0.###;0} 像素/更新（{sample.AveragePixelsPerSecond:+0.###;-0.###;0} 像素/秒） · rate {sample.AnimationRate:0.###}";
+        }
+    }
+    public string GroundMotionDistanceText
+    {
+        get
+        {
+            var sample = CurrentGroundMotion;
+            return sample is null
+                ? "公式：相邻帧 ΔX × 0.01 × 动作 rate"
+                : $"动作累计：X {sample.TotalDeltaX:+0.###;-0.###;0}，Y {sample.TotalDeltaY:+0.###;-0.###;0} · 原版每秒 100 次更新";
+        }
+    }
+    public bool SelectedTrackIsLocked
+    {
+        get => SelectedTrack?.IsLockedInEditor ?? false;
+        set
+        {
+            if (SelectedTrack is not null) SetTrackEditorLock(SelectedTrack, value);
+        }
+    }
+    public bool SelectedTrackIsAlwaysVisible
+    {
+        get => SelectedTrack?.IsAlwaysVisibleInEditor ?? false;
+        set
+        {
+            if (SelectedTrack is not null) SetTrackEditorAlwaysVisible(SelectedTrack, value);
+        }
+    }
+    public string SelectedTrackImageSymbol => SelectedTrack?.IsGroundTrack == true
+        ? "_ground（定位/速度轨道，无贴图）"
+        : CurrentResolvedFrame?.Image ?? SelectedTrack?.EditorImageSymbol ?? "无图片";
+    public string SelectedTrackImagePath => SelectedTrack?.IsGroundTrack == true
+        ? "运行时读取 X 位移差，不需要图片资源"
+        : _resources.ResolvePath(Project, CurrentResolvedFrame?.Image ?? SelectedTrack?.EditorImageSymbol) ?? "未找到图片文件";
+    public string SelectedTrackImageLayout
+    {
+        get
+        {
+            var image = CurrentResolvedFrame?.Image ?? SelectedTrack?.EditorImageSymbol;
+            var resource = _resources.ResolveImage(Project, image);
+            return SelectedTrack?.IsGroundTrack == true
+                ? "原版特殊轨道"
+                : resource is null ? "无可用布局" : $"{resource.SafeColumns} 列 × {resource.SafeRows} 行";
+        }
+    }
+    public System.Windows.Media.Imaging.BitmapSource? SelectedTrackThumbnail =>
+        _resources.ResolveThumbnail(Project, CurrentResolvedFrame?.Image ?? SelectedTrack?.EditorImageSymbol);
 
     public void NewProject(EntityKind kind)
     {
@@ -226,8 +560,15 @@ public sealed class EditorViewModel : ObservableObject
         _selectedTrack = project.Animation.Tracks.FirstOrDefault(track => !track.IsActionTrack)
                          ?? project.Animation.Tracks.FirstOrDefault();
         _selectedAction = null;
+        _selectedEvent = null;
         IsPlaying = false;
         _history.Clear();
+        _timelineKeyCache.Clear();
+        _timelineTracksCache = null;
+        _activeRangeCache = null;
+        _curveChannelCache.Clear();
+        _displayCurveCache.Clear();
+        RefreshTrackThumbnails();
         RaisePropertyChanged(nameof(CurrentFrame));
         RaisePropertyChanged(nameof(SelectedTrack));
         RaisePropertyChanged(nameof(SelectedAction));
@@ -245,8 +586,15 @@ public sealed class EditorViewModel : ObservableObject
         _selectedTrack = document.Tracks.FirstOrDefault(track => !track.IsActionTrack)
                          ?? document.Tracks.FirstOrDefault();
         _selectedAction = null;
+        _selectedEvent = null;
         _currentFrame = 0;
         _history.Clear();
+        _timelineKeyCache.Clear();
+        _timelineTracksCache = null;
+        _activeRangeCache = null;
+        _curveChannelCache.Clear();
+        _displayCurveCache.Clear();
+        RefreshTrackThumbnails();
         RaisePropertyChanged(nameof(SelectedTrack));
         RaisePropertyChanged(nameof(SelectedAction));
         RaisePropertyChanged(nameof(CurrentFrame));
@@ -259,6 +607,7 @@ public sealed class EditorViewModel : ObservableObject
         RecordUndo("重新识别动作");
         Project.Actions = _actionCatalog.InferActions(Project.Animation, Project.Kind);
         _selectedAction = null;
+        _selectedEvent = null;
         RaisePropertyChanged(nameof(Actions));
         RaisePropertyChanged(nameof(SelectedAction));
         RaiseTimelineProperties();
@@ -295,6 +644,33 @@ public sealed class EditorViewModel : ObservableObject
         SelectedAction = null;
     }
 
+    public void AddAnimationEvent()
+    {
+        if (SelectedAction is null) return;
+        RecordUndo("添加动作事件");
+        var animationEvent = new AnimationEventDefinition
+        {
+            Id = "FIRE_PROJECTILE",
+            Frame = Math.Max(0, CurrentFrame - ActiveRange.Start),
+            OncePerLoop = true
+        };
+        SelectedAction.Events.Add(animationEvent);
+        SelectedEvent = animationEvent;
+        RaisePropertyChanged(nameof(SelectedActionEvents));
+    }
+
+    public void RemoveSelectedAnimationEvent()
+    {
+        if (SelectedAction is null || SelectedEvent is null) return;
+        RecordUndo("删除动作事件");
+        var index = SelectedAction.Events.IndexOf(SelectedEvent);
+        SelectedAction.Events.Remove(SelectedEvent);
+        SelectedEvent = SelectedAction.Events.Count == 0
+            ? null
+            : SelectedAction.Events[Math.Clamp(index, 0, SelectedAction.Events.Count - 1)];
+        RaisePropertyChanged(nameof(SelectedActionEvents));
+    }
+
     public void AddTrack(string name)
     {
         RecordUndo("添加轨道");
@@ -305,6 +681,7 @@ public sealed class EditorViewModel : ObservableObject
         var track = new AnimationTrack { Name = name };
         track.EnsureFrameCount(Math.Max(1, Project.Animation.FrameCount));
         Project.Animation.Tracks.Add(track);
+        RefreshTrackThumbnail(track);
         SelectedTrack = track;
         RaisePropertyChanged(nameof(Tracks));
         RaiseTimelineProperties();
@@ -329,6 +706,7 @@ public sealed class EditorViewModel : ObservableObject
         frame.Alpha = 1;
         frame.Image = imageSymbol;
         Project.Animation.Tracks.Add(track);
+        RefreshTrackThumbnail(track);
         SelectedTrack = track;
         RaisePropertyChanged(nameof(Tracks));
         RaiseTimelineProperties();
@@ -337,23 +715,277 @@ public sealed class EditorViewModel : ObservableObject
         return track;
     }
 
+    public string? ReplaceSelectedTrackImage(string file)
+    {
+        var track = SelectedTrack;
+        if (track is null)
+        {
+            Status = "请先选择要更换图片的轨道。";
+            return null;
+        }
+        if (!EnsureTrackEditable(track, "更换图片")) return null;
+        if (track.IsGroundTrack || track.IsActionTrack)
+        {
+            Status = "_ground 和纯动作标记轨道没有可更换的图片。";
+            return null;
+        }
+
+        var oldSymbol = CurrentResolvedFrame?.Image ?? track.EditorImageSymbol ??
+                        track.Frames.Select(frame => frame.Image)
+                            .FirstOrDefault(symbol => !string.IsNullOrWhiteSpace(symbol));
+        if (string.IsNullOrWhiteSpace(oldSymbol))
+        {
+            Status = $"轨道 {track.Name} 还没有图片；请先导入图片或拖入图片创建视觉轨道。";
+            return null;
+        }
+        var matchingFrames = track.Frames
+            .Where(frame => string.Equals(frame.Image, oldSymbol, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (matchingFrames.Length == 0)
+        {
+            Status = $"轨道 {track.Name} 没有找到图片符号 {oldSymbol} 的显式图片关键点。";
+            return null;
+        }
+
+        _resources.ValidateImportImage(file);
+        RecordUndo("更换轨道图片");
+        var newSymbol = _resources.ImportImage(Project, file);
+        if (Project.ImageLayouts.TryGetValue(oldSymbol, out var oldLayout))
+        {
+            Project.ImageLayouts[newSymbol] = new ImageLayoutDefinition
+            {
+                Columns = Math.Max(1, oldLayout.Columns),
+                Rows = Math.Max(1, oldLayout.Rows)
+            };
+        }
+        foreach (var frame in matchingFrames) frame.Image = newSymbol;
+
+        var oldSymbolStillUsed = Project.Animation.Tracks
+            .SelectMany(item => item.Frames)
+            .Any(frame => string.Equals(frame.Image, oldSymbol, StringComparison.OrdinalIgnoreCase));
+        if (!oldSymbolStillUsed)
+        {
+            Project.ImageBindings.Remove(oldSymbol);
+            Project.ImageLayouts.Remove(oldSymbol);
+            Project.OriginalImageReferences.Remove(oldSymbol);
+        }
+
+        RefreshTrackThumbnail(track);
+        RaiseFrameProperties();
+        RaiseTrackPresentationProperties();
+        ImageBindingsChanged?.Invoke(this, EventArgs.Empty);
+        NotifyVisualChanged();
+        Status = $"已将轨道 {track.Name} 的图片 {oldSymbol} 更换为 {newSymbol}；" +
+                 $"更新了 {matchingFrames.Length} 个图片关键点，帧、动作、变换和曲线均保持不变。";
+        return newSymbol;
+    }
+
     public void RemoveSelectedTrack()
     {
-        if (SelectedTrack is null || Project.Animation.Tracks.Count <= 1) return;
+        if (SelectedTrack is null)
+        {
+            Status = "请先选择要删除的轨道。";
+            return;
+        }
+        if (Project.Animation.Tracks.Count <= 1)
+        {
+            Status = "动画至少需要保留一条轨道，无法删除最后一条轨道。";
+            return;
+        }
+        if (!EnsureTrackEditable(SelectedTrack, "删除整个轨道")) return;
+        var removedTrack = SelectedTrack;
         RecordUndo("删除轨道");
-        var index = Project.Animation.Tracks.IndexOf(SelectedTrack);
-        foreach (var curve in Project.Curves.Where(curve => curve.TrackId == SelectedTrack.EditorId).ToArray())
+        var index = Project.Animation.Tracks.IndexOf(removedTrack);
+        var removedCurves = Project.Curves.Where(curve => curve.TrackId == removedTrack.EditorId).ToArray();
+        foreach (var curve in removedCurves)
             Project.Curves.Remove(curve);
-        Project.Animation.Tracks.Remove(SelectedTrack);
+        var removedActions = Project.Actions.Where(action =>
+            string.Equals(action.Track, removedTrack.Name, StringComparison.OrdinalIgnoreCase)).ToArray();
+        foreach (var action in removedActions) Project.Actions.Remove(action);
+        if (removedActions.Any(action => string.Equals(action.Id, Project.InitialActionId,
+                StringComparison.OrdinalIgnoreCase)))
+            Project.InitialActionId = Project.Actions.FirstOrDefault()?.Id ?? string.Empty;
+        if (_selectedAction is not null && removedActions.Contains(_selectedAction))
+        {
+            _selectedAction = Project.Actions.FirstOrDefault();
+            _selectedEvent = _selectedAction?.Events.FirstOrDefault();
+        }
+        Project.Animation.Tracks.Remove(removedTrack);
         SelectedTrack = Project.Animation.Tracks[Math.Clamp(index, 0, Project.Animation.Tracks.Count - 1)];
         RaisePropertyChanged(nameof(Tracks));
+        RaisePropertyChanged(nameof(Actions));
+        RaiseActionProperties();
+        RaiseEventProperties();
+        RaiseProjectEditProperties();
         RaiseTimelineProperties();
+        RaiseFrameProperties();
         NotifyVisualChanged();
+        Status = $"已删除整个轨道 {removedTrack.Name}、{removedCurves.Length} 条关联曲线和 " +
+                 $"{removedActions.Length} 个关联动作；可用 Ctrl+Z 完整恢复。";
+    }
+
+    public void SetTrackEditorVisibility(AnimationTrack track, bool visible)
+    {
+        if (!Project.Animation.Tracks.Contains(track) || track.IsVisibleInEditor == visible) return;
+        RecordUndo(visible ? "显示轨道" : "隐藏轨道");
+        track.IsVisibleInEditor = visible;
+        Status = visible ? $"已显示轨道 {track.Name}" : $"已在编辑器中隐藏轨道 {track.Name}";
+        NotifyVisualChanged();
+    }
+
+    public void ToggleTrackEditorVisibility(AnimationTrack track) =>
+        SetTrackEditorVisibility(track, !track.IsVisibleInEditor);
+
+    public void SetTrackEditorAlwaysVisible(AnimationTrack track, bool alwaysVisible)
+    {
+        if (!Project.Animation.Tracks.Contains(track) || track.IsAlwaysVisibleInEditor == alwaysVisible) return;
+        RecordUndo(alwaysVisible ? "常显轨道" : "取消常显轨道");
+        track.IsAlwaysVisibleInEditor = alwaysVisible;
+        RaisePropertyChanged(nameof(SelectedTrackIsAlwaysVisible));
+        Status = alwaysVisible
+            ? $"轨道 {track.Name} 已设为常显；切换其他轨道时仍保留在实体预览中"
+            : $"轨道 {track.Name} 已恢复实体预览的自动显示规则";
+        NotifyVisualChanged();
+    }
+
+    public void ToggleTrackEditorAlwaysVisible(AnimationTrack track) =>
+        SetTrackEditorAlwaysVisible(track, !track.IsAlwaysVisibleInEditor);
+
+    public void SetTrackEditorLock(AnimationTrack track, bool locked)
+    {
+        if (!Project.Animation.Tracks.Contains(track) || track.IsLockedInEditor == locked) return;
+        RecordUndo(locked ? "锁定轨道" : "解锁轨道");
+        track.IsLockedInEditor = locked;
+        RaisePropertyChanged(nameof(SelectedTrackIsLocked));
+        Status = locked ? $"已锁定轨道 {track.Name}" : $"已解锁轨道 {track.Name}";
+        NotifyVisualChanged();
+    }
+
+    public void ToggleTrackEditorLock(AnimationTrack track) =>
+        SetTrackEditorLock(track, !track.IsLockedInEditor);
+
+    public bool CopySelectedWholeTrack()
+    {
+        if (SelectedTrack is null)
+        {
+            Status = "请先选择要复制的轨道。";
+            return false;
+        }
+
+        var symbols = SelectedTrack.Frames
+            .Select(frame => frame.Image)
+            .Where(symbol => !string.IsNullOrWhiteSpace(symbol))
+            .Select(symbol => symbol!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var images = new List<CopiedTrackImage>(symbols.Length);
+        foreach (var symbol in symbols)
+        {
+            var layout = Project.ImageLayouts.TryGetValue(symbol, out var configured)
+                ? configured
+                : null;
+            var resolved = layout is null ? _resources.ResolveImage(Project, symbol) : null;
+            images.Add(new CopiedTrackImage(
+                symbol,
+                _resources.ResolvePath(Project, symbol),
+                Math.Max(1, layout?.Columns ?? resolved?.SafeColumns ?? 1),
+                Math.Max(1, layout?.Rows ?? resolved?.SafeRows ?? 1)));
+        }
+        var curves = Project.Curves
+            .Where(curve => curve.TrackId == SelectedTrack.EditorId)
+            .Select(curve => curve.Clone())
+            .ToArray();
+        s_wholeTrackClipboard = new WholeTrackClipboard(
+            SelectedTrack.Name,
+            SelectedTrack.IsAlwaysVisibleInEditor,
+            SelectedTrack.Frames.Select(frame => frame.Clone()).ToArray(),
+            curves,
+            images);
+        Status = $"已复制完整轨道 {SelectedTrack.Name}，包含 {images.Count} 个图片资源；可打开另一动画后粘贴。";
+        return true;
+    }
+
+    public AnimationTrack? PasteWholeTrackAsNew()
+    {
+        var clipboard = s_wholeTrackClipboard;
+        if (clipboard is null)
+        {
+            Status = "还没有复制完整轨道。";
+            return null;
+        }
+        if (clipboard.Frames.Count == 0 || clipboard.Frames.Count > 20000)
+        {
+            Status = "复制的轨道帧数无效。";
+            return null;
+        }
+
+        RecordUndo("粘贴完整轨道");
+        var imageSymbols = Project.ImageBindings.Keys
+            .Concat(Project.Animation.Tracks.SelectMany(track => track.Frames)
+                .Select(frame => frame.Image)
+                .Where(symbol => !string.IsNullOrWhiteSpace(symbol))
+                .Select(symbol => symbol!))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var imageMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var image in clipboard.Images)
+        {
+            var baseSymbol = image.Symbol + "_COPY";
+            var targetSymbol = baseSymbol;
+            var suffix = 2;
+            while (!imageSymbols.Add(targetSymbol)) targetSymbol = $"{baseSymbol}_{suffix++}";
+            imageMap[image.Symbol] = targetSymbol;
+            if (!string.IsNullOrWhiteSpace(image.SourcePath) && File.Exists(image.SourcePath))
+                Project.ImageBindings[targetSymbol] = image.SourcePath;
+            Project.ImageLayouts[targetSymbol] = new ImageLayoutDefinition
+            {
+                Columns = Math.Max(1, image.Columns),
+                Rows = Math.Max(1, image.Rows)
+            };
+        }
+
+        var name = clipboard.Name;
+        var baseName = name;
+        var nameSuffix = 2;
+        while (Project.Animation.FindTrack(name) is not null) name = $"{baseName}_{nameSuffix++}";
+        var track = new AnimationTrack
+        {
+            Name = name,
+            IsVisibleInEditor = true,
+            IsAlwaysVisibleInEditor = clipboard.IsAlwaysVisibleInEditor
+        };
+        foreach (var sourceFrame in clipboard.Frames)
+        {
+            var frame = sourceFrame.Clone();
+            if (frame.Image is not null && imageMap.TryGetValue(frame.Image, out var mapped))
+                frame.Image = mapped;
+            track.Frames.Add(frame);
+        }
+        var targetFrameCount = Math.Max(Project.Animation.FrameCount, track.Frames.Count);
+        if (targetFrameCount > Project.Animation.FrameCount)
+            Project.Animation.EnsureUniformFrameCount(targetFrameCount);
+        track.EnsureFrameCount(Math.Max(1, targetFrameCount));
+        Project.Animation.Tracks.Add(track);
+        foreach (var sourceCurve in clipboard.Curves)
+        {
+            var curve = sourceCurve.Clone();
+            curve.TrackId = track.EditorId;
+            Project.Curves.Add(curve);
+        }
+        SelectedTrack = track;
+        RefreshTrackThumbnail(track);
+        RaisePropertyChanged(nameof(Tracks));
+        RaiseTimelineProperties();
+        RaiseFrameProperties();
+        ImageBindingsChanged?.Invoke(this, EventArgs.Empty);
+        NotifyVisualChanged();
+        Status = $"已粘贴为新轨道 {track.Name}；轨道、曲线和 {imageMap.Count} 个独立图片绑定均已复制。";
+        return track;
     }
 
     public void SetKeyframe()
     {
         if (SelectedTrack is null) return;
+        if (!EnsureTrackEditable(SelectedTrack, "设置关键帧")) return;
         RecordUndo("设置关键帧");
         var resolved = SelectedTrack.ResolveFrame(CurrentFrame);
         SelectedTrack.Frames[CurrentFrame] = resolved.ToExplicitFrame();
@@ -382,6 +1014,7 @@ public sealed class EditorViewModel : ObservableObject
     public void CreateTween(TweenCurve curve)
     {
         if (SelectedTrack is null) return;
+        if (!EnsureTrackEditable(SelectedTrack, "生成补间")) return;
         RecordUndo(curve == TweenCurve.Linear ? "生成线性补间" : "生成平滑补间");
         var count = _tweenService.BakeToNextKeyframe(SelectedTrack, CurrentFrame, curve);
         Status = curve == TweenCurve.Linear
@@ -420,6 +1053,7 @@ public sealed class EditorViewModel : ObservableObject
     public bool MoveCurrentKeyframe(int targetFrame)
     {
         if (SelectedTrack is null || !CurrentHasKey) return false;
+        if (!EnsureTrackEditable(SelectedTrack, "移动关键帧")) return false;
         var sourceFrame = CurrentFrame;
         targetFrame = Math.Clamp(targetFrame, TimelineFrameStart, TimelineFrameEnd);
         if (sourceFrame == targetFrame) return false;
@@ -439,6 +1073,9 @@ public sealed class EditorViewModel : ObservableObject
         IReadOnlyCollection<TimelineKeySelection> selection, int offset)
     {
         if (selection.Count == 0 || offset == 0) return selection;
+        selection = selection.Where(item => Project.Animation.Tracks.FirstOrDefault(track => track.EditorId == item.TrackId)
+            is { IsLockedInEditor: false }).ToArray();
+        if (selection.Count == 0) { Status = "所选关键帧所在轨道已锁定。"; return []; }
         RecordUndo("批量移动轨道关键帧");
         foreach (var trackId in selection.Select(item => item.TrackId).Distinct())
         {
@@ -483,6 +1120,9 @@ public sealed class EditorViewModel : ObservableObject
     public void DeleteTimelineKeys(IReadOnlyCollection<TimelineKeySelection> selection)
     {
         if (selection.Count == 0) return;
+        selection = selection.Where(item => Project.Animation.Tracks.FirstOrDefault(track => track.EditorId == item.TrackId)
+            is { IsLockedInEditor: false }).ToArray();
+        if (selection.Count == 0) { Status = "所选关键帧所在轨道已锁定。"; return; }
         RecordUndo("批量删除轨道关键帧");
         // A compiled animation or an older project can contain explicit motion
         // keys without .pvza curve metadata. Capture those keys before clearing
@@ -508,6 +1148,7 @@ public sealed class EditorViewModel : ObservableObject
     public void DeleteCurrentKeyframe()
     {
         if (SelectedTrack is null || !CurrentHasKey) return;
+        if (!EnsureTrackEditable(SelectedTrack, "删除关键帧")) return;
         RecordUndo("删除轨道关键帧");
         _curveService.CaptureExplicitMotionCurves(Project, SelectedTrack);
         SelectedTrack.Frames[CurrentFrame].Clear();
@@ -596,6 +1237,7 @@ public sealed class EditorViewModel : ObservableObject
             Status = "还没有复制关键帧。";
             return [];
         }
+        if (!EnsureTrackEditable(SelectedTrack, "粘贴关键帧")) return [];
         if (SelectedTrack.IsActionTrack != _timelineKeyClipboard.IsActionTrack)
         {
             Status = "动作标记轨道与普通视觉轨道不能互相粘贴关键帧。";
@@ -651,18 +1293,29 @@ public sealed class EditorViewModel : ObservableObject
         return targetFrames.Select(frame => new TimelineKeySelection(targetTrack.EditorId, frame)).ToArray();
     }
 
-    public IReadOnlyList<CurveChannel> GetCurveChannels() => SelectedTrack is null
-        ? []
-        : _curveService.GetAvailableChannels(Project, SelectedTrack);
+    public IReadOnlyList<CurveChannel> GetCurveChannels()
+    {
+        if (SelectedTrack is null) return [];
+        if (_curveChannelCache.TryGetValue(SelectedTrack.EditorId, out var cached)) return cached;
+        cached = _curveService.GetAvailableChannels(Project, SelectedTrack);
+        _curveChannelCache[SelectedTrack.EditorId] = cached;
+        return cached;
+    }
 
     public AnimationCurveDefinition? GetCurve(CurveChannel channel, bool create = false) => SelectedTrack is null
         ? null
         : create ? _curveService.EnsureCurve(Project, SelectedTrack, channel)
                  : _curveService.FindCurve(Project, SelectedTrack, channel);
 
-    public AnimationCurveDefinition? GetCurveForDisplay(CurveChannel channel) => SelectedTrack is null
-        ? null
-        : _curveService.GetCurveForDisplay(Project, SelectedTrack, channel);
+    public AnimationCurveDefinition? GetCurveForDisplay(CurveChannel channel)
+    {
+        if (SelectedTrack is null) return null;
+        var key = (SelectedTrack.EditorId, channel);
+        if (_displayCurveCache.TryGetValue(key, out var cached)) return cached;
+        cached = _curveService.GetCurveForDisplay(Project, SelectedTrack, channel);
+        _displayCurveCache[key] = cached;
+        return cached;
+    }
 
     public IReadOnlyList<int> GetCurveKeyFrames(CurveChannel channel) => SelectedTrack is null
         ? []
@@ -678,9 +1331,17 @@ public sealed class EditorViewModel : ObservableObject
         return _curveService.GetHandles(Project, SelectedTrack, curve, key);
     }
 
+    public CurveHandlePair GetCurveHandles(CurveChannel channel, AnimationCurveDefinition curve,
+        CurveKeyDefinition key, IReadOnlyList<CurveKeyDefinition> sortedKeys)
+    {
+        if (SelectedTrack is null) return default;
+        return _curveService.GetHandles(Project, SelectedTrack, curve, key, sortedKeys);
+    }
+
     public void MoveCurveKey(CurveChannel channel, int sourceFrame, int targetFrame, float value)
     {
         if (SelectedTrack is null) return;
+        if (!EnsureTrackEditable(SelectedTrack, "移动曲线关键点")) return;
         RecordUndo("移动曲线关键点");
         _curveService.MoveKey(Project, SelectedTrack, channel, sourceFrame, targetFrame, value);
         _currentFrame = targetFrame;
@@ -694,6 +1355,7 @@ public sealed class EditorViewModel : ObservableObject
     {
         if (SelectedTrack is null || selection.Count == 0 || frameOffset == 0 && Math.Abs(valueOffset) < 0.000001f)
             return selection;
+        if (!EnsureTrackEditable(SelectedTrack, "移动曲线关键点")) return [];
         RecordUndo("批量移动曲线关键点");
         var result = selection.ToHashSet();
         var direction = Math.Sign(frameOffset);
@@ -738,6 +1400,7 @@ public sealed class EditorViewModel : ObservableObject
     public void DeleteCurveKeys(IReadOnlyCollection<CurveKeySelection> selection)
     {
         if (SelectedTrack is null || selection.Count == 0) return;
+        if (!EnsureTrackEditable(SelectedTrack, "删除曲线关键点")) return;
         RecordUndo("批量删除曲线关键点");
         foreach (var item in selection)
             _curveService.DeleteKey(Project, SelectedTrack, item.Channel, item.Frame);
@@ -748,6 +1411,7 @@ public sealed class EditorViewModel : ObservableObject
     public void DeleteCurveKey(CurveChannel channel, int frame)
     {
         if (SelectedTrack is null) return;
+        if (!EnsureTrackEditable(SelectedTrack, "删除曲线关键点")) return;
         RecordUndo("删除曲线关键点");
         _curveService.DeleteKey(Project, SelectedTrack, channel, frame);
         RaiseFrameProperties();
@@ -757,6 +1421,7 @@ public sealed class EditorViewModel : ObservableObject
     public void SetCurveHandle(CurveChannel channel, int frame, bool left, float handleFrame, float handleValue)
     {
         if (SelectedTrack is null) return;
+        if (!EnsureTrackEditable(SelectedTrack, "调整曲线手柄")) return;
         RecordUndo("调整 Bezier 曲线手柄");
         _curveService.SetHandle(Project, SelectedTrack, channel, frame, left, handleFrame, handleValue);
         RaiseFrameProperties();
@@ -766,6 +1431,7 @@ public sealed class EditorViewModel : ObservableObject
     public void SetCurveHandleMode(CurveChannel channel, int frame, CurveHandleMode mode)
     {
         if (SelectedTrack is null) return;
+        if (!EnsureTrackEditable(SelectedTrack, "修改曲线手柄")) return;
         RecordUndo("修改曲线手柄类型");
         _curveService.SetHandleMode(Project, SelectedTrack, channel, frame, mode);
         NotifyVisualChanged();
@@ -774,6 +1440,7 @@ public sealed class EditorViewModel : ObservableObject
     public void SetCurveInterpolation(CurveChannel channel, CurveInterpolationMode mode)
     {
         if (SelectedTrack is null) return;
+        if (!EnsureTrackEditable(SelectedTrack, "修改曲线插值")) return;
         RecordUndo("修改曲线插值");
         _curveService.SetInterpolation(Project, SelectedTrack, channel, mode);
         RaiseFrameProperties();
@@ -792,6 +1459,7 @@ public sealed class EditorViewModel : ObservableObject
     public void MoveSelected(float deltaX, float deltaY)
     {
         if (SelectedTrack is null || SelectedTrack.IsActionTrack) return;
+        if (!EnsureTrackEditable(SelectedTrack, "移动部件")) return;
         RecordUndo("移动部件");
         var resolved = SelectedTrack.ResolveFrame(CurrentFrame);
         var frame = EnsureCurrentFrame();
@@ -806,6 +1474,7 @@ public sealed class EditorViewModel : ObservableObject
     public void ScaleSelected(float factorX, float factorY)
     {
         if (SelectedTrack is null || SelectedTrack.IsActionTrack) return;
+        if (!EnsureTrackEditable(SelectedTrack, "缩放部件")) return;
         RecordUndo("缩放部件");
         var resolved = SelectedTrack.ResolveFrame(CurrentFrame);
         var frame = EnsureCurrentFrame();
@@ -823,6 +1492,7 @@ public sealed class EditorViewModel : ObservableObject
     public void RotateSelectedAround(float deltaDegrees, System.Windows.Point localCenter)
     {
         if (SelectedTrack is null || SelectedTrack.IsActionTrack) return;
+        if (!EnsureTrackEditable(SelectedTrack, "旋转部件")) return;
         RecordUndo("旋转部件");
         var resolved = SelectedTrack.ResolveFrame(CurrentFrame);
         var oldMatrix = ReanimationRenderMath.CreateScreenMatrix(resolved, 1, new System.Windows.Point());
@@ -866,8 +1536,67 @@ public sealed class EditorViewModel : ObservableObject
         CurrentFrame = CurrentFrame >= range.End ? range.Start : CurrentFrame + 1;
     }
 
-    public bool IsMeaningfulKey(AnimationTrack track, int frameIndex) =>
-        _curveService.HasTimelineKey(Project, track, frameIndex);
+    public void AdvancePlayback(double elapsedSeconds)
+    {
+        if (!IsPlaying || Project.Animation.FrameCount == 0 || elapsedSeconds <= 0) return;
+        var steps = Math.Max(1, (int)Math.Floor(elapsedSeconds * EffectivePlaybackRate));
+        AdvancePlaybackFrames(steps);
+    }
+
+    public void AdvancePlaybackFrames(int steps)
+    {
+        if (!IsPlaying || Project.Animation.FrameCount == 0 || steps <= 0) return;
+        var range = ActiveRange;
+        var count = Math.Max(1, range.Count);
+        var local = Math.Max(0, CurrentFrame - range.Start);
+        CurrentFrame = range.Start + (local + steps) % count;
+    }
+
+    public IReadOnlyList<int> GetMeaningfulKeyFrames(AnimationTrack track)
+    {
+        if (_timelineKeyCache.TryGetValue(track.EditorId, out var cached)) return cached;
+        var keys = new HashSet<int>();
+        var curves = Project.Curves.Where(curve => curve.TrackId == track.EditorId).ToArray();
+        foreach (var curve in curves)
+            foreach (var key in curve.Keys)
+                if (key.Frame >= 0 && key.Frame < track.Frames.Count) keys.Add(key.Frame);
+        var curveChannels = curves.Select(curve => curve.Channel).ToHashSet();
+        for (var frameIndex = 0; frameIndex < track.Frames.Count; frameIndex++)
+        {
+            var frame = track.Frames[frameIndex];
+            if (frame.Image is not null || frame.Font is not null || frame.Text is not null)
+            {
+                keys.Add(frameIndex);
+                continue;
+            }
+            foreach (var channel in Enum.GetValues<CurveChannel>())
+            {
+                if (!curveChannels.Contains(channel) &&
+                    AnimationCurveService.GetExplicitValue(frame, channel).HasValue)
+                {
+                    keys.Add(frameIndex);
+                    break;
+                }
+            }
+        }
+        cached = keys.OrderBy(frame => frame).ToArray();
+        _timelineKeyCache[track.EditorId] = cached;
+        return cached;
+    }
+
+    public bool IsMeaningfulKey(AnimationTrack track, int frameIndex)
+    {
+        var keys = GetMeaningfulKeyFrames(track);
+        return keys is int[] array
+            ? Array.BinarySearch(array, frameIndex) >= 0
+            : keys.Contains(frameIndex);
+    }
+
+    public void WarmPlaybackCaches()
+    {
+        Project.Animation.WarmFrameCaches();
+        foreach (var track in TimelineTracks) _ = GetMeaningfulKeyFrames(track);
+    }
 
     private AnimationFrame? CurrentExplicitFrame =>
         SelectedTrack is null || SelectedTrack.Frames.Count == 0
@@ -884,7 +1613,9 @@ public sealed class EditorViewModel : ObservableObject
     private void SetFrameValue(string historyName, CurveChannel? channel, Action<AnimationFrame> setter)
     {
         if (SelectedTrack is null) return;
+        if (!EnsureTrackEditable(SelectedTrack, historyName)) return;
         RecordUndo(historyName);
+        var previousImage = CurrentResolvedFrame?.Image;
         var frame = EnsureCurrentFrame();
         setter(frame);
         if (channel.HasValue && AnimationCurveService.GetExplicitValue(frame, channel.Value).HasValue)
@@ -898,6 +1629,8 @@ public sealed class EditorViewModel : ObservableObject
         {
             _curveService.DeleteKey(Project, SelectedTrack, channel.Value, CurrentFrame);
         }
+        if (!string.Equals(previousImage, CurrentResolvedFrame?.Image, StringComparison.OrdinalIgnoreCase))
+            RefreshTrackThumbnail(SelectedTrack);
         RaiseFrameProperties();
         NotifyVisualChanged();
     }
@@ -938,8 +1671,22 @@ public sealed class EditorViewModel : ObservableObject
         NotifyVisualChanged();
     }
 
+    private void SetEventValue<T>(string historyName, T current, T value, Action<T> setter)
+    {
+        if (SelectedEvent is null || EqualityComparer<T>.Default.Equals(current, value)) return;
+        RecordUndo(historyName);
+        setter(value);
+        RaiseEventProperties();
+        RaisePropertyChanged(nameof(SelectedActionEvents));
+    }
+
     private void RecordUndo(string name)
     {
+        _timelineKeyCache.Clear();
+        _timelineTracksCache = null;
+        _activeRangeCache = null;
+        _curveChannelCache.Clear();
+        _displayCurveCache.Clear();
         if (_editTransactionActive) return;
         _history.Record(name, CreateSnapshot());
         RaiseHistoryProperties();
@@ -954,18 +1701,26 @@ public sealed class EditorViewModel : ObservableObject
     private void RestoreSnapshot(EditorSnapshot snapshot)
     {
         Project = snapshot.Project;
+        _timelineKeyCache.Clear();
+        _timelineTracksCache = null;
+        _activeRangeCache = null;
+        _curveChannelCache.Clear();
+        _displayCurveCache.Clear();
+        RefreshTrackThumbnails();
         _selectedTrack = snapshot.SelectedTrackIndex >= 0 && snapshot.SelectedTrackIndex < Project.Animation.Tracks.Count
             ? Project.Animation.Tracks[snapshot.SelectedTrackIndex]
             : Project.Animation.Tracks.FirstOrDefault(track => !track.IsActionTrack);
         _selectedAction = snapshot.SelectedActionIndex >= 0 && snapshot.SelectedActionIndex < Project.Actions.Count
             ? Project.Actions[snapshot.SelectedActionIndex]
             : null;
+        _selectedEvent = _selectedAction?.Events.FirstOrDefault();
         var range = ActiveRange;
         _currentFrame = Math.Clamp(snapshot.CurrentFrame, range.Start, range.End);
         _editTransactionActive = false;
         RaisePropertyChanged(nameof(SelectedTrack));
         RaisePropertyChanged(nameof(SelectedAction));
         RaiseActionProperties();
+        RaiseEventProperties();
         RaiseAll();
         RaiseHistoryProperties();
         NotifyVisualChanged();
@@ -996,8 +1751,11 @@ public sealed class EditorViewModel : ObservableObject
                  {
                      nameof(FrameLabel), nameof(CurrentHasKey), nameof(CurrentX), nameof(CurrentY),
                      nameof(CurrentSkewX), nameof(CurrentSkewY), nameof(CurrentScaleX), nameof(CurrentScaleY),
-                     nameof(CurrentVisibilityFrame), nameof(CurrentAlpha), nameof(CurrentImage), nameof(CurrentText),
-                     nameof(CurrentResolvedFrame)
+                     nameof(CurrentVisibilityFrame), nameof(CurrentAlpha), nameof(CurrentImage), nameof(CurrentImageValueSource), nameof(CurrentText),
+                     nameof(CurrentResolvedFrame), nameof(SelectedTrackIsLocked), nameof(SelectedTrackIsAlwaysVisible), nameof(SelectedTrackThumbnail),
+                     nameof(SelectedTrackImageSymbol), nameof(SelectedTrackImagePath), nameof(SelectedTrackImageLayout),
+                     nameof(CurrentGroundAction), nameof(CurrentGroundMotion), nameof(HasGroundMotion), nameof(GroundMotionFrameText),
+                     nameof(GroundMotionVelocityText), nameof(GroundMotionAverageText), nameof(GroundMotionDistanceText)
                  })
             RaisePropertyChanged(property);
     }
@@ -1007,12 +1765,17 @@ public sealed class EditorViewModel : ObservableObject
         foreach (var property in new[]
                  {
                      nameof(ProjectKind), nameof(ProjectId), nameof(ProjectDisplayName), nameof(ProjectDescription),
-                     nameof(ProjectCarrierReanimation), nameof(ProjectOutputFormat), nameof(ProjectGameRoot),
+                     nameof(ProjectIntegrationMode), nameof(ProjectIntegrationModeSummary), nameof(IntegrationModes),
+                     nameof(ProjectCarrierReanimation), nameof(ProjectInitialActionId), nameof(ProjectHideTemplateAttachments),
+                     nameof(ProjectOutputFormat), nameof(ProjectGameRoot),
                      nameof(ProjectNumericEntityId), nameof(ProjectTemplateEntityId), nameof(ProjectTemplateSummary),
-                     nameof(IsPlantProject), nameof(PlantTemplates), nameof(ProjectCost),
+                     nameof(HasEntityTemplates), nameof(EntityTemplates), nameof(ProjectTemplatePickerLabel),
+                     nameof(ProjectTemplatePickerHelp), nameof(ProjectCost),
                      nameof(ProjectRechargeTime), nameof(ProjectHealth), nameof(ProjectLaunchRate),
                      nameof(ProjectProjectileType), nameof(ProjectDamage), nameof(ProjectShotsPerAttack),
-                     nameof(AnimationFps)
+                     nameof(AnimationFps), nameof(EffectivePlaybackRate), nameof(FrameLabel),
+                     nameof(CurrentGroundAction), nameof(CurrentGroundMotion), nameof(GroundMotionVelocityText), nameof(GroundMotionAverageText),
+                     nameof(GroundMotionDistanceText)
                  })
             RaisePropertyChanged(property);
     }
@@ -1022,7 +1785,21 @@ public sealed class EditorViewModel : ObservableObject
         foreach (var property in new[]
                  {
                      nameof(SelectedActionId), nameof(SelectedActionDisplayName), nameof(SelectedActionTrack),
-                     nameof(SelectedActionLoop), nameof(SelectedActionRate), nameof(SelectedActionBlendFrames)
+                     nameof(SelectedActionLoop), nameof(SelectedActionRate), nameof(SelectedActionBlendFrames),
+                     nameof(SelectedActionReplacesCsv), nameof(SelectedActionEvents),
+                     nameof(EffectivePlaybackRate), nameof(CurrentGroundAction), nameof(CurrentGroundMotion), nameof(GroundMotionFrameText),
+                     nameof(GroundMotionVelocityText), nameof(GroundMotionAverageText), nameof(GroundMotionDistanceText)
+                 })
+            RaisePropertyChanged(property);
+    }
+
+    private void RaiseEventProperties()
+    {
+        foreach (var property in new[]
+                 {
+                     nameof(SelectedEvent), nameof(SelectedEventId), nameof(SelectedEventFrame),
+                     nameof(SelectedEventNormalizedTime), nameof(SelectedEventOncePerLoop),
+                     nameof(SelectedEventTargetAction)
                  })
             RaisePropertyChanged(property);
     }
@@ -1032,14 +1809,58 @@ public sealed class EditorViewModel : ObservableObject
         RaisePropertyChanged(nameof(Project));
         RaisePropertyChanged(nameof(Tracks));
         RaisePropertyChanged(nameof(Actions));
+        RaisePropertyChanged(nameof(ProjectImageResources));
+        RaisePropertyChanged(nameof(ProjectImageResourcesSummary));
         RaiseProjectEditProperties();
         RaiseActionProperties();
+        RaiseEventProperties();
         RaiseTimelineProperties();
         RaiseFrameProperties();
         RaiseHistoryProperties();
     }
 
     private void NotifyVisualChanged() => VisualStateChanged?.Invoke(this, EventArgs.Empty);
+
+    private bool EnsureTrackEditable(AnimationTrack track, string action)
+    {
+        if (!track.IsLockedInEditor) return true;
+        Status = $"轨道 {track.Name} 已锁定，无法{action}。";
+        return false;
+    }
+
+    private void RaiseTrackPresentationProperties()
+    {
+        foreach (var property in new[]
+                 {
+                     nameof(SelectedTrackIsLocked), nameof(SelectedTrackIsAlwaysVisible), nameof(SelectedTrackThumbnail), nameof(SelectedTrackImageSymbol),
+                     nameof(SelectedTrackImagePath), nameof(SelectedTrackImageLayout)
+                 })
+            RaisePropertyChanged(property);
+    }
+
+    public void RefreshTrackThumbnails()
+    {
+        foreach (var track in Project.Animation.Tracks) RefreshTrackThumbnail(track);
+        RaiseTrackPresentationProperties();
+    }
+
+    private void RefreshTrackThumbnail(AnimationTrack track)
+    {
+        var symbol = track.Frames.Select(frame => frame.Image)
+            .FirstOrDefault(image => !string.IsNullOrWhiteSpace(image));
+        track.EditorImageSymbol = symbol;
+        track.EditorThumbnail = _resources.ResolveThumbnail(Project, symbol);
+    }
+
+    private void SynchronizeTemplateCarrier()
+    {
+        if (Project.Kind == EntityKind.Plant &&
+            PlantTemplateCatalog.Find(Project.TemplateEntityId) is { IsRuntimeTemplate: true } plant)
+            Project.CarrierReanimation = plant.CarrierReanimation;
+        else if (Project.Kind == EntityKind.Zombie &&
+                 ZombieTemplateCatalog.Find(Project.TemplateEntityId) is { } zombie)
+            Project.CarrierReanimation = zombie.CarrierReanimation;
+    }
 
     private EditorProject CreateDefaultProject(EntityKind kind)
     {

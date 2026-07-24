@@ -13,7 +13,20 @@ if (args.Length > 1 && string.Equals(args[0], "--workspace-screenshot", StringCo
 {
     RenderWorkspaceScreenshot(args[1], args.Length > 2 && args[2] != "-" ? args[2] : null,
         args.Length > 3 && Enum.TryParse<WorkspacePreset>(args[3], true, out var preset) ? preset : null,
-        args.Length > 4 && string.Equals(args[4], "floating", StringComparison.OrdinalIgnoreCase));
+        args.Length > 4 && string.Equals(args[4], "floating", StringComparison.OrdinalIgnoreCase),
+        args.Length > 5 ? args[5] : null);
+    return;
+}
+
+if (args.Length > 1 && string.Equals(args[0], "--timeline-scroll-screenshot", StringComparison.OrdinalIgnoreCase))
+{
+    RenderTimelineScrollScreenshot(args[1]);
+    return;
+}
+
+if (args.Length > 1 && string.Equals(args[0], "--publish-confirmation-screenshot", StringComparison.OrdinalIgnoreCase))
+{
+    RenderPublishConfirmationScreenshot(args[1]);
     return;
 }
 
@@ -29,6 +42,12 @@ if (args.Length > 1 && string.Equals(args[0], "--inspect", StringComparison.Ordi
     return;
 }
 
+if (args.Length > 1 && string.Equals(args[0], "--ground-audit", StringComparison.OrdinalIgnoreCase))
+{
+    RunGroundAudit(args[1]);
+    return;
+}
+
 var root = Path.Combine(Path.GetTempPath(), "PvZAnimationStudioTests", Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 try
@@ -40,6 +59,13 @@ try
     var compiled = new CompiledReanimCodec();
 
     var plantCatalog = PlantTemplateCatalog.All;
+    var overlongResourceId = "IMAGE_REANIM_74B002C6107984CE002A17E710E75F88427DB588_JPG_240W_240H_1C_1S__WEB_AVATAR_NAV";
+    var normalizedResourceId = ProjectPackageService.NormalizeResourceId(overlongResourceId);
+    Assert(normalizedResourceId.Length <= 64 && normalizedResourceId.All(character =>
+               char.IsAsciiLetterOrDigit(character) || character == '_'),
+        "超长或含特殊字符的图片 ID 没有转换为 DLL 可接受的 1–64 位资源 ID");
+    Assert(normalizedResourceId == ProjectPackageService.NormalizeResourceId(overlongResourceId),
+        "图片资源 ID 的缩短结果不稳定，重复安装会生成不同 ID");
     Assert(plantCatalog.Count == 53, "植物全局目录必须完整覆盖 SeedType 0–52");
     Assert(plantCatalog.Select(definition => definition.Id).SequenceEqual(Enumerable.Range(0, 53)),
         "植物全局目录 ID 不连续或顺序错误");
@@ -55,9 +81,16 @@ try
     Assert(PlantTemplateCatalog.Find(49)?.IsRuntimeTemplate == false &&
            PlantTemplateCatalog.Find(52)?.IsRuntimeTemplate == false,
         "模式专用植物被错误开放为普通模板");
+    Assert(ZombieTemplateCatalog.All.Count == 33 &&
+           ZombieTemplateCatalog.Find(0)?.CarrierReanimation == "REANIM_ZOMBIE" &&
+           ZombieTemplateCatalog.Find(3)?.CarrierReanimation == "REANIM_POLEVAULTER" &&
+           ZombieTemplateCatalog.Find(32)?.CarrierReanimation == "REANIM_GARGANTUAR",
+        "僵尸模板载体目录不完整或映射错误");
 
     var editorViewModel = new EditorViewModel(new ActionCatalogService());
-    Assert(editorViewModel.PlantTemplates.Count == 49, "编辑器植物模板速选没有使用全局 0–48 目录");
+    Assert(editorViewModel.EntityTemplates.Count == 49 && editorViewModel.HasEntityTemplates &&
+           editorViewModel.ProjectTemplatePickerLabel == "植物模板速选",
+        "编辑器植物模板速选没有使用全局 0–48 目录");
     editorViewModel.ProjectTemplateEntityId = 21;
     Assert(editorViewModel.ProjectTemplateSummary.Contains("Caltrop.reanim.compiled", StringComparison.Ordinal),
         "编辑器没有根据全局目录解释当前植物模板");
@@ -66,6 +99,91 @@ try
     editorViewModel.ProjectTemplateEntityId = 49;
     Assert(editorViewModel.ProjectTemplateSummary.Contains("模式专用", StringComparison.Ordinal),
         "编辑器没有识别特殊植物 ID");
+    editorViewModel.ProjectKind = EntityKind.Zombie;
+    Assert(editorViewModel.EntityTemplates.Count == 33 && editorViewModel.HasEntityTemplates &&
+           editorViewModel.ProjectTemplatePickerLabel == "僵尸模板速选" &&
+           editorViewModel.EntityTemplates[5].DisplayLabel.Contains("读报僵尸", StringComparison.Ordinal),
+        "编辑器切换到僵尸后没有提供全局 0–32 僵尸模板速选");
+    editorViewModel.ProjectTemplateEntityId = 5;
+    Assert(editorViewModel.ProjectTemplateSummary.Contains("ZOMBIE_NEWSPAPER", StringComparison.Ordinal) &&
+           editorViewModel.ProjectCarrierReanimation == "REANIM_ZOMBIE_NEWSPAPER",
+        "僵尸模板速选没有同步模板摘要和载体 Reanimation");
+    editorViewModel.ProjectKind = EntityKind.Ui;
+    Assert(!editorViewModel.HasEntityTemplates && editorViewModel.EntityTemplates.Count == 0 &&
+           editorViewModel.ProjectTemplatePickerLabel == "实体模板速选",
+        "UI/其他动画不应显示植物或僵尸模板列表");
+    editorViewModel.ProjectKind = EntityKind.Plant;
+    editorViewModel.ProjectTemplateEntityId = 0;
+
+    var editableTrack = editorViewModel.SelectedTrack!;
+    editableTrack.Frames[0].X = 3;
+    var cachedFrame = editableTrack.ResolveFrame(10);
+    Assert(ReferenceEquals(cachedFrame, editableTrack.ResolveFrame(10)), "播放帧解析没有复用轨道缓存");
+    editableTrack.Frames[5].X = 17;
+    var refreshedFrame = editableTrack.ResolveFrame(10);
+    Assert(!ReferenceEquals(cachedFrame, refreshedFrame) && Math.Abs(refreshedFrame.X - 17) < 0.0001f,
+        "编辑帧后轨道解析缓存没有正确失效");
+    editorViewModel.SetTrackEditorLock(editableTrack, true);
+    var lockedX = editableTrack.Frames[0].X;
+    editorViewModel.CurrentFrame = 0;
+    editorViewModel.CurrentX = 99;
+    Assert(editableTrack.Frames[0].X == lockedX, "锁定轨道仍能通过属性栏修改");
+    editorViewModel.SetTrackEditorLock(editableTrack, false);
+    editorViewModel.CurrentX = 99;
+    Assert(editableTrack.Frames[0].X == 99, "解锁轨道后没有恢复编辑");
+    var inheritedImageEditor = new EditorViewModel(new ActionCatalogService());
+    var inheritedImageTrack = inheritedImageEditor.SelectedTrack!;
+    inheritedImageTrack.Frames[0].Image = "IMAGE_REANIM_INHERITED_BODY";
+    inheritedImageEditor.CurrentFrame = 8;
+    Assert(inheritedImageTrack.Frames[8].Image is null &&
+           inheritedImageEditor.CurrentImage == "IMAGE_REANIM_INHERITED_BODY" &&
+           inheritedImageEditor.CurrentImageValueSource.Contains("继承自前一帧", StringComparison.Ordinal),
+        "属性栏没有显示当前帧继承后实际生效的图片符号");
+    inheritedImageEditor.CurrentImage = "IMAGE_REANIM_INHERITED_BODY";
+    Assert(inheritedImageTrack.Frames[8].Image is null && !inheritedImageEditor.CanUndo,
+        "未修改继承图片字段时错误写入了显式图片关键点或撤销记录");
+    inheritedImageEditor.CurrentImage = "IMAGE_REANIM_REPLACED_BODY";
+    Assert(inheritedImageTrack.Frames[8].Image == "IMAGE_REANIM_REPLACED_BODY" &&
+           inheritedImageEditor.CurrentImageValueSource == "本帧显式图片符号",
+        "属性栏修改实际图片符号时没有写入当前帧");
+    Assert(editorViewModel.FrameLabel.Contains("秒", StringComparison.Ordinal), "帧状态没有显示秒数");
+    editorViewModel.IsPlaying = true;
+    var playbackStart = editorViewModel.CurrentFrame;
+    editorViewModel.AdvancePlaybackFrames(7);
+    Assert(editorViewModel.CurrentFrame == playbackStart + 7, "播放时钟不能按实际经过帧数追赶");
+    editorViewModel.IsPlaying = false;
+    editorViewModel.SelectedAction = editorViewModel.Actions.First();
+    editorViewModel.SelectedActionRate = 20;
+    Assert(Math.Abs(editorViewModel.EffectivePlaybackRate - 20) < 0.0001,
+        "动作预览没有使用动作自身 rate");
+    editorViewModel.SelectedAction = null;
+
+    var groundDocument = new AnimationDocument { Fps = 12 };
+    var groundMarker = new AnimationTrack { Name = "anim_walk" };
+    var groundTrack = new AnimationTrack { Name = "_ground" };
+    groundMarker.EnsureFrameCount(4);
+    groundTrack.EnsureFrameCount(4);
+    groundMarker.Frames[0].Frame = 0;
+    groundTrack.Frames[0].X = 0;
+    groundTrack.Frames[1].X = 2;
+    groundTrack.Frames[2].X = 5;
+    groundTrack.Frames[3].X = 9;
+    groundDocument.Tracks.Add(groundMarker);
+    groundDocument.Tracks.Add(groundTrack);
+    var groundAction = new ActionDefinition
+    {
+        Id = "walk", DisplayName = "行走", Track = "anim_walk", Rate = 20, Loop = AnimationLoopMode.Loop
+    };
+    var groundMotion = new GroundMotionService().Sample(groundDocument, groundAction, 1);
+    Assert(groundTrack.IsGroundTrack && groundTrack.EditorDisplayName.Contains("速度", StringComparison.Ordinal),
+        "_ground 没有被识别为特殊定位/速度轨道");
+    Assert(groundMotion is not null && Math.Abs(groundMotion.DeltaX - 3) < 0.0001 &&
+           Math.Abs(groundMotion.PixelsPerUpdate - 0.6) < 0.0001 &&
+           Math.Abs(groundMotion.PixelsPerSecond - 60) < 0.0001,
+        "_ground 没有按原版 GetTrackVelocity 公式计算瞬时速度");
+    Assert(Math.Abs(groundMotion!.AveragePixelsPerSecond - 60) < 0.0001 &&
+           Math.Abs(groundMotion.TotalDeltaX - 9) < 0.0001,
+        "_ground 动作平均速度或累计位移计算错误");
 
     var repositoryRoot = FindRepositoryRoot();
     Assert(repositoryRoot is not null, "无法定位仓库根目录以校验植物模板文档");
@@ -83,6 +201,13 @@ try
         {
             var compiledAsset = Path.Combine(originalReanimRoot, definition.CompiledFileName);
             Assert(File.Exists(compiledAsset), $"植物模板目录引用了不存在的原版资源：{definition.CompiledFileName}");
+            var classification = AnimationEntityClassifier.Classify(new EditorProject
+            {
+                SourceAnimationPath = compiledAsset,
+                Animation = new ReanimCodecService().Load(compiledAsset)
+            });
+            Assert(classification.Kind == EntityKind.Plant && classification.IsHighConfidence,
+                $"全局植物模板被通用分类器误判：{definition.CompiledFileName} -> {classification.Summary}");
         }
     }
 
@@ -108,6 +233,93 @@ try
         specialTemplateRejected = true;
     }
     Assert(specialTemplateRejected, "模式专用植物 ID 49 没有在打包阶段被拒绝");
+
+    var zombieBodyDocument = CreateDocument();
+    zombieBodyDocument.Tracks.Add(new AnimationTrack { Name = "Zombie_body" });
+    zombieBodyDocument.Tracks.Add(new AnimationTrack { Name = "Zombie_outerleg_upper" });
+    var mismatchedProject = new EditorProject
+    {
+        Kind = EntityKind.Plant,
+        Id = "MISMATCHED_BODY",
+        DisplayName = "误设植物的僵尸主体",
+        TemplateEntityId = 0,
+        Animation = zombieBodyDocument,
+        Actions = new ObservableCollection<ActionDefinition>
+        {
+            new() { Id = "idle", DisplayName = "待机", Track = "anim_idle" }
+        }
+    };
+    var mismatchedDraft = PublishProjectDraft.FromProject(mismatchedProject);
+    Assert(new PublishConfirmationService().Validate(
+            mismatchedDraft, mismatchedProject, PublishOperation.Install)
+        .Any(message => message.Contains("高置信度识别为“僵尸”", StringComparison.Ordinal)),
+        "发布确认没有拦截被误设为植物的僵尸主体工程");
+
+    var chomperPath = Path.Combine(originalReanimRoot, "Chomper.reanim.compiled");
+    var zombiePath = Path.Combine(originalReanimRoot, "Zombie.reanim.compiled");
+    Assert(File.Exists(chomperPath) && File.Exists(zombiePath),
+        "缺少大嘴花/普通僵尸原版 compiled，无法执行实体类型识别回归");
+    var chomperProject = new EditorProject
+    {
+        SourceAnimationPath = Path.Combine(Path.GetDirectoryName(chomperPath)!, "custom_actor.reanim.compiled"),
+        Animation = new ReanimCodecService().Load(chomperPath)
+    };
+    Assert(chomperProject.Animation.Tracks.Count(track =>
+               track.Name.StartsWith("Zombie_", StringComparison.OrdinalIgnoreCase)) == 2,
+        "大嘴花原版样本不再包含预期的两条被吞食僵尸手臂轨道，请重新核对识别规则");
+    var chomperClassification = AnimationEntityClassifier.Classify(chomperProject);
+    Assert(chomperClassification.Kind == EntityKind.Plant && chomperClassification.IsHighConfidence,
+        "以通用图片命名空间占比识别时，大嘴花仍被局部僵尸手臂误判");
+    var chomperActions = new ActionCatalogService().InferActions(chomperProject.Animation, chomperClassification.Kind);
+    Assert(new[] { "swallow", "chew", "bite", "idle" }.All(expected =>
+            chomperActions.Any(action => action.Id.Equals(expected, StringComparison.OrdinalIgnoreCase))),
+        "通用动作发现没有识别大嘴花的 swallow/chew/bite/idle 动作");
+
+    var arbitraryActionDocument = new AnimationDocument();
+    arbitraryActionDocument.Tracks.Add(new AnimationTrack { Name = "anim_teleport_phase_42" });
+    var arbitraryActions = new ActionCatalogService().InferActions(arbitraryActionDocument, EntityKind.Other);
+    Assert(arbitraryActions.Count == 1 &&
+           arbitraryActions[0].Id == "teleport_phase_42" &&
+           arbitraryActions[0].DisplayName.Contains("自定义动作", StringComparison.Ordinal),
+        "动作发现仍被植物/僵尸内置动作列表限制，未保留任意 anim_* 动作");
+
+    var zombieProjectForDetection = new EditorProject
+    {
+        SourceAnimationPath = Path.Combine(Path.GetDirectoryName(zombiePath)!, "custom_body.reanim.compiled"),
+        Animation = new ReanimCodecService().Load(zombiePath)
+    };
+    var zombieClassification = AnimationEntityClassifier.Classify(zombieProjectForDetection);
+    Assert(zombieClassification.Kind == EntityKind.Zombie && zombieClassification.IsHighConfidence,
+        "普通僵尸完整身体骨架未被通用分类器识别为僵尸主体");
+
+    var selectorScreenPath = Path.Combine(originalReanimRoot, "SelectorScreen.reanim.compiled");
+    var selectorClassification = AnimationEntityClassifier.Classify(new EditorProject
+    {
+        SourceAnimationPath = selectorScreenPath,
+        Animation = new ReanimCodecService().Load(selectorScreenPath)
+    });
+    Assert(selectorClassification.Kind == EntityKind.Ui && selectorClassification.IsHighConfidence,
+        "通用分类器没有识别原版界面动画");
+
+    var coinPath = Path.Combine(originalReanimRoot, "Coin_gold.reanim.compiled");
+    var otherClassification = AnimationEntityClassifier.Classify(new EditorProject
+    {
+        SourceAnimationPath = coinPath,
+        Animation = new ReanimCodecService().Load(coinPath)
+    });
+    Assert(otherClassification.Kind == EntityKind.Other && otherClassification.CanAutoSelect,
+        "通用分类器没有把非植物、非僵尸、非 UI 的道具动画归为其他");
+
+    var plantNamedZombieDraft = mismatchedDraft with
+    {
+        Kind = EntityKind.Zombie,
+        Id = "NEW_PLANT",
+        DisplayName = "新植物"
+    };
+    Assert(new PublishConfirmationService().Validate(
+            plantNamedZombieDraft, mismatchedProject, PublishOperation.Install)
+        .Any(message => message.Contains("PLANT/植物", StringComparison.Ordinal)),
+        "发布确认没有拦截仍使用植物 ID/名称的僵尸工程");
 
     raw.Save(source, rawPath);
     var rawLoaded = raw.Load(rawPath);
@@ -170,8 +382,9 @@ try
                 .Select(frame => frame.Image).Where(symbol => !string.IsNullOrWhiteSpace(symbol))
                 .Distinct(StringComparer.OrdinalIgnoreCase).Count();
             Assert(loadedOriginalPortable.ImageBindings.Count == usedSymbols &&
+                   loadedOriginalPortable.OriginalImageReferences.Count == usedSymbols &&
                    loadedOriginalPortable.ImageBindings.Values.All(File.Exists),
-                "原版 compiled 保存为便携工程时没有嵌入全部实际使用图片");
+                "原版 compiled 保存为便携工程时没有同时保留预览图片和原版资源来源标记");
         }
         Console.WriteLine($"PASS: {originals.Length} 个原版 compiled 文件已全部完成读取、compiled 重打包、Raw 导出和二次读取。");
     }
@@ -262,6 +475,8 @@ try
             new() { Frame = 0, Value = 4, HandleMode = CurveHandleMode.Aligned, RightFrameOffset = 2, RightValueOffset = 6 }
         }
     });
+    source.Tracks[1].IsLockedInEditor = true;
+    source.Tracks[1].IsAlwaysVisibleInEditor = true;
     var portablePath = Path.Combine(root, "PORTABLE_PLANT.pvza");
     var portableResources = new OriginalResourceService();
     var portableFiles = new ProjectFileService(portableResources);
@@ -278,6 +493,10 @@ try
     Assert(portableLoaded.DisplayName == "便携植物" && portableLoaded.Health == 987 && portableLoaded.Damage == 66,
         "便携工程没有保留实体属性和信息");
     AssertDocument(source, portableLoaded.Animation);
+    Assert(portableLoaded.Animation.Tracks[1].IsLockedInEditor,
+        "便携工程没有保留轨道锁定状态");
+    Assert(portableLoaded.Animation.Tracks[1].IsAlwaysVisibleInEditor,
+        "便携工程没有保留防具/附属轨道常显状态");
     Assert(portableLoaded.Actions.Count == 1 && portableLoaded.Actions[0].DisplayName == "便携待机" &&
            Math.Abs(portableLoaded.Actions[0].Rate - 18) < 0.0001,
         "便携工程没有保留动作信息");
@@ -324,6 +543,106 @@ try
     Assert(dropEditor.Project.Animation.Tracks.Count == tracksBeforeDrop &&
            !dropEditor.Project.ImageBindings.ContainsKey(droppedSymbol),
         "拖入图片和新轨道没有作为同一个步骤撤销");
+
+    var replacementOldPath = Path.Combine(root, "replacement-old.png");
+    var replacementNewPath = Path.Combine(root, "replacement-new.png");
+    SaveBitmap(BitmapSource.Create(12, 8, 96, 96, PixelFormats.Bgra32, null,
+            Enumerable.Repeat((byte)90, 12 * 8 * 4).ToArray(), 48),
+        new PngBitmapEncoder(), replacementOldPath);
+    SaveBitmap(BitmapSource.Create(20, 10, 96, 96, PixelFormats.Bgra32, null,
+            Enumerable.Repeat((byte)210, 20 * 10 * 4).ToArray(), 80),
+        new PngBitmapEncoder(), replacementNewPath);
+    var replacementResources = new OriginalResourceService();
+    var replacementEditor = new EditorViewModel(new ActionCatalogService(), replacementResources);
+    var replacementTrack = replacementEditor.SelectedTrack!;
+    replacementTrack.Name = "replace_visual";
+    replacementTrack.Frames[0].Image = "IMAGE_REANIM_REPLACEMENT_OLD";
+    replacementTrack.Frames[7].Image = "IMAGE_REANIM_REPLACEMENT_OLD";
+    replacementTrack.Frames[12].Image = "IMAGE_REANIM_OTHER_PART";
+    replacementEditor.Project.ImageBindings["IMAGE_REANIM_REPLACEMENT_OLD"] = replacementOldPath;
+    replacementEditor.Project.ImageBindings["IMAGE_REANIM_OTHER_PART"] = replacementOldPath;
+    replacementEditor.Project.ImageLayouts["IMAGE_REANIM_REPLACEMENT_OLD"] =
+        new ImageLayoutDefinition { Columns = 3, Rows = 2 };
+    replacementEditor.CurrentFrame = 0;
+    replacementEditor.CurrentX = 12;
+    replacementEditor.CurrentSkewX = 15;
+    replacementEditor.CurrentFrame = 7;
+    replacementEditor.CurrentX = 48;
+    replacementEditor.CurrentScaleX = 1.5f;
+    replacementEditor.CurrentFrame = 0;
+    var replacementFrameCount = replacementTrack.Frames.Count;
+    var replacementCurveFrames = replacementEditor.Project.Curves
+        .Where(curve => curve.TrackId == replacementTrack.EditorId)
+        .SelectMany(curve => curve.Keys.Select(key => (curve.Channel, key.Frame)))
+        .OrderBy(item => item.Channel).ThenBy(item => item.Frame).ToArray();
+    var replacementSymbol = replacementEditor.ReplaceSelectedTrackImage(replacementNewPath);
+    Assert(!string.IsNullOrWhiteSpace(replacementSymbol) &&
+           replacementTrack.Frames[0].Image == replacementSymbol &&
+           replacementTrack.Frames[7].Image == replacementSymbol &&
+           replacementTrack.Frames[12].Image == "IMAGE_REANIM_OTHER_PART",
+        "更换轨道图片没有只替换当前轨道的目标图片符号");
+    Assert(replacementTrack.Frames.Count == replacementFrameCount &&
+           replacementTrack.Frames[0].X == 12 && replacementTrack.Frames[0].SkewX == 15 &&
+           replacementTrack.Frames[7].X == 48 && replacementTrack.Frames[7].ScaleX == 1.5f,
+        "更换轨道图片改变了帧数量、关键帧位置或变换属性");
+    Assert(replacementEditor.Project.Curves.Where(curve => curve.TrackId == replacementTrack.EditorId)
+            .SelectMany(curve => curve.Keys.Select(key => (curve.Channel, key.Frame)))
+            .OrderBy(item => item.Channel).ThenBy(item => item.Frame).SequenceEqual(replacementCurveFrames),
+        "更换轨道图片改变了原有曲线关键点");
+    Assert(replacementEditor.Project.ImageLayouts.TryGetValue(replacementSymbol!, out var replacementLayout) &&
+           replacementLayout.Columns == 3 && replacementLayout.Rows == 2,
+        "更换轨道图片没有继承原图片的精灵表行列设置");
+    replacementEditor.Undo();
+    replacementTrack = replacementEditor.Project.Animation.FindTrack("replace_visual")!;
+    Assert(replacementTrack.Frames[0].Image == "IMAGE_REANIM_REPLACEMENT_OLD" &&
+           replacementEditor.Project.ImageBindings.ContainsKey("IMAGE_REANIM_REPLACEMENT_OLD") &&
+           !replacementEditor.Project.ImageBindings.ContainsKey(replacementSymbol!),
+        "更换轨道图片没有作为一步操作完整撤销");
+    replacementEditor.Redo();
+    replacementTrack = replacementEditor.Project.Animation.FindTrack("replace_visual")!;
+    Assert(replacementTrack.Frames[0].Image == replacementSymbol,
+        "更换轨道图片没有按原顺序恢复");
+
+    var disguisedAvifPath = Path.Combine(root, "disguised-avif.png");
+    File.WriteAllBytes(disguisedAvifPath,
+        [0, 0, 0, 28, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66]);
+    var rejectedDisguisedImage = false;
+    try { replacementResources.ValidateImportImage(disguisedAvifPath); }
+    catch (InvalidDataException) { rejectedDisguisedImage = true; }
+    Assert(rejectedDisguisedImage, "伪装成 PNG 的 AVIF 没有在导入/更换图片时提前拒绝");
+    var movedDisguisedAvifPath = Path.Combine(root, "disguised-avif-moved.png");
+    File.Move(disguisedAvifPath, movedDisguisedAvifPath);
+    File.Move(movedDisguisedAvifPath, disguisedAvifPath);
+
+    var deleteTrackEditor = new EditorViewModel(new ActionCatalogService());
+    var deleteWholeTrack = deleteTrackEditor.SelectedTrack!;
+    deleteWholeTrack.Name = "delete_whole_track";
+    deleteTrackEditor.CurrentFrame = 0;
+    deleteTrackEditor.CurrentX = 33;
+    deleteTrackEditor.Project.Actions.Add(new ActionDefinition
+    {
+        Id = "delete_action",
+        DisplayName = "待删除动作",
+        Track = deleteWholeTrack.Name
+    });
+    deleteTrackEditor.Project.InitialActionId = "delete_action";
+    var deleteTrackCount = deleteTrackEditor.Project.Animation.Tracks.Count;
+    deleteTrackEditor.RemoveSelectedTrack();
+    Assert(deleteTrackEditor.Project.Animation.Tracks.Count == deleteTrackCount - 1 &&
+           deleteTrackEditor.Project.Animation.FindTrack("delete_whole_track") is null,
+        "删除整个轨道没有移除选中轨道");
+    Assert(deleteTrackEditor.Project.Curves.All(curve => curve.TrackId != deleteWholeTrack.EditorId) &&
+           deleteTrackEditor.Project.Actions.All(action => action.Track != "delete_whole_track") &&
+           deleteTrackEditor.Project.InitialActionId != "delete_action",
+        "删除整个轨道没有清理关联曲线、动作或初始动作引用");
+    deleteTrackEditor.Undo();
+    Assert(deleteTrackEditor.Project.Animation.FindTrack("delete_whole_track") is not null &&
+           deleteTrackEditor.Project.Actions.Any(action => action.Id == "delete_action") &&
+           deleteTrackEditor.Project.InitialActionId == "delete_action",
+        "删除整个轨道没有完整撤销");
+    deleteTrackEditor.Redo();
+    Assert(deleteTrackEditor.Project.Animation.FindTrack("delete_whole_track") is null,
+        "删除整个轨道没有恢复");
 
     var visualAnimTrack = new AnimationTrack { Name = "anim_face" };
     visualAnimTrack.EnsureFrameCount(2);
@@ -580,6 +899,50 @@ try
            copyPasteEditor.IsMeaningfulKey(copyTargetTrack, 16),
         "粘贴关键帧没有作为一次操作恢复");
 
+    var wholeTrackImagePath = Path.Combine(root, "whole-track.png");
+    File.WriteAllBytes(wholeTrackImagePath, [0x50, 0x4E, 0x47]);
+    var wholeTrackEditor = new EditorViewModel(new ActionCatalogService());
+    var wholeTrackSource = wholeTrackEditor.SelectedTrack!;
+    wholeTrackSource.Name = "Zombie_body_custom";
+    wholeTrackSource.Frames[0].Image = "IMAGE_REANIM_WHOLE_TRACK";
+    wholeTrackEditor.Project.ImageBindings["IMAGE_REANIM_WHOLE_TRACK"] = wholeTrackImagePath;
+    wholeTrackEditor.Project.ImageLayouts["IMAGE_REANIM_WHOLE_TRACK"] =
+        new ImageLayoutDefinition { Columns = 2, Rows = 3 };
+    wholeTrackEditor.CurrentFrame = 0;
+    wholeTrackEditor.CurrentX = 5;
+    wholeTrackEditor.CurrentFrame = 10;
+    wholeTrackEditor.CurrentX = 55;
+    wholeTrackEditor.SetTrackEditorAlwaysVisible(wholeTrackSource, true);
+    Assert(wholeTrackEditor.CopySelectedWholeTrack(), "完整轨道没有复制到跨动画剪贴板");
+    var duplicatedWholeTrack = wholeTrackEditor.PasteWholeTrackAsNew();
+    Assert(duplicatedWholeTrack is not null && duplicatedWholeTrack.Name == "Zombie_body_custom_2",
+        "同一动画粘贴完整轨道没有创建第二条唯一命名的轨道");
+    var duplicatedSymbol = duplicatedWholeTrack!.Frames[0].Image;
+    Assert(duplicatedSymbol == "IMAGE_REANIM_WHOLE_TRACK_COPY" &&
+           wholeTrackEditor.Project.ImageBindings.TryGetValue(duplicatedSymbol, out var duplicateImagePath) &&
+           duplicateImagePath == wholeTrackImagePath,
+        "完整轨道粘贴没有创建独立图片符号和绑定");
+    Assert(wholeTrackEditor.Project.ImageLayouts.TryGetValue(duplicatedSymbol!, out var duplicateLayout) &&
+           duplicateLayout.Columns == 2 && duplicateLayout.Rows == 3,
+        "完整轨道粘贴没有保留图片精灵表布局");
+    Assert(wholeTrackEditor.Project.Curves.Any(curve => curve.TrackId == duplicatedWholeTrack.EditorId &&
+                                                       curve.Channel == CurveChannel.X),
+        "完整轨道粘贴没有复制曲线关键帧");
+    Assert(duplicatedWholeTrack.IsAlwaysVisibleInEditor,
+        "完整轨道粘贴没有保留防具/附属轨道常显状态");
+    wholeTrackEditor.ToggleTrackEditorVisibility(duplicatedWholeTrack);
+    Assert(!duplicatedWholeTrack.IsVisibleInEditor, "轨道眼睛没有隐藏编辑器图层");
+    wholeTrackEditor.Undo();
+    Assert(wholeTrackEditor.Project.Animation.FindTrack("Zombie_body_custom_2")!.IsVisibleInEditor,
+        "轨道眼睛状态没有进入撤销历史");
+
+    var crossAnimationEditor = new EditorViewModel(new ActionCatalogService());
+    var crossAnimationTrack = crossAnimationEditor.PasteWholeTrackAsNew();
+    Assert(crossAnimationTrack is not null &&
+           crossAnimationTrack.Frames[0].Image == "IMAGE_REANIM_WHOLE_TRACK_COPY" &&
+           crossAnimationEditor.Project.ImageBindings.ContainsKey("IMAGE_REANIM_WHOLE_TRACK_COPY"),
+        "打开另一动画后没有携带整轨和图片资源完成跨动画粘贴");
+
     var crossingTimelineEditor = new EditorViewModel(new ActionCatalogService());
     crossingTimelineEditor.CurrentFrame = 5;
     crossingTimelineEditor.CurrentX = 10;
@@ -734,8 +1097,11 @@ try
     Assert(!entityPreview.IsTrackVisible(zombiePreviewProject, bucketTrack, null),
         "普通僵尸实体预览必须隐藏铁桶等可选装备轨道");
     Assert(entityPreview.IsTrackVisible(zombiePreviewProject, bucketTrack,
-            new ActionDefinition { Track = "anim_idle" }),
-        "动作编辑视图必须允许检查被实体配置隐藏的装备轨道");
+            new ActionDefinition { Track = "anim_idle" }, bucketTrack),
+        "动作编辑视图选择装备轨道后必须允许单独检查该装备");
+    bucketTrack.IsAlwaysVisibleInEditor = true;
+    Assert(entityPreview.IsTrackVisible(zombiePreviewProject, bucketTrack, null),
+        "开启常显后，防具/附属轨道仍被普通僵尸实体预览自动过滤");
 
     var jsoncPath = Path.Combine(root, "sample.jsonc");
     File.WriteAllText(jsoncPath, "{\n  // 保留这条注释\n  \"textures\": []\n}\n");
@@ -748,12 +1114,143 @@ try
     Assert(jsonc.Contains("保留这条注释", StringComparison.Ordinal), "JSONC 注释未保留");
     Assert(jsonc.Contains("TEST_IMAGE", StringComparison.Ordinal), "JSONC 条目未写入");
 
+    var zombieJsoncPath = Path.Combine(root, "zombies.jsonc");
+    File.WriteAllText(zombieJsoncPath, "{\n  // 保留僵尸配置注释\n  \"schemaVersion\": 1,\n  \"zombies\": {\n    \"2\": { \"bodyHealth\": 640 }\n  }\n}\n");
+    var jsoncEditor = new JsoncArrayEditor();
+    jsoncEditor.UpsertObjectProperty(zombieJsoncPath, "zombies", "0", new System.Text.Json.Nodes.JsonObject
+    {
+        ["bodyHealth"] = 270,
+        ["armorLevel"] = 1,
+        ["animationId"] = "CUSTOM_NORMAL_ZOMBIE"
+    });
+    jsoncEditor.MergeObjectProperty(zombieJsoncPath, "zombies", "0", new System.Text.Json.Nodes.JsonObject
+    {
+        ["animationId"] = "CUSTOM_NORMAL_ZOMBIE_V2"
+    });
+    var zombieJsonc = File.ReadAllText(zombieJsoncPath);
+    Assert(zombieJsonc.Contains("保留僵尸配置注释", StringComparison.Ordinal), "僵尸对象合并丢失了原 JSONC 注释");
+    Assert(zombieJsonc.Contains("\"2\"", StringComparison.Ordinal), "稀疏僵尸对象合并覆盖了其他僵尸 ID");
+    Assert(zombieJsonc.Contains("CUSTOM_NORMAL_ZOMBIE_V2", StringComparison.Ordinal) &&
+           !zombieJsonc.Contains("CUSTOM_NORMAL_ZOMBIE\"", StringComparison.Ordinal),
+        "僵尸动画覆盖项没有按模板 ID 更新");
+    Assert(zombieJsonc.Contains("\"bodyHealth\": 270", StringComparison.Ordinal) &&
+           zombieJsonc.Contains("\"armorLevel\": 1", StringComparison.Ordinal),
+        "稀疏动画合并错误删除了原僵尸的生命或其他自定义字段");
+
     var fakePng = Path.Combine(root, "body.png");
-    File.WriteAllBytes(fakePng, [137, 80, 78, 71, 13, 10, 26, 10]);
+    SaveBitmap(
+        BitmapSource.Create(1, 1, 96, 96, PixelFormats.Bgra32, null, new byte[] { 0, 200, 0, 255 }, 4),
+        new PngBitmapEncoder(),
+        fakePng);
+    var originalIndexRoot = Path.Combine(root, "original-index");
+    Directory.CreateDirectory(Path.Combine(originalIndexRoot, "reanim"));
+    File.Copy(fakePng, Path.Combine(originalIndexRoot, "reanim", "test_body.png"));
+    var directOriginalProject = new EditorProject
+    {
+        GameRoot = originalIndexRoot,
+        Animation = CreateDocument(),
+        ImageBindings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["IMAGE_REANIM_TEST_BODY"] = fakePng
+        }
+    };
+    var directOriginalResources = new OriginalResourceService();
+    directOriginalResources.RebuildIndex(originalIndexRoot);
+    directOriginalResources.MarkOriginalReferences(directOriginalProject, preferOriginalResources: true);
+    Assert(directOriginalProject.OriginalImageReferences.Contains("IMAGE_REANIM_TEST_BODY") &&
+           directOriginalProject.ImageBindings.TryGetValue("IMAGE_REANIM_TEST_BODY", out var indexedOriginalPath) &&
+           indexedOriginalPath.EndsWith(Path.Combine("reanim", "test_body.png"), StringComparison.OrdinalIgnoreCase),
+        "直接打开原版动画时没有把同名外部绑定恢复为可见的原版图片来源");
+    var directOriginalEditor = new EditorViewModel(new ActionCatalogService(), directOriginalResources);
+    directOriginalEditor.ReplaceProject(directOriginalProject);
+    var originalResourceItem = directOriginalEditor.ProjectImageResources.Single(item =>
+        item.Symbol == "IMAGE_REANIM_TEST_BODY");
+    Assert(originalResourceItem.IsOriginal &&
+           originalResourceItem.OwnershipLabel.Contains("发布时复用", StringComparison.Ordinal) &&
+           directOriginalEditor.ProjectImageResourcesSummary.Contains("原版 1", StringComparison.Ordinal),
+        "图片资源面板没有列出原版图片或没有标明发布时复用");
     var project = new EditorProject
     {
         Id = "TEST_PLANT",
         DisplayName = "测试植物",
+        TemplateEntityId = 43,
+        CarrierReanimation = "REANIM_PEASHOOTER",
+        Animation = source,
+        Actions = new ObservableCollection<ActionDefinition>
+        {
+            new()
+            {
+                Id = "idle", DisplayName = "待机", Track = "anim_idle",
+                Replaces = new ObservableCollection<string> { "anim_head_idle" },
+                Events = new ObservableCollection<AnimationEventDefinition>
+                {
+                    new() { Id = "FIRE_PROJECTILE", Frame = 1, OncePerLoop = true }
+                }
+            }
+        },
+        ImageBindings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["IMAGE_REANIM_TEST_BODY"] = fakePng
+        }
+    };
+    var originalPng = Path.Combine(root, "original-body.png");
+    File.WriteAllBytes(originalPng, [137, 80, 78, 71, 13, 10, 26, 10]);
+    var packageProject = new ProjectCloneService().Clone(project);
+    var originalTrack = new AnimationTrack { Name = "original_part" };
+    originalTrack.EnsureFrameCount(packageProject.Animation.FrameCount);
+    originalTrack.Frames[0].Image = "IMAGE_REANIM_ORIGINAL_BODY";
+    packageProject.Animation.Tracks.Add(originalTrack);
+    packageProject.ImageBindings["IMAGE_REANIM_ORIGINAL_BODY"] = originalPng;
+    packageProject.OriginalImageReferences.Add("IMAGE_REANIM_ORIGINAL_BODY");
+    var zipPath = Path.Combine(root, "package.zip");
+    new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor()).CreatePackage(packageProject, zipPath);
+    using (var zip = ZipFile.OpenRead(zipPath))
+    {
+        Assert(zip.Entries.Any(entry => entry.FullName.EndsWith("TEST_PLANT.reanim.compiled", StringComparison.Ordinal)), "包内缺少 compiled 动画");
+        Assert(zip.Entries.Any(entry => entry.FullName.EndsWith("entity.fragment.jsonc", StringComparison.Ordinal)), "包内缺少实体配置片段");
+        Assert(zip.Entries.Any(entry => entry.FullName.EndsWith("body.png", StringComparison.Ordinal)), "包内缺少图片");
+        Assert(!zip.Entries.Any(entry => entry.FullName.EndsWith("original-body.png", StringComparison.Ordinal)),
+            "打包错误复制了可复用的原版图片");
+        var animationFragment = zip.Entries.Single(entry => entry.FullName.EndsWith("animations.fragment.jsonc", StringComparison.Ordinal));
+        using var reader = new StreamReader(animationFragment.Open());
+        var animationJson = System.Text.Json.Nodes.JsonNode.Parse(reader.ReadToEnd())!;
+        var generatedAnimation = animationJson["animations"]![0]!;
+        Assert(generatedAnimation["images"]!["IMAGE_REANIM_TEST_BODY"] is not null &&
+               generatedAnimation["images"]!["IMAGE_REANIM_ORIGINAL_BODY"] is null,
+            "动画配置没有仅注册实际使用的 Mod 图片并让原版符号走运行时回退");
+        Assert(generatedAnimation["carrierReanimation"]!.GetValue<string>() == "REANIM_CATTAIL",
+            "植物打包没有按 templatePlantId 强制写入真实载体");
+        Assert(generatedAnimation["initialAction"]!.GetValue<string>() == "idle", "动画包没有写入初始动作");
+        Assert(generatedAnimation["actions"]!["idle"]!["replaces"]![0]!.GetValue<string>() == "anim_head_idle",
+            "动画包没有写入原版轨道替换映射");
+        Assert(generatedAnimation["actions"]!["idle"]!["events"]![0]!["frame"]!.GetValue<int>() == 1,
+            "动画包没有写入动作事件帧");
+    }
+
+    File.WriteAllBytes(Path.Combine(root, "PlantsVsZombies.exe"), [0]);
+    Directory.CreateDirectory(Path.Combine(root, "pvzmod", "config", "resources"));
+    Directory.CreateDirectory(Path.Combine(root, "pvzmod", "config", "plants"));
+    Directory.CreateDirectory(Path.Combine(root, "pvzmod", "config", "zombies"));
+    File.WriteAllText(Path.Combine(root, "pvzmod", "config", "resources", "textures.jsonc"),
+        "{\n  \"schemaVersion\": 1,\n  \"textures\": []\n}\n");
+    File.WriteAllText(Path.Combine(root, "pvzmod", "config", "resources", "animations.jsonc"),
+        "{\n  \"schemaVersion\": 1,\n  \"animations\": []\n}\n");
+    var installedPlantConfig = Path.Combine(root, "pvzmod", "config", "plants", "attributes.jsonc");
+    File.WriteAllText(installedPlantConfig,
+        "{\n  // keep plant 0\n  \"schemaVersion\": 1,\n  \"plants\": {\n    \"0\": { \"customField\": 7 },\n    \"43\": { \"existingField\": true }\n  }\n}\n");
+    var installedZombieConfig = Path.Combine(root, "pvzmod", "config", "zombies", "attributes.jsonc");
+    File.WriteAllText(installedZombieConfig,
+        "{\n  // keep zombie 2\n  \"schemaVersion\": 1,\n  \"zombies\": {\n    \"0\": { \"bodyHealth\": 270, \"armorLevel\": 1 },\n    \"2\": { \"bodyHealth\": 640 }\n  }\n}\n");
+    var zombieProject = new EditorProject
+    {
+        Kind = EntityKind.Zombie,
+        IntegrationMode = EntityIntegrationMode.ReplaceOriginal,
+        Id = "SHARED_ENTITY",
+        DisplayName = "测试僵尸",
+        TemplateEntityId = 0,
+        CarrierReanimation = "REANIM_PEASHOOTER",
+        Health = 360,
+        Damage = 6,
         Animation = source,
         Actions = new ObservableCollection<ActionDefinition>
         {
@@ -764,14 +1261,172 @@ try
             ["IMAGE_REANIM_TEST_BODY"] = fakePng
         }
     };
-    var zipPath = Path.Combine(root, "package.zip");
-    new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor()).CreatePackage(project, zipPath);
-    using (var zip = ZipFile.OpenRead(zipPath))
+    new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor()).InstallToGame(zombieProject, root);
+    var installedZombieText = File.ReadAllText(installedZombieConfig);
+    Assert(installedZombieText.Contains("keep zombie 2", StringComparison.Ordinal) &&
+           installedZombieText.Contains("\"2\"", StringComparison.Ordinal),
+        "僵尸工程一键安装覆盖了原有稀疏条目或注释");
+    Assert(installedZombieText.Contains("\"0\"", StringComparison.Ordinal) &&
+           installedZombieText.Contains("SHARED_ENTITY", StringComparison.Ordinal),
+        "僵尸工程一键安装没有写入实际生效的 attributes.jsonc");
+    Assert(installedZombieText.Contains("\"bodyHealth\": 270", StringComparison.Ordinal) &&
+           installedZombieText.Contains("\"armorLevel\": 1", StringComparison.Ordinal) &&
+           !installedZombieText.Contains("\"attackDamage\"", StringComparison.Ordinal),
+        "替换原版僵尸动画时错误覆盖了生命、护甲或攻击字段");
+    Assert(!File.Exists(Path.Combine(root, "pvzmod", "config", "zombies", "custom_zombies.generated.jsonc")),
+        "替换模式仍生成了伪新增僵尸配置");
+    var installedAnimations = System.Text.Json.Nodes.JsonNode.Parse(
+        File.ReadAllText(Path.Combine(root, "pvzmod", "config", "resources", "animations.jsonc")))!;
+    Assert(installedAnimations["animations"]![0]!["carrierReanimation"]!.GetValue<string>() == "REANIM_ZOMBIE",
+        "僵尸一键安装没有按 templateZombieId 强制写入真实载体");
+    var installedAnimationTextBeforeCollision = File.ReadAllText(
+        Path.Combine(root, "pvzmod", "config", "resources", "animations.jsonc"));
+    var conflictingPlantProject = new EditorProject
     {
-        Assert(zip.Entries.Any(entry => entry.FullName.EndsWith("TEST_PLANT.reanim.compiled", StringComparison.Ordinal)), "包内缺少 compiled 动画");
-        Assert(zip.Entries.Any(entry => entry.FullName.EndsWith("entity.fragment.jsonc", StringComparison.Ordinal)), "包内缺少实体配置片段");
-        Assert(zip.Entries.Any(entry => entry.FullName.EndsWith("body.png", StringComparison.Ordinal)), "包内缺少图片");
+        Kind = EntityKind.Plant,
+        Id = "SHARED_ENTITY",
+        DisplayName = "冲突植物",
+        TemplateEntityId = 0,
+        Animation = source,
+        Actions = new ObservableCollection<ActionDefinition>
+        {
+            new() { Id = "idle", DisplayName = "待机", Track = "anim_idle" }
+        }
+    };
+    var crossKindCollisionRejected = false;
+    try
+    {
+        new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor())
+            .InstallToGame(conflictingPlantProject, root);
     }
+    catch (InvalidDataException exception) when (exception.Message.Contains("禁止跨植物/僵尸覆盖", StringComparison.Ordinal))
+    {
+        crossKindCollisionRejected = true;
+    }
+    Assert(crossKindCollisionRejected, "植物/僵尸使用同一动画 ID 时，一键安装没有在写入前拒绝冲突");
+    Assert(File.ReadAllText(Path.Combine(root, "pvzmod", "config", "resources", "animations.jsonc")) ==
+           installedAnimationTextBeforeCollision,
+        "跨实体类型冲突被拒绝后仍改写了 animations.jsonc");
+    var zombieZipPath = Path.Combine(root, "zombie-package.zip");
+    new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor()).CreatePackage(zombieProject, zombieZipPath);
+    using (var zombieZip = ZipFile.OpenRead(zombieZipPath))
+    {
+        var entityFragment = zombieZip.Entries.Single(entry =>
+            entry.FullName.EndsWith("entity.fragment.jsonc", StringComparison.Ordinal));
+        using var reader = new StreamReader(entityFragment.Open());
+        var entityJson = System.Text.Json.Nodes.JsonNode.Parse(reader.ReadToEnd())!;
+        Assert(entityJson["zombies"]!["0"]!["animationId"]!.GetValue<string>() == "SHARED_ENTITY",
+            "僵尸 ZIP 没有生成可合并到 attributes.jsonc 的稀疏覆盖片段");
+        Assert(entityJson["mode"]!.GetValue<string>() == "replaceOriginal" &&
+               entityJson["zombies"]!["0"]!["bodyHealth"] is null,
+            "替换模式 ZIP 没有标记模式，或仍携带了不应覆盖的数值字段");
+    }
+
+    var addZombieProject = new ProjectCloneService().Clone(zombieProject);
+    addZombieProject.IntegrationMode = EntityIntegrationMode.AddEntity;
+    addZombieProject.Id = "NEW_RUNTIME_ZOMBIE";
+    var addZombieZipPath = Path.Combine(root, "new-zombie-package.zip");
+    new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor())
+        .CreatePackage(addZombieProject, addZombieZipPath);
+    using (var addZombieZip = ZipFile.OpenRead(addZombieZipPath))
+    {
+        var entityFragment = addZombieZip.Entries.Single(entry =>
+            entry.FullName.EndsWith("entity.fragment.jsonc", StringComparison.Ordinal));
+        using var reader = new StreamReader(entityFragment.Open());
+        var entityJson = System.Text.Json.Nodes.JsonNode.Parse(reader.ReadToEnd())!;
+        Assert(entityJson["mode"]!.GetValue<string>() == "addEntity" &&
+               entityJson["runtimeStatus"]!.GetValue<string>() == "planned" &&
+               entityJson["zombie"] is not null && entityJson["zombies"] is null,
+            "新增僵尸 ZIP 没有生成独立实体骨架，或仍伪装成原版覆盖片段");
+    }
+    var addZombieInstallRejected = false;
+    try
+    {
+        new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor())
+            .InstallToGame(addZombieProject, root);
+    }
+    catch (InvalidDataException exception) when (exception.Message.Contains("真正新增僵尸运行时尚未完成", StringComparison.Ordinal))
+    {
+        addZombieInstallRejected = true;
+    }
+    Assert(addZombieInstallRejected, "新增僵尸在运行时未完成时仍被允许一键安装");
+
+    var replacePlantProject = new ProjectCloneService().Clone(project);
+    replacePlantProject.IntegrationMode = EntityIntegrationMode.ReplaceOriginal;
+    Assert(!new PublishConfirmationService().Validate(
+            PublishProjectDraft.FromProject(replacePlantProject),
+            replacePlantProject,
+            PublishOperation.Install)
+        .Any(message => message.Contains("运行时尚未接入原版植物动画替换", StringComparison.Ordinal)),
+        "发布确认仍错误阻止已经接入的原版植物动画替换");
+    var replacePlantZipPath = Path.Combine(root, "replace-plant.zip");
+    new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor())
+        .CreatePackage(replacePlantProject, replacePlantZipPath);
+    using (var replacePlantZip = ZipFile.OpenRead(replacePlantZipPath))
+    {
+        var entityFragment = replacePlantZip.Entries.Single(entry =>
+            entry.FullName.EndsWith("entity.fragment.jsonc", StringComparison.Ordinal));
+        using var reader = new StreamReader(entityFragment.Open());
+        var entityJson = System.Text.Json.Nodes.JsonNode.Parse(reader.ReadToEnd())!;
+        Assert(entityJson["mode"]!.GetValue<string>() == "replaceOriginal" &&
+               entityJson["targetKind"]!.GetValue<string>() == "plant" &&
+               entityJson["plants"]!["43"]!["animationId"]!.GetValue<string>() == "TEST_PLANT" &&
+               entityJson["plants"]!["43"]!["health"] is null,
+            "原版植物替换 ZIP 没有生成只含 animationId 的稀疏覆盖片段");
+    }
+    new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor())
+        .InstallToGame(replacePlantProject, root);
+    var installedPlantText = File.ReadAllText(installedPlantConfig);
+    Assert(installedPlantText.Contains("keep plant 0", StringComparison.Ordinal) &&
+           installedPlantText.Contains("\"0\"", StringComparison.Ordinal) &&
+           installedPlantText.Contains("\"customField\": 7", StringComparison.Ordinal),
+        "原版植物动画替换覆盖了未配置植物或丢失 JSONC 注释");
+    Assert(installedPlantText.Contains("\"43\"", StringComparison.Ordinal) &&
+           installedPlantText.Contains("\"existingField\": true", StringComparison.Ordinal) &&
+           installedPlantText.Contains("TEST_PLANT", StringComparison.Ordinal),
+        "原版植物动画替换没有字段级合并 animationId 或删除了既有字段");
+
+    var rollbackRoot = Path.Combine(root, "rollback-game");
+    Directory.CreateDirectory(Path.Combine(rollbackRoot, "pvzmod", "config", "resources"));
+    Directory.CreateDirectory(Path.Combine(rollbackRoot, "pvzmod", "config", "zombies"));
+    File.WriteAllBytes(Path.Combine(rollbackRoot, "PlantsVsZombies.exe"), [0]);
+    var rollbackTextureConfig = Path.Combine(rollbackRoot, "pvzmod", "config", "resources", "textures.jsonc");
+    var rollbackAnimationConfig = Path.Combine(rollbackRoot, "pvzmod", "config", "resources", "animations.jsonc");
+    var rollbackZombieConfig = Path.Combine(rollbackRoot, "pvzmod", "config", "zombies", "attributes.jsonc");
+    File.WriteAllText(rollbackTextureConfig,
+        $"{{\n  \"schemaVersion\": 1,\n  \"textures\": [{{ \"id\": \"{new string('A', 65)}\", \"path\": \"pvzmod/images/bad.png\" }}]\n}}\n");
+    File.WriteAllText(rollbackAnimationConfig, "{\n  \"schemaVersion\": 1,\n  \"animations\": []\n}\n");
+    File.WriteAllText(rollbackZombieConfig, "{\n  \"schemaVersion\": 1,\n  \"zombies\": {}\n}\n");
+    var animationBeforeRollback = File.ReadAllText(rollbackAnimationConfig);
+    var zombieBeforeRollback = File.ReadAllText(rollbackZombieConfig);
+    var rollbackProject = new EditorProject
+    {
+        Kind = EntityKind.Zombie,
+        IntegrationMode = EntityIntegrationMode.ReplaceOriginal,
+        Id = "ROLLBACK_ZOMBIE",
+        DisplayName = "回滚测试僵尸",
+        TemplateEntityId = 0,
+        Animation = source,
+        Actions = new ObservableCollection<ActionDefinition>
+        {
+            new() { Id = "idle", DisplayName = "待机", Track = "anim_idle" }
+        }
+    };
+    var installRolledBack = false;
+    try
+    {
+        new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor())
+            .InstallToGame(rollbackProject, rollbackRoot);
+    }
+    catch (InvalidDataException exception) when (exception.Message.Contains("已恢复安装前的文件", StringComparison.Ordinal))
+    {
+        installRolledBack = true;
+    }
+    Assert(installRolledBack, "安装后完整配置校验失败时没有执行事务回滚");
+    Assert(File.ReadAllText(rollbackAnimationConfig) == animationBeforeRollback &&
+           File.ReadAllText(rollbackZombieConfig) == zombieBeforeRollback &&
+           !File.Exists(Path.Combine(rollbackRoot, "pvzmod", "animations", "zombies", "rollback_zombie", "ROLLBACK_ZOMBIE.reanim.compiled")),
+        "事务回滚没有恢复配置或删除本次新建的动画文件");
 
     Console.WriteLine("PASS: Raw/compiled 往返、自动补间、JSONC 合并和 ZIP 打包全部通过。");
 }
@@ -880,7 +1535,12 @@ static void SaveBitmap(BitmapSource bitmap, BitmapEncoder encoder, string path)
     encoder.Save(stream);
 }
 
-static void RenderWorkspaceScreenshot(string path, string? animationPath, WorkspacePreset? preset, bool openFloating)
+static void RenderWorkspaceScreenshot(
+    string path,
+    string? animationPath,
+    WorkspacePreset? preset,
+    bool openFloating,
+    string? actionSelector)
 {
     Exception? failure = null;
     var thread = new Thread(() =>
@@ -905,6 +1565,16 @@ static void RenderWorkspaceScreenshot(string path, string? animationPath, Worksp
             var workspace = window.FindName("WorkspaceHost") as WorkspaceHostControl;
             if (preset.HasValue) workspace?.ApplyPreset(preset.Value);
             window.Show();
+            if (!string.IsNullOrWhiteSpace(actionSelector))
+            {
+                screenshotViewModel.SelectedAction = screenshotViewModel.Actions.FirstOrDefault(action =>
+                    string.Equals(action.Id, actionSelector, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(action.Track, actionSelector, StringComparison.OrdinalIgnoreCase));
+                screenshotViewModel.SelectedTrack = screenshotViewModel.Project.Animation.FindTrack("_ground")
+                                                    ?? screenshotViewModel.SelectedTrack;
+                screenshotViewModel.CurrentFrame = screenshotViewModel.TimelineFrameStart +
+                                                   Math.Min(5, Math.Max(0, screenshotViewModel.TimelineFrameCount - 1));
+            }
             if (openFloating)
                 workspace?.OpenFloatingWindow(WorkspaceEditorKind.Inspector);
             window.UpdateLayout();
@@ -932,6 +1602,133 @@ static void RenderWorkspaceScreenshot(string path, string? animationPath, Worksp
     thread.Join();
     if (failure is not null) throw failure;
     Console.WriteLine($"PASS: 工作区窗口已渲染到 {Path.GetFullPath(path)}");
+}
+
+static void RenderTimelineScrollScreenshot(string path)
+{
+    Exception? failure = null;
+    var thread = new Thread(() =>
+    {
+        try
+        {
+            var application = new App();
+            application.InitializeComponent();
+            var viewModel = new EditorViewModel(new ActionCatalogService());
+            for (var index = 0; index < 45; index++)
+            {
+                var track = new AnimationTrack { Name = $"scroll_track_{index:D2}" };
+                track.EnsureFrameCount(30);
+                track.Frames[0].X = index;
+                viewModel.Project.Animation.Tracks.Add(track);
+            }
+
+            var timeline = new TimelineControl();
+            timeline.Bind(viewModel);
+            var scrollViewer = new System.Windows.Controls.ScrollViewer
+            {
+                Width = 760,
+                Height = 260,
+                HorizontalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto,
+                VerticalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto,
+                Content = timeline
+            };
+            var window = new Window
+            {
+                Width = 780,
+                Height = 300,
+                Left = -10000,
+                Top = -10000,
+                ShowActivated = false,
+                WindowStyle = WindowStyle.None,
+                Content = scrollViewer
+            };
+            window.Show();
+            window.UpdateLayout();
+            scrollViewer.ScrollToBottom();
+            window.UpdateLayout();
+            System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(
+                () => window.UpdateLayout(), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+
+            var bitmap = new RenderTargetBitmap(780, 300, 96, 96, PixelFormats.Pbgra32);
+            bitmap.Render(window);
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+            SaveBitmap(bitmap, new PngBitmapEncoder(), Path.GetFullPath(path));
+            timeline.Unbind();
+            window.Close();
+            application.Shutdown();
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
+        }
+    });
+    thread.SetApartmentState(ApartmentState.STA);
+    thread.Start();
+    thread.Join();
+    if (failure is not null) throw failure;
+    Console.WriteLine($"PASS: 时间轴滚动到底部且固定时间尺后已渲染到 {Path.GetFullPath(path)}");
+}
+
+static void RenderPublishConfirmationScreenshot(string path)
+{
+    Exception? failure = null;
+    var thread = new Thread(() =>
+    {
+        try
+        {
+            var application = new App();
+            application.InitializeComponent();
+            var project = new EditorProject
+            {
+                Kind = EntityKind.Zombie,
+                IntegrationMode = EntityIntegrationMode.ReplaceOriginal,
+                Id = "NEW_zb",
+                DisplayName = "自定义普通僵尸",
+                Description = "最终确认窗口可以在安装前修改必填属性。",
+                NumericEntityId = 1000,
+                TemplateEntityId = 0,
+                InitialActionId = "idle",
+                Health = 540,
+                Damage = 8,
+                GameRoot = @"H:\pvz",
+                Animation = CreateDocument(),
+                Actions = new ObservableCollection<ActionDefinition>
+                {
+                    new() { Id = "idle", DisplayName = "待机", Track = "anim_idle" }
+                }
+            };
+            project.Animation.Tracks.Add(new AnimationTrack { Name = "Zombie_body" });
+            project.Animation.Tracks.Add(new AnimationTrack { Name = "Zombie_outerleg_upper" });
+            var window = new PublishConfirmationDialog(project, PublishOperation.Install, @"H:\pvz")
+            {
+                Width = 760,
+                Height = 790,
+                Left = -10000,
+                Top = -10000,
+                ShowActivated = false,
+                WindowStyle = WindowStyle.None
+            };
+            window.Show();
+            window.UpdateLayout();
+            System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(
+                () => window.UpdateLayout(), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            var bitmap = new RenderTargetBitmap(760, 790, 96, 96, PixelFormats.Pbgra32);
+            bitmap.Render(window);
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+            SaveBitmap(bitmap, new PngBitmapEncoder(), Path.GetFullPath(path));
+            window.Close();
+            application.Shutdown();
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
+        }
+    });
+    thread.SetApartmentState(ApartmentState.STA);
+    thread.Start();
+    thread.Join();
+    if (failure is not null) throw failure;
+    Console.WriteLine($"PASS: 导出/安装确认窗口已渲染到 {Path.GetFullPath(path)}");
 }
 
 static AnimationDocument CreateCompositePreviewDocument()
@@ -1023,8 +1820,8 @@ static void RunTrackInspection(string sourcePath, IEnumerable<string> frameArgum
         foreach (var track in document.Tracks)
         {
             var frame = track.ResolveFrame(frameIndex);
-            if (frame.Frame < 0 || frame.Alpha <= 0 ||
-                (string.IsNullOrWhiteSpace(frame.Image) && string.IsNullOrWhiteSpace(frame.Text)))
+            if (!track.IsGroundTrack && (frame.Frame < 0 || frame.Alpha <= 0 ||
+                (string.IsNullOrWhiteSpace(frame.Image) && string.IsNullOrWhiteSpace(frame.Text))))
                 continue;
             Console.WriteLine(string.Join('\t', track.Name, frame.Image ?? frame.Text ?? string.Empty,
                 $"x={frame.X:0.###}", $"y={frame.Y:0.###}",
@@ -1032,5 +1829,36 @@ static void RunTrackInspection(string sourcePath, IEnumerable<string> frameArgum
                 $"sx={frame.ScaleX:0.###}", $"sy={frame.ScaleY:0.###}",
                 $"f={frame.Frame:0.###}", $"a={frame.Alpha:0.###}"));
         }
+    }
+}
+
+static void RunGroundAudit(string sourcePath)
+{
+    var path = Path.GetFullPath(sourcePath);
+    var document = new ReanimCodecService().Load(path);
+    var ground = document.FindTrack("_ground");
+    if (ground is null)
+    {
+        Console.WriteLine($"{Path.GetFileName(path)} 没有 _ground 轨道。");
+        return;
+    }
+    var kind = Path.GetFileName(path).StartsWith("Zombie", StringComparison.OrdinalIgnoreCase)
+        ? EntityKind.Zombie
+        : EntityKind.Plant;
+    var actions = new ActionCatalogService().InferActions(document, kind);
+    var motion = new GroundMotionService();
+    Console.WriteLine("action\tframes\trate\ttotal_x\tavg_px_update\tavg_px_sec\tmin_px_sec\tmax_px_sec");
+    foreach (var action in actions)
+    {
+        var first = motion.Sample(document, action, 0);
+        if (first is null) continue;
+        var velocities = Enumerable.Range(first.Range.Start, Math.Max(1, first.Range.Count - 1))
+            .Select(frame => motion.Sample(document, action, frame)!.PixelsPerSecond)
+            .ToArray();
+        Console.WriteLine(string.Join('\t', action.Track,
+            $"{first.Range.Start}-{first.Range.End}", action.Rate.ToString("0.###"),
+            first.TotalDeltaX.ToString("0.###"), first.AveragePixelsPerUpdate.ToString("0.###"),
+            first.AveragePixelsPerSecond.ToString("0.###"), velocities.Min().ToString("0.###"),
+            velocities.Max().ToString("0.###")));
     }
 }

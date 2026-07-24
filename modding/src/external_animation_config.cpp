@@ -8,6 +8,7 @@
 #include <cstring>
 #include <fstream>
 #include <stdexcept>
+#include <unordered_set>
 
 #include <nlohmann/json.hpp>
 
@@ -19,6 +20,7 @@ using nlohmann::json;
 constexpr std::size_t kMaxAnimations = 256;
 constexpr std::size_t kMaxImageBindings = 512;
 constexpr std::size_t kMaxActions = 64;
+constexpr std::size_t kMaxReplacementsPerAction = 32;
 constexpr std::size_t kMaxEventsPerAction = 64;
 constexpr std::size_t kMaxLocators = 64;
 
@@ -90,6 +92,14 @@ void ValidateTrackName(const std::string_view value, const char* fieldName) {
     }
 }
 
+std::string NormalizeTrackKey(const std::string_view value) {
+    std::string key(value);
+    std::transform(key.begin(), key.end(), key.begin(), [](const unsigned char character) {
+        return static_cast<char>(std::tolower(character));
+    });
+    return key;
+}
+
 void ParseStringMap(
     const json& object, const char* fieldName, const std::size_t maximum,
     std::unordered_map<std::string, std::string>& output, const bool valuesAreTextureIds) {
@@ -130,6 +140,22 @@ ExternalAnimationActionDefinition ParseAction(const std::string& id, const json&
     if (action.blendFrames < 0 || action.blendFrames > 120) {
         throw std::runtime_error("blendFrames must be in [0, 120]");
     }
+    if (const auto replaces = value.find("replaces"); replaces != value.end()) {
+        if (!replaces->is_array()) throw std::runtime_error("action replaces must be an array");
+        if (replaces->size() > kMaxReplacementsPerAction) {
+            throw std::runtime_error("an action has too many replacement tracks");
+        }
+        std::unordered_set<std::string> replacementKeys;
+        for (const json& replacement : *replaces) {
+            if (!replacement.is_string()) throw std::runtime_error("action replaces values must be strings");
+            std::string track = replacement.get<std::string>();
+            ValidateTrackName(track, "replacement track");
+            if (!replacementKeys.insert(NormalizeTrackKey(track)).second) {
+                throw std::runtime_error("action replacement tracks must be unique");
+            }
+            action.replaces.push_back(std::move(track));
+        }
+    }
     const auto events = value.find("events");
     if (events == value.end()) return action;
     if (!events->is_array()) throw std::runtime_error("action events must be an array");
@@ -161,6 +187,13 @@ ExternalAnimationActionDefinition ParseAction(const std::string& id, const json&
             }
         }
         event.oncePerLoop = eventValue.value("oncePerLoop", true);
+        event.targetAction = eventValue.value("action", std::string());
+        if (!event.targetAction.empty() && !IsExternalResourceId(event.targetAction)) {
+            throw std::runtime_error("event action must match [A-Za-z0-9_]+");
+        }
+        if (event.id == "PLAY_ACTION" && event.targetAction.empty()) {
+            throw std::runtime_error("PLAY_ACTION events must define action");
+        }
         action.events.push_back(std::move(event));
     }
     return action;
@@ -172,6 +205,12 @@ const ExternalAnimationActionDefinition* ExternalAnimationDefinition::FindAction
     const std::string_view actionId) const {
     const auto found = actions.find(std::string(actionId));
     return found == actions.end() ? nullptr : &found->second;
+}
+
+const ExternalAnimationActionDefinition* ExternalAnimationDefinition::FindActionForTrack(
+    const std::string_view requestedTrack) const {
+    const auto replacement = actionReplacements.find(NormalizeTrackKey(requestedTrack));
+    return replacement == actionReplacements.end() ? nullptr : FindAction(replacement->second);
 }
 
 const ExternalAnimationDefinition* ExternalAnimationConfig::Find(
@@ -219,6 +258,15 @@ ExternalAnimationConfigLoadResult LoadExternalAnimationConfig(const std::filesys
             if (!IsExternalResourceId(animation.carrierReanimation)) {
                 throw std::runtime_error("carrierReanimation must match [A-Za-z0-9_]+");
             }
+            animation.initialAction = value.value("initialAction", std::string("idle"));
+            if (!IsExternalResourceId(animation.initialAction)) {
+                throw std::runtime_error("initialAction must match [A-Za-z0-9_]+");
+            }
+            const auto savedGameRecovery = value.find("savedGameRecovery");
+            if (savedGameRecovery != value.end() && !savedGameRecovery->is_boolean()) {
+                throw std::runtime_error("savedGameRecovery must be true or false");
+            }
+            animation.savedGameRecovery = value.value("savedGameRecovery", false);
             ParseStringMap(value, "images", kMaxImageBindings, animation.images, true);
             ParseStringMap(value, "locators", kMaxLocators, animation.locators, false);
 
@@ -230,6 +278,27 @@ ExternalAnimationConfigLoadResult LoadExternalAnimationConfig(const std::filesys
             for (const auto& [actionId, actionValue] : actions->items()) {
                 ExternalAnimationActionDefinition action = ParseAction(actionId, actionValue);
                 animation.actions.emplace(action.id, std::move(action));
+            }
+            if (animation.FindAction(animation.initialAction) == nullptr) {
+                throw std::runtime_error("initialAction references an unknown action");
+            }
+            for (const auto& [actionId, action] : animation.actions) {
+                std::vector<std::string_view> requestedTracks;
+                requestedTracks.push_back(action.track);
+                for (const std::string& replacement : action.replaces) requestedTracks.push_back(replacement);
+                for (const std::string_view requestedTrack : requestedTracks) {
+                    const std::string key = NormalizeTrackKey(requestedTrack);
+                    const auto [existing, inserted] = animation.actionReplacements.emplace(key, actionId);
+                    if (!inserted && existing->second != actionId) {
+                        throw std::runtime_error("replacement track '" + std::string(requestedTrack) +
+                                                 "' is claimed by multiple actions");
+                    }
+                }
+                for (const ExternalAnimationEventDefinition& event : action.events) {
+                    if (!event.targetAction.empty() && animation.FindAction(event.targetAction) == nullptr) {
+                        throw std::runtime_error("event action references an unknown action");
+                    }
+                }
             }
             if (!parsed.animations.emplace(animation.id, std::move(animation)).second) {
                 throw std::runtime_error("animation id values must be unique");

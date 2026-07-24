@@ -40,14 +40,17 @@ RuntimeReanimBuildResult BuildRuntimeReanimDefinition(
                         image = cached->second;
                     } else {
                         const auto binding = config.images.find(imageSymbol);
-                        if (binding == config.images.end()) {
-                            throw std::runtime_error("image symbol '" + imageSymbol +
-                                                     "' has no texture binding");
-                        }
-                        image = imageResolver(binding->second);
+                        const std::string_view resourceId = binding == config.images.end()
+                            ? std::string_view(imageSymbol)
+                            : std::string_view(binding->second);
+                        image = imageResolver(resourceId);
                         if (image == nullptr) {
+                            if (binding == config.images.end()) {
+                                throw std::runtime_error("image symbol '" + imageSymbol +
+                                    "' has no texture binding and no reusable original game image");
+                            }
                             throw std::runtime_error("texture '" + binding->second +
-                                                     "' could not be loaded for image symbol '" + imageSymbol + "'");
+                                "' could not be loaded for image symbol '" + imageSymbol + "'");
                         }
                         resolvedImages.emplace(imageSymbol, image);
                     }

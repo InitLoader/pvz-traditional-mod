@@ -12,5 +12,6 @@ namespace pvzmod {
 [[nodiscard]] bool InstallSeedUiHooks(std::uint8_t* moduleBase);
 [[nodiscard]] bool InstallCustomPlantHooks(std::uint8_t* moduleBase);
 [[nodiscard]] bool InstallCustomPlantTextHooks(std::uint8_t* moduleBase);
+[[nodiscard]] bool InstallCustomZombieAnimationRuntime(std::uint8_t* moduleBase);
 
 }  // namespace pvzmod

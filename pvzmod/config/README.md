@@ -43,7 +43,17 @@
 - `images` 的值必须是 `resources/textures.jsonc` 已注册的贴图 ID。
 - `actions` 至少包含一个动作；每个动作通过 `track` 指向 Raw `.reanim` 的 `anim_*` 轨道。
 - 事件使用相对动作帧 `frame` 或 `normalizedTime`，二者必须且只能填写一个。
-- 自定义植物的 `animationId` 已支持把注册动画注入主体 Reanimation；其他植物附件、僵尸和通用动作事件仍处于分阶段接入，完整边界见 `modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`。
+- 自定义植物、`plants/attributes.jsonc` 和 `zombies/attributes.jsonc` 的 `animationId` 均可把注册动画注入主体 Reanimation；附属 Reanimation 和通用动作事件仍处于分阶段接入。
+- 动画制作器发布时区分“替换原版动画”和“新增实体”。替换原版植物只合并目标 `plants.<id>.animationId`，替换原版僵尸只合并 `zombies.<id>.animationId`；未修改的原版图片不复制、不注册。真正新增僵尸尚未完成，不能把新增描述写进原版覆盖表。
+
+## 外部短音效与原版替换（0.10.5-dev）
+
+- `audio/samples.jsonc` 注册字符串音效 ID，允许英文、数字和下划线，比较时统一转为大写；外部 ID 不得冒充保留前缀 `SOUND_`。
+- 文件只能放在 `pvzmod/audio/samples/`，当前由原版 `DSoundManager` 读取 OGG、WAV 或 AU。禁止绝对路径、盘符、UNC 与 `..`。
+- `audio/replacements.jsonc` 按全部 167 个原版 `SOUND_*` 名称稀疏覆盖。只写 `SOUND_CHOMP` 就只改变咀嚼声，其他音效继续使用原版。
+- 启用示例前先放入对应文件，再把样本和替换项的 `enabled` 改为 `true`。两个默认示例均关闭，不会改变原版行为。
+- DLL 等待原版 LoadingSounds 完成后才动态分配音效槽；文件缺失、原版符号错误、槽位不足或解码失败时记录警告并保留原版声音，不产生半注册 ID。
+- 修改配置后需要完全退出并重启游戏。当前没有热重载；背景音乐 MO3/场景状态机也不由这两个文件处理。
 
 精英视觉示例：
 
@@ -68,13 +78,14 @@
 
 - `ui/seed_chooser.jsonc`：只管理上方实际携带卡槽数；当前模板不写 `slotCount`，因此沿用原版关卡数。以后主动写入时可设为 6-10。
 - `plants/custom_plants.jsonc`：管理独立逻辑植物和卡片。新卡默认解锁，第 0 页是原版卡，第 1 页起每页显示 40 张自定义卡，当前配置上限 512 张。
+- `plants/attributes.jsonc`：按原版植物 ID `0–48` 稀疏覆盖主体 `animationId`。未列出的植物完全保持原版；该文件不修改阳光、冷却、生命、攻击或卡片。
 - 选卡面板“一起摇滚吧！”右侧使用商店下一页图标循环翻页。已选自定义卡的逻辑 ID 会固化到上方种子包，翻页不会把它改成另一张卡。
 - `templatePlantId` 只是动画、动作和目标选择的套壳；`cost`、`rechargeTime`、`health`、`launchRate`、首发延迟、连发数、子弹类型和伤害属于新植物自身，不覆盖模板植物。
 - `animationId` 可省略；省略时保持模板主体动画，填写时必须引用 `resources/animations.jsonc` 中已通过校验的字符串 ID。外部动画必须提供可用的 `idle` 动作，并保留模板状态机会调用的动作轨道名（香蒲攻击为 `anim_shooting`），只覆盖主体 body，不自动替换独立头部或眨眼实例。
 - `templatePlantId` 当前只允许 `0–48`。完整 ID、中文名、载体 Reanimation 与 compiled 对照表见 [`../../modding/PvZAnimationStudio/PLANT_TEMPLATE_IDS.md`](../../modding/PvZAnimationStudio/PLANT_TEMPLATE_IDS.md)；原版 `49–52` 是模式专用植物，不能直接当普通模板。
 - 两份配置均在 DLL 启动时读取，修改后要完全退出并重启游戏。配置无效时对应模块回退为原版槽位或不加载新卡，并在 `pvzmod/logs/pvzmod.log` 记录原因。
 
-所有外部配置统一放在 `pvzmod/config` 下，禁止再把 JSON 文件直接放到游戏根目录。
+所有业务配置统一放在 `pvzmod/config` 下，禁止再把 JSON 文件直接放到游戏根目录。规划中的 `pvzmod/plugins/native/<plugin-id>/plugin.jsonc` 只是原生插件加载元数据，是唯一目录例外，不能承载普通玩法配置。
 
 ```text
 pvzmod/
@@ -84,13 +95,19 @@ pvzmod/
 │  ├─ zombies/      # 普通僵尸属性与行为参数
 │  ├─ elites/       # 精英编号、倍率、技能和生成规则
 │  ├─ resources/    # 通用外部贴图字符串 ID 注册表
+│  ├─ audio/        # 外部短音效注册和原版 SOUND_* 稀疏替换
 │  ├─ bosses/       # 各大关 Boss 阶段和技能
 │  ├─ ui/           # UI 布局、按钮、文本和界面开关
 │  ├─ settings/     # Mod 全局设置和难度配置
+│  ├─ rules/        # 规划中的有限 JSON MicroRule
+│  ├─ scripts/      # 规划中由工具生成的 Lua 模块索引
+│  ├─ extensions/   # 规划中的统一扩展包索引和依赖
 │  └─ schemas/      # JSON Schema 和配置版本定义
 ├─ saves/           # Mod 独立存档，不放配置模板
 ├─ images/          # 用户提供的外部图片；按用途继续分子目录
 ├─ animations/      # Raw .reanim 外部动作；按植物、僵尸和 UI 分类
+├─ audio/samples/   # 用户提供的 OGG/WAV/AU 短音效
+├─ plugins/native/  # 规划中的可信 Win32 DLL 插件；每个插件独占子目录
 └─ logs/            # 运行日志
 ```
 
@@ -109,13 +126,23 @@ pvzmod/
 - `settings/global.json`：全局经济和通用规则；当前包含普通、小型、大型阳光拾取价值。
 - `resources/textures.jsonc`：通用外部贴图 ID、受限相对路径和原版图片加载缓存。
 - `resources/animations.jsonc`：外部 Raw/compiled Reanimation、动作、事件、定位轨道和贴图符号映射。
+- `audio/samples.jsonc`：外部短音效字符串 ID、受限路径和启用状态。
+- `audio/replacements.jsonc`：全部原版 `SOUND_*` 名称的稀疏替换关系。
 - `elites/zombies.jsonc`：精英编号、概率、视觉、贴图引用和技能绑定。
+- `rules/*.jsonc`：规划中的有限 MicroRule；只允许“一个事件 + 简单过滤 + 一个固定效果”，复杂逻辑必须升级为 Lua。
+- `scripts/modules.jsonc`：规划中由打包工具生成的 Lua 发布索引、API 版本和能力声明，新手不手写。
+- `extensions/packages.jsonc`：规划中由工具生成的统一包索引，管理 JSON、Lua、DLL 的所有者、版本、依赖、启用状态和文件哈希。
+- 原生插件只允许位于 `pvzmod/plugins/native/<plugin-id>/`，不放在 `config`；每个目录必须包含 `plugin.jsonc` 和 manifest 精确指定的 Win32 DLL。
 - `plants/attacks.jsonc`：植物攻击伤害稀疏覆盖；文件内已列出所有数值攻击的原版默认值。
-- `zombies/attributes.jsonc`：完整原版防具生命目录、按僵尸 ID 稀疏覆盖本体生命/啃食伤害，以及带等级和概率的额外防具。
+- `zombies/attributes.jsonc`：完整原版防具生命目录、按僵尸 ID 稀疏覆盖本体生命/啃食伤害/主体 `animationId`，以及带等级和概率的额外防具。
 
 `plants/attacks.jsonc` 中只有实际写出的键会覆盖原版。注释掉的示例只是攻击目录，不会生效；删除已启用键后，投射物会在下次启动或进入关卡时恢复原版，直接攻击会在下一次命中时恢复原版。未知键、非整数或超出 `0–1000000` 的数值会拒绝整份新配置并保留上一次有效配置。
 
-`zombies/attributes.jsonc` 中的 `originalArmorHealth` 完整列出 1051 版 11 个有效防具/额外生命池。文件中的数值等于 DLL 内核对过的原版默认值时不写内存，保留原版初始化；改动某个数值时只覆盖对应防具，且不要求在 `zombies` 中再写该僵尸 ID。删除某个键也表示完全使用原版。
+`zombies/attributes.jsonc` 中的 `originalArmorHealth` 完整列出 1051 版 11 个有效防具/额外生命池。文件中的数值等于 DLL 内核对过的原版默认值时不写内存，保留原版初始化；改动某个数值时只覆盖对应防具，且不要求在 `zombies` 中再写该僵尸 ID。删除某个键也表示完全使用原版。`zombies.<id>.animationId` 可引用 `resources/animations.jsonc`，只覆盖该 ID 的主体动画；省略则完全沿用原版。动画载体必须与实际僵尸主体一致，并保留原版 AI 请求的同名 `anim_*` 动作轨道。
+
+复杂技能、Boss 状态机和以后需要自由代码的功能不会继续扩张为大量 JSON 字段。规划采用有限 JSON、Lua、可信 DLL 三级扩展，并让它们共用 `pvzmod.dll` 的事件、Capability、命令、配置和所有者注册中心；以上目录和运行时目前都尚未实现，设计与迁移顺序见 `modding/SCRIPTABLE_SKILLS_AND_BEHAVIORS.md`。
+
+规划中的工具也严格分离：`PvZLuaStudio` 创建、编辑、绑定辅助并验证 Lua；`PvZModManager` 管理本目录、包、Lua 文件元数据、DLL、资源、启用档案、安装和回滚，但不显示、验证或打开 Lua 代码；`PvZAnimationStudio` 只输出动画资产与基础植物骨架。详见 `modding/PVZLUA_STUDIO_DESIGN.md` 和 `modding/PVZMOD_MANAGER_DESIGN.md`。
 
 `armorDefinitions` 和 `armorRolls` 是另一套“给任意兼容僵尸随机附加防具”的系统，使用独立 Mod ID。`chance` 为 0 时永不附加，为 100 时必定附加；同一种子和僵尸实例会得到相同结果。`zombies` 仍只稀疏覆盖本体生命、啃食攻击和随机装备规则，当前示例只覆盖普通僵尸 ID 0。
 
