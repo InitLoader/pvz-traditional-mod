@@ -66,6 +66,7 @@
 - `PVZ传统改版技术路线.md`：逆向结论、模块边界、配置规则与后续路线。
 - `modding/ARCHITECTURE.md`：代码架构和 Hook 接入说明。
 - `modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`：外部 Reanimation 制作、解析、动作事件和独立实体方案。
+- `modding/AUDIO_EXTENSION_DESIGN.md`：新增短音效、原版 `SOUND_*` 稀疏替换、音频事件和后续音乐运行时方案。
 - `modding/SCRIPTABLE_SKILLS_AND_BEHAVIORS.md`：有限 JSON、Lua、原生 DLL 三级扩展，统一事件/Capability 管理、热重载和插件 ABI。
 - `modding/EXTENSION_SCALE_ARCHITECTURE_AUDIT.md`：当前基础架构的大规模扩展审计，覆盖植物、僵尸、子弹、UI、资源、事件热路径、32 位容量和演进优先级。
 - `modding/PVZLUA_STUDIO_DESIGN.md`：独立 Lua 编辑器、绑定向导、离线 Mock、诊断和 1/10/30 小时学习路线。

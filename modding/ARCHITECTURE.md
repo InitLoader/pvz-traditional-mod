@@ -77,6 +77,8 @@ ExtensionHub
 
 `elite_zombie_config/hook` 保存数字 `runtimeId`、字符串精英 ID、确定性概率、`Zombie* + instanceId` 侧挂状态和 Reanimation 轨道替换；`elite_skill_registry` 注册技能回调；`zombie_event_bus` 是基础僵尸 Hook 向扩展模块发事件的唯一桥。完整约定和首个 `RAGE + BERSERK` 示例见 `ELITE_AND_TEXTURE_DESIGN.md`，普通与特殊僵尸图片轨道见 `ZOMBIE_TEXTURE_TRACKS.md`。
 
+外部音频采用与图片/动画相同的字符串资源 ID，但短音效与音乐必须分离：`audio_asset_registry` 管新增音效，`audio_replacement_hook` 只做原版 `SOUND_*` 稀疏路由，`game_sound_bridge` 独占 1.0.0.1051 的 SoundManager ABI，`music_runtime` 在完成 MO3/音乐状态机验证后独立实现。任何植物、僵尸、UI 或动画模块只能调用播放服务或提交语义事件，不能直接持有 SoundManager/SoundInstance。完整方案见 [`AUDIO_EXTENSION_DESIGN.md`](AUDIO_EXTENSION_DESIGN.md)。
+
 ## 0.8.3 选卡页绘制分流
 
 - 第 0 页保持调用完整的原版 `SeedChooserScreen::Draw`，原版卡片位置、绘制和交互全部恢复。
