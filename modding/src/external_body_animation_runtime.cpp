@@ -339,16 +339,25 @@ ResolveSavedExternalReanimationDefinition(const int reanimationType) {
             pvzmod::g_moduleBase + pvzmod::kLawnAppGlobalRva);
         definition = pvzmod::PrepareExternalReanimationDefinition(animationId, lawnApp);
         if (definition != nullptr) {
-            std::lock_guard lock(pvzmod::g_runtimeMutex);
-            const auto found = pvzmod::g_definitionsByCarrier.find(reanimationType);
-            if (found != pvzmod::g_definitionsByCarrier.end() &&
-                found->second.animationId == animationId) {
-                found->second.definition = definition;
+            bool stored = false;
+            {
+                std::lock_guard lock(pvzmod::g_runtimeMutex);
+                const auto found = pvzmod::g_definitionsByCarrier.find(reanimationType);
+                if (found != pvzmod::g_definitionsByCarrier.end() &&
+                    found->second.animationId == animationId) {
+                    found->second.definition = definition;
+                    stored = true;
+                }
             }
-            pvzmod::LogOnce(
-                "lazy-saved-definition:" + std::to_string(reanimationType), false,
-                "Built lazy saved-game body Definition '" + animationId +
-                    "' for ReanimationType " + std::to_string(reanimationType) + ".");
+            if (stored) {
+                // LogOnce takes g_runtimeMutex internally. Never call it while the
+                // registry lock is held: saved-game restore reaches this lazy path
+                // before an entity has had a chance to inject its body Definition.
+                pvzmod::LogOnce(
+                    "lazy-saved-definition:" + std::to_string(reanimationType), false,
+                    "Built lazy saved-game body Definition '" + animationId +
+                        "' for ReanimationType " + std::to_string(reanimationType) + ".");
+            }
         }
     }
     if (definition == nullptr) {

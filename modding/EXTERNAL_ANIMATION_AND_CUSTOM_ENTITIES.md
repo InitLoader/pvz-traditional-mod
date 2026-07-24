@@ -326,6 +326,8 @@ custom_animation_preview    卡片、选卡、图鉴和预览
 
 普通自定义僵尸在 DLL 启动时只登记 `animationId -> ReanimationType` 映射，不提前解码所有图片。首次生成该僵尸时构建并缓存 Definition；如果读档先遇到空 Definition，则由存档恢复点按同一映射惰性构建。标有 `savedGameRecovery: true` 的迁移项仍会启动时预构建，以便恢复已经停用且不会再生成的旧实体。
 
+存档恢复回调必须先在注册表锁内取得/写回 Definition，再释放锁后记录日志或调用其他可能取锁的服务。禁止在持有 `external_body_animation_runtime` 注册表互斥锁时调用 `LogOnce`；MSVC 的同线程重复加锁会抛出 `0xE06D7363` C++ 异常，并越过 DLL 回调边界导致 PvZ 致命退出。
+
 原版存档不能写入超出固定枚举的动画或实体 ID。当前兼容层允许每个原版 `carrierReanimation` 对应一个外部 Definition：保存时仍由原版写 TrackInstance，读取时用 Reanimation 原始结构里的载体类型选择启动时预构建的持久对象。已经验证含 5 株 `NEW_PLANT` 的关卡完全退出并重启后可继续运行；僵尸纵切的进游戏与存档回归仍需在提供匹配 `REANIM_ZOMBIE` 的自制资源后完成。同一载体若出现两个不同动画，后者禁用并保留原版。完整 Mod 存档仍需保存：
 
 ```text
