@@ -5,6 +5,7 @@
 #include "external_animation_config.h"
 #include "external_texture_config.h"
 #include "plant_attack_config.h"
+#include "plant_animation_override_config.h"
 #include "raw_reanim.h"
 #include "reanimation_carrier_catalog.h"
 #include "reanimation_playback_state.h"
@@ -516,6 +517,46 @@ void TestSeedUiAndCustomPlantConfig() {
                plant.attack.shotsPerAttack == 2,
                "custom projectile fields should be retained");
     }
+}
+
+void TestPlantAnimationOverrideConfig() {
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "pvzmod_plant_animation_override_test.jsonc";
+    {
+        std::ofstream output(path, std::ios::binary | std::ios::trunc);
+        output << R"({
+            "schemaVersion": 1,
+            // Only Chomper is replaced; every omitted plant remains original.
+            "plants": {
+                "6": { "animationId": "MY_CHOMPER" }
+            }
+        })";
+    }
+    const auto loaded = pvzmod::LoadPlantAnimationOverrideConfig(path);
+    Expect(loaded.Ok(), "valid sparse original-plant animation config should load");
+    if (loaded.Ok()) {
+        const auto* chomper = loaded.config->FindPlant(6);
+        Expect(chomper != nullptr && chomper->animationId == "MY_CHOMPER",
+               "configured original plant should expose its animationId");
+        Expect(loaded.config->FindPlant(0) == nullptr && loaded.config->plants.size() == 1,
+               "omitted original plants must remain untouched");
+    }
+
+    {
+        std::ofstream output(path, std::ios::binary | std::ios::trunc);
+        output << R"({"schemaVersion":1,"plants":{"49":{"animationId":"BAD"}}})";
+    }
+    const auto invalidType = pvzmod::LoadPlantAnimationOverrideConfig(path);
+    Expect(!invalidType.Ok(), "plant animation override IDs outside 0-48 should be rejected");
+
+    {
+        std::ofstream output(path, std::ios::binary | std::ios::trunc);
+        output << R"({"schemaVersion":1,"plants":{"6":{"animationId":"../BAD"}}})";
+    }
+    const auto invalidAnimation = pvzmod::LoadPlantAnimationOverrideConfig(path);
+    Expect(!invalidAnimation.Ok(), "unsafe original-plant animation IDs should be rejected");
+    std::error_code error;
+    std::filesystem::remove(path, error);
 }
 
 void TestZombieConfigRejectsInvalidAnimationId() {
@@ -1098,6 +1139,7 @@ void TestReanimationPlaybackStateCapture() {
 
 int main() {
     TestSparseConfigParsing();
+    TestPlantAnimationOverrideConfig();
     TestDeterministicWeights();
     TestWaveTerminatorsAndSpecialPreservation();
     TestActiveWaveLimitAndMinimumCount();

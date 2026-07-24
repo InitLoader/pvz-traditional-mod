@@ -31,7 +31,7 @@
 - `P03` — 关卡配置已能改变出怪和数量，但还不是完整关卡编辑器，不能新建地图网格、背景、关卡流程或胜负条件。
 - `P04` — UI 已完成选卡分页按钮和自定义卡片交互；通用设置页、主菜单入口、图鉴和完整界面改造尚未完成。
 - `T01` — 精英僵尸已完成实例编号与侧挂状态、确定性概率、属性倍率、技能事件、红色视觉标记和外部贴图引用；当前只有 `RAGE/BERSERK` 垂直切片，掉落和更多技能尚未实现。
-- `P05` — 外部动作资源已完成 Raw `.reanim` 与原版 PC `.reanim.compiled` 自动读取、安全解析、ABI Definition 构建，以及植物/僵尸主体注入；`zombies/attributes.jsonc` 可按原版僵尸 ID 稀疏配置 `animationId`，制作器“替换原版动画”一键安装只合并该字段并保留生命、攻击和防具。存档恢复现按 `carrierReanimation` 区分多个 Definition；同一载体仍只允许一个外部 Definition。动作替换和事件元数据可制作、校验、保存和导出，但任意自定义动作路由、独立附件与真正的新 ZombieType 尚未接入。
+- `P05` — 外部动作资源已完成 Raw `.reanim` 与原版 PC `.reanim.compiled` 自动读取、安全解析、ABI Definition 构建，以及植物/僵尸主体注入；`plants/attributes.jsonc` 与 `zombies/attributes.jsonc` 可按原版 ID 稀疏配置 `animationId`，制作器“替换原版动画”一键安装只合并该字段并保留原实体属性、卡片和 AI。存档恢复按 `carrierReanimation` 区分多个 Definition；同一载体仍只允许一个外部 Definition。动作替换和事件元数据可制作、校验、保存和导出，但任意自定义动作路由、独立附件与真正的新 ZombieType 尚未接入。
 - `P06` — 动画制作器会动态保留所有 `anim_*` 动作并支持眨眼/特殊动作编辑，已有跨轨道/通道框选、可持久化 Bezier 曲线手柄和 100 步撤销/恢复；当前尚未实现骨骼 IK、曲线修改器和音频轨。
 
 ### ⬜ 尚未实现

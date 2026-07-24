@@ -84,8 +84,6 @@ public sealed class PublishConfirmationService
                 if (draft.LaunchRate is < 1 or > 1_000_000) errors.Add("攻击间隔必须在 1–1000000 之间。");
                 if (draft.ShotsPerAttack is < 1 or > 1000) errors.Add("每次发射数必须在 1–1000 之间。");
             }
-            if (!addsEntity && operation is PublishOperation.Package or PublishOperation.Install)
-                errors.Add("当前运行时尚未接入原版植物动画替换；可先保存工程或导出 Raw/compiled，不能生成会误导为可用的安装包。");
         }
         else if (draft.Kind == EntityKind.Zombie)
         {

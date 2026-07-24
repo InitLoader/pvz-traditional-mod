@@ -171,6 +171,21 @@ compiled/reanim/                            # 游戏本体已有的原版 compil
 
 上例只改变普通僵尸 ID `0`；没有写出的 ID 不受影响。`animationId` 与 `bodyHealth`、`attackDamage`、`armorRolls` 可以独立省略或组合。完全退出并重启游戏后生效。动画制作器选择“替换原版动画”时，一键安装只按目标原版 ID 合并 `animationId`，不会改写同一对象内的生命、攻击、防具或其他字段；选择“新增实体”时不会再把新僵尸伪装成该稀疏覆盖。完整模式契约见 [`ANIMATION_REPLACE_AND_ADD_MODES.md`](ANIMATION_REPLACE_AND_ADD_MODES.md)。
 
+### 4.2 原版植物主体动画覆盖
+
+原版植物使用同一外部动画注册表，但覆盖入口独立放在 `plants/attributes.jsonc`：
+
+```jsonc
+{
+  "schemaVersion": 1,
+  "plants": {
+    "6": { "animationId": "MY_CHOMPER" }
+  }
+}
+```
+
+键是原版植物 ID `0–48`。运行时在植物原版初始化完成后的首次更新替换 body Holder，并保留当前同名动作、进度、速率和循环状态；只有新动画不存在该动作时才使用 `initialAction`。未配置植物不进入替换逻辑。该配置不覆盖阳光、冷却、生命、攻击、子弹或卡片数据。修改配置后需完全退出并重启游戏。
+
 ## 5. Raw 与 compiled 安全边界
 
 运行时解析器采用拒绝优先策略：

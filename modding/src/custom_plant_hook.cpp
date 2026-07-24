@@ -4,6 +4,7 @@
 #include "hook_modules.h"
 #include "hook_utils.h"
 #include "logger.h"
+#include "original_plant_animation_runtime.h"
 #include "plant_catalog_runtime.h"
 
 #include <Windows.h>
@@ -64,6 +65,7 @@ constexpr std::array<std::uint8_t, 12> kProjectileInitializePrologue =
 
 struct PlantRuntimeState {
     const CustomPlantDefinition* definition = nullptr;
+    const PlantAnimationOverride* originalAnimation = nullptr;
     bool pending = true;
 };
 
@@ -88,29 +90,46 @@ const CustomPlantDefinition* PlantDefinitionFor(void* plant) {
 bool InstallCustomPlantHooks(std::uint8_t* moduleBase) {
     if (!InitializePlantCatalogRuntime()) return false;
     if (!InitializeCustomPlantAnimationRuntime(moduleBase)) return false;
-    if (!VerifyHookTarget(moduleBase, kPlantGetCostRva, kPlantGetCostPrologue, "Plant::GetCost") ||
-        !VerifyHookTarget(moduleBase, kPlantGetRefreshTimeRva, kPlantGetRefreshTimePrologue, "Plant::GetRefreshTime") ||
-        !VerifyHookTarget(moduleBase, kPlantInitializeRva, kPlantInitializePrologue, "Plant::Initialize") ||
-        !VerifyHookTarget(moduleBase, kPlantUpdateRva, kPlantUpdatePrologue, "Plant::Update") ||
-        !VerifyHookTarget(moduleBase, kPlantFireRva, kPlantFirePrologue, "Plant::Fire") ||
-        !VerifyHookTarget(moduleBase, kProjectileInitializeRva, kProjectileInitializePrologue, "Projectile::Initialize")) {
+    if (!InitializeOriginalPlantAnimationRuntime(moduleBase)) return false;
+    const bool hasCustomPlants = CustomChooserPlantCount() > 0;
+    const bool hasOriginalOverrides = OriginalPlantAnimationOverrideCount() > 0;
+    if (!hasCustomPlants && !hasOriginalOverrides) {
+        LogInfo("Custom plant catalog and original-plant animation override table are empty; plant hooks are disabled.");
+        return true;
+    }
+
+    if (!VerifyHookTarget(moduleBase, kPlantInitializeRva, kPlantInitializePrologue, "Plant::Initialize") ||
+        !VerifyHookTarget(moduleBase, kPlantUpdateRva, kPlantUpdatePrologue, "Plant::Update")) {
         return false;
     }
-    if (!CreateAndEnableHook(moduleBase, kPlantGetCostRva, reinterpret_cast<void*>(&PlantGetCostDetour),
-                             &g_originalPlantGetCost, "Plant::GetCost") ||
-        !CreateAndEnableHook(moduleBase, kPlantGetRefreshTimeRva, reinterpret_cast<void*>(&PlantGetRefreshTimeDetour),
-                             &g_originalPlantGetRefreshTime, "Plant::GetRefreshTime") ||
-        !CreateAndEnableHook(moduleBase, kPlantInitializeRva, reinterpret_cast<void*>(&PlantInitializeDetour),
+    if (hasCustomPlants &&
+        (!VerifyHookTarget(moduleBase, kPlantGetCostRva, kPlantGetCostPrologue, "Plant::GetCost") ||
+         !VerifyHookTarget(moduleBase, kPlantGetRefreshTimeRva, kPlantGetRefreshTimePrologue, "Plant::GetRefreshTime") ||
+         !VerifyHookTarget(moduleBase, kPlantFireRva, kPlantFirePrologue, "Plant::Fire") ||
+         !VerifyHookTarget(moduleBase, kProjectileInitializeRva, kProjectileInitializePrologue, "Projectile::Initialize"))) {
+        return false;
+    }
+    if (!CreateAndEnableHook(moduleBase, kPlantInitializeRva, reinterpret_cast<void*>(&PlantInitializeDetour),
                              &g_originalPlantInitialize, "Plant::Initialize") ||
         !CreateAndEnableHook(moduleBase, kPlantUpdateRva, reinterpret_cast<void*>(&PlantUpdateDetour),
-                             &g_originalPlantUpdate, "Plant::Update") ||
-        !CreateAndEnableHook(moduleBase, kPlantFireRva, reinterpret_cast<void*>(&PlantFireDetour),
-                             &g_originalPlantFire, "Plant::Fire") ||
-        !CreateAndEnableHook(moduleBase, kProjectileInitializeRva, reinterpret_cast<void*>(&ProjectileInitializeDetour),
-                             &g_originalProjectileInitialize, "Projectile::Initialize")) {
+                             &g_originalPlantUpdate, "Plant::Update")) {
         return false;
     }
-    LogInfo("Installed independent custom plant instance, fire, and projectile hooks.");
+    if (hasCustomPlants &&
+        (!CreateAndEnableHook(moduleBase, kPlantGetCostRva, reinterpret_cast<void*>(&PlantGetCostDetour),
+                              &g_originalPlantGetCost, "Plant::GetCost") ||
+         !CreateAndEnableHook(moduleBase, kPlantGetRefreshTimeRva, reinterpret_cast<void*>(&PlantGetRefreshTimeDetour),
+                              &g_originalPlantGetRefreshTime, "Plant::GetRefreshTime") ||
+         !CreateAndEnableHook(moduleBase, kPlantFireRva, reinterpret_cast<void*>(&PlantFireDetour),
+                              &g_originalPlantFire, "Plant::Fire") ||
+         !CreateAndEnableHook(moduleBase, kProjectileInitializeRva, reinterpret_cast<void*>(&ProjectileInitializeDetour),
+                              &g_originalProjectileInitialize, "Projectile::Initialize"))) {
+        return false;
+    }
+    LogInfo("Installed plant instance hooks for " +
+            std::to_string(OriginalPlantAnimationOverrideCount()) +
+            " original animation override(s) and " +
+            std::to_string(CustomChooserPlantCount()) + " custom plant(s).");
     return true;
 }
 
@@ -139,10 +158,16 @@ extern "C" int __stdcall ResolveCustomPlantRefresh(const int seedType, const int
 
 extern "C" unsigned long long __stdcall PrepareCustomPlant(void* plant, const int seedType, const int marker) {
     const pvzmod::CustomPlantDefinition* definition = pvzmod::ResolveCustomPlant(seedType, marker);
+    const pvzmod::PlantAnimationOverride* originalAnimation = definition == nullptr
+        ? pvzmod::FindOriginalPlantAnimationOverride(seedType)
+        : nullptr;
     {
         std::lock_guard lock(pvzmod::g_stateMutex);
         pvzmod::g_plants.erase(plant);
-        if (definition) pvzmod::g_plants.emplace(plant, pvzmod::PlantRuntimeState{definition, true});
+        if (definition || originalAnimation) {
+            pvzmod::g_plants.emplace(
+                plant, pvzmod::PlantRuntimeState{definition, originalAnimation, true});
+        }
     }
     const int mappedSeed = definition ? definition->templatePlantId : seedType;
     const int mappedMarker = definition ? -1 : marker;
@@ -152,14 +177,21 @@ extern "C" unsigned long long __stdcall PrepareCustomPlant(void* plant, const in
 
 extern "C" void __stdcall ApplyPendingCustomPlant(void* plant) {
     const pvzmod::CustomPlantDefinition* definition = nullptr;
+    const pvzmod::PlantAnimationOverride* originalAnimation = nullptr;
     {
         std::lock_guard lock(pvzmod::g_stateMutex);
         const auto it = pvzmod::g_plants.find(plant);
         if (it == pvzmod::g_plants.end() || !it->second.pending) return;
         definition = it->second.definition;
+        originalAnimation = it->second.originalAnimation;
         it->second.pending = false;
     }
-    if (!plant || !definition) return;
+    if (!plant) return;
+    if (originalAnimation != nullptr) {
+        static_cast<void>(pvzmod::ApplyOriginalPlantAnimation(plant, *originalAnimation));
+        return;
+    }
+    if (!definition) return;
     auto* bytes = static_cast<std::uint8_t*>(plant);
     *reinterpret_cast<int*>(bytes + 0x40) = definition->health;
     *reinterpret_cast<int*>(bytes + 0x44) = definition->health;

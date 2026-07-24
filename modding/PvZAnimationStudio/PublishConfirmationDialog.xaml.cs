@@ -86,7 +86,7 @@ public partial class PublishConfirmationDialog : Window
         var addsEntity = SelectedMode == EntityIntegrationMode.AddEntity;
         ModeDescriptionText.Text = addsEntity
             ? "新增实体会生成实体资产骨架。植物当前仍是模板兼容路径；真正新增僵尸只能打包，不能一键安装。"
-            : "替换模式只绑定所选原版实体的主体动画，不创建新增实体配置，也不会复制可复用的原版图片。当前一键安装只支持僵尸替换。";
+            : "替换模式只绑定所选原版植物或僵尸的主体动画，不创建新增实体配置，也不会复制可复用的原版图片。";
         NumericIdLabel.Visibility = addsEntity ? Visibility.Visible : Visibility.Collapsed;
         NumericIdBox.Visibility = addsEntity ? Visibility.Visible : Visibility.Collapsed;
         TemplateIdLabel.Text = addsEntity ? "模板 ID *" : "目标原版 ID *";

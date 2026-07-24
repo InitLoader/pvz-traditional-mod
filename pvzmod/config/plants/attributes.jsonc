@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+
+  // 原版植物主体动画稀疏覆盖。键是原版 Plant/SeedType ID（0-48）。
+  // 只填写 animationId；未列出的植物完全保持原版属性和动画。
+  // 示例：
+  // "plants": {
+  //   "6": { "animationId": "MY_CHOMPER" }
+  // }
+  "plants": {}
+}

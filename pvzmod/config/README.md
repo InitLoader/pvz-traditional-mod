@@ -43,8 +43,8 @@
 - `images` 的值必须是 `resources/textures.jsonc` 已注册的贴图 ID。
 - `actions` 至少包含一个动作；每个动作通过 `track` 指向 Raw `.reanim` 的 `anim_*` 轨道。
 - 事件使用相对动作帧 `frame` 或 `normalizedTime`，二者必须且只能填写一个。
-- 自定义植物和 `zombies/attributes.jsonc` 的 `animationId` 已支持把注册动画注入主体 Reanimation；附属 Reanimation 和通用动作事件仍处于分阶段接入，完整边界见 `modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`。
-- 动画制作器发布时区分“替换原版动画”和“新增实体”。替换原版僵尸只合并目标 `zombies.<id>.animationId`；未修改的原版图片不复制、不注册，`animations[].images` 省略对应符号并由运行时复用原版 Definition。真正新增僵尸尚未完成，不能把新增描述写进原版覆盖表。详见 `modding/ANIMATION_REPLACE_AND_ADD_MODES.md`。
+- 自定义植物、`plants/attributes.jsonc` 和 `zombies/attributes.jsonc` 的 `animationId` 均可把注册动画注入主体 Reanimation；附属 Reanimation 和通用动作事件仍处于分阶段接入。
+- 动画制作器发布时区分“替换原版动画”和“新增实体”。替换原版植物只合并目标 `plants.<id>.animationId`，替换原版僵尸只合并 `zombies.<id>.animationId`；未修改的原版图片不复制、不注册。真正新增僵尸尚未完成，不能把新增描述写进原版覆盖表。
 
 精英视觉示例：
 
@@ -69,6 +69,7 @@
 
 - `ui/seed_chooser.jsonc`：只管理上方实际携带卡槽数；当前模板不写 `slotCount`，因此沿用原版关卡数。以后主动写入时可设为 6-10。
 - `plants/custom_plants.jsonc`：管理独立逻辑植物和卡片。新卡默认解锁，第 0 页是原版卡，第 1 页起每页显示 40 张自定义卡，当前配置上限 512 张。
+- `plants/attributes.jsonc`：按原版植物 ID `0–48` 稀疏覆盖主体 `animationId`。未列出的植物完全保持原版；该文件不修改阳光、冷却、生命、攻击或卡片。
 - 选卡面板“一起摇滚吧！”右侧使用商店下一页图标循环翻页。已选自定义卡的逻辑 ID 会固化到上方种子包，翻页不会把它改成另一张卡。
 - `templatePlantId` 只是动画、动作和目标选择的套壳；`cost`、`rechargeTime`、`health`、`launchRate`、首发延迟、连发数、子弹类型和伤害属于新植物自身，不覆盖模板植物。
 - `animationId` 可省略；省略时保持模板主体动画，填写时必须引用 `resources/animations.jsonc` 中已通过校验的字符串 ID。外部动画必须提供可用的 `idle` 动作，并保留模板状态机会调用的动作轨道名（香蒲攻击为 `anim_shooting`），只覆盖主体 body，不自动替换独立头部或眨眼实例。

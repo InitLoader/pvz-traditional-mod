@@ -1229,11 +1229,15 @@ try
 
     File.WriteAllBytes(Path.Combine(root, "PlantsVsZombies.exe"), [0]);
     Directory.CreateDirectory(Path.Combine(root, "pvzmod", "config", "resources"));
+    Directory.CreateDirectory(Path.Combine(root, "pvzmod", "config", "plants"));
     Directory.CreateDirectory(Path.Combine(root, "pvzmod", "config", "zombies"));
     File.WriteAllText(Path.Combine(root, "pvzmod", "config", "resources", "textures.jsonc"),
         "{\n  \"schemaVersion\": 1,\n  \"textures\": []\n}\n");
     File.WriteAllText(Path.Combine(root, "pvzmod", "config", "resources", "animations.jsonc"),
         "{\n  \"schemaVersion\": 1,\n  \"animations\": []\n}\n");
+    var installedPlantConfig = Path.Combine(root, "pvzmod", "config", "plants", "attributes.jsonc");
+    File.WriteAllText(installedPlantConfig,
+        "{\n  // keep plant 0\n  \"schemaVersion\": 1,\n  \"plants\": {\n    \"0\": { \"customField\": 7 },\n    \"43\": { \"existingField\": true }\n  }\n}\n");
     var installedZombieConfig = Path.Combine(root, "pvzmod", "config", "zombies", "attributes.jsonc");
     File.WriteAllText(installedZombieConfig,
         "{\n  // keep zombie 2\n  \"schemaVersion\": 1,\n  \"zombies\": {\n    \"0\": { \"bodyHealth\": 270, \"armorLevel\": 1 },\n    \"2\": { \"bodyHealth\": 640 }\n  }\n}\n");
@@ -1349,17 +1353,38 @@ try
 
     var replacePlantProject = new ProjectCloneService().Clone(project);
     replacePlantProject.IntegrationMode = EntityIntegrationMode.ReplaceOriginal;
-    var replacePlantPackageRejected = false;
-    try
+    Assert(!new PublishConfirmationService().Validate(
+            PublishProjectDraft.FromProject(replacePlantProject),
+            replacePlantProject,
+            PublishOperation.Install)
+        .Any(message => message.Contains("运行时尚未接入原版植物动画替换", StringComparison.Ordinal)),
+        "发布确认仍错误阻止已经接入的原版植物动画替换");
+    var replacePlantZipPath = Path.Combine(root, "replace-plant.zip");
+    new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor())
+        .CreatePackage(replacePlantProject, replacePlantZipPath);
+    using (var replacePlantZip = ZipFile.OpenRead(replacePlantZipPath))
     {
-        new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor())
-            .CreatePackage(replacePlantProject, Path.Combine(root, "replace-plant.zip"));
+        var entityFragment = replacePlantZip.Entries.Single(entry =>
+            entry.FullName.EndsWith("entity.fragment.jsonc", StringComparison.Ordinal));
+        using var reader = new StreamReader(entityFragment.Open());
+        var entityJson = System.Text.Json.Nodes.JsonNode.Parse(reader.ReadToEnd())!;
+        Assert(entityJson["mode"]!.GetValue<string>() == "replaceOriginal" &&
+               entityJson["targetKind"]!.GetValue<string>() == "plant" &&
+               entityJson["plants"]!["43"]!["animationId"]!.GetValue<string>() == "TEST_PLANT" &&
+               entityJson["plants"]!["43"]!["health"] is null,
+            "原版植物替换 ZIP 没有生成只含 animationId 的稀疏覆盖片段");
     }
-    catch (InvalidDataException exception) when (exception.Message.Contains("原版植物动画替换", StringComparison.Ordinal))
-    {
-        replacePlantPackageRejected = true;
-    }
-    Assert(replacePlantPackageRejected, "原版植物动画替换运行时未完成时仍生成了误导性安装包");
+    new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor())
+        .InstallToGame(replacePlantProject, root);
+    var installedPlantText = File.ReadAllText(installedPlantConfig);
+    Assert(installedPlantText.Contains("keep plant 0", StringComparison.Ordinal) &&
+           installedPlantText.Contains("\"0\"", StringComparison.Ordinal) &&
+           installedPlantText.Contains("\"customField\": 7", StringComparison.Ordinal),
+        "原版植物动画替换覆盖了未配置植物或丢失 JSONC 注释");
+    Assert(installedPlantText.Contains("\"43\"", StringComparison.Ordinal) &&
+           installedPlantText.Contains("\"existingField\": true", StringComparison.Ordinal) &&
+           installedPlantText.Contains("TEST_PLANT", StringComparison.Ordinal),
+        "原版植物动画替换没有字段级合并 animationId 或删除了既有字段");
 
     var rollbackRoot = Path.Combine(root, "rollback-game");
     Directory.CreateDirectory(Path.Combine(rollbackRoot, "pvzmod", "config", "resources"));

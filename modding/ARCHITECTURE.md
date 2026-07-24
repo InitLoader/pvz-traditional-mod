@@ -39,7 +39,7 @@ ExtensionHub
 
 `ImageBindings` 是编辑器解析路径集合，不等于发布所有权集合：原版符号也必须登记可解析路径，才能出现在图片资源面板、轨道缩略图和属性检查器中；是否发布只由 `originalImageReferences` 与动画实际引用集合共同决定。Reanimation 省略的 `i` 字段使用前帧继承，属性检查器的 getter 必须显示 `ResolveFrame` 后的实际符号，同时保留显式空字符串“隐藏图片”的语义；未编辑的继承值不能因 TextBox 失焦写回当前帧。
 
-动画发布必须显式区分 `ReplaceOriginal` 与 `AddEntity`。前者的目标是已存在的原版 ID，只允许稀疏绑定主体 `animationId`；替换原版僵尸时不得把制作器数值写入 `bodyHealth`、`attackDamage` 或防具字段，也不得生成伪新增僵尸描述。后者才拥有新逻辑 ID、数值和未来状态机；当前新增植物仍是模板兼容路径，真正新增僵尸只能输出带 `runtimeStatus: planned` 的资产骨架并拒绝一键安装。原版植物替换在专用运行时接入前只允许保存工程或导出 Raw/compiled。完整契约见 [`ANIMATION_REPLACE_AND_ADD_MODES.md`](ANIMATION_REPLACE_AND_ADD_MODES.md)。
+动画发布必须显式区分 `ReplaceOriginal` 与 `AddEntity`。前者的目标是已存在的原版 ID，只允许按 `plants.<id>.animationId` 或 `zombies.<id>.animationId` 稀疏绑定主体动画；不得把制作器数值写入原版实体属性，也不得生成伪新增实体描述。后者才拥有新逻辑 ID、数值和未来状态机；当前新增植物仍是模板兼容路径，真正新增僵尸只能输出带 `runtimeStatus: planned` 的资产骨架并拒绝一键安装。完整契约见 [`ANIMATION_REPLACE_AND_ADD_MODES.md`](ANIMATION_REPLACE_AND_ADD_MODES.md)。
 
 插入或删除整帧前，`AnimationCurveService.CaptureExplicitMotionCurves` 只从非动作轨道的 `x/y/kx/ky/sx/sy/a` 显式值补建缺失曲线；禁止自动为图片子帧 `f`、图片符号或动作标记建立平滑曲线。帧索引移动完成后，`BakeAllCurves` 重算所有已有曲线，使插入的空帧获得连续运动值。删除单个或框选的中间关键帧时也必须先捕获目标轨道，再清空帧并删除曲线关键点，使剩余相邻端点自动重新烘焙；顺序禁止颠倒，否则旧 compiled 会丢失待删帧以外的补间上下文并退回保持后跳变。设置 K 帧也必须立即烘焙关联曲线，不能只保存编辑器元数据而让预览继续继承上一帧。
 
@@ -65,7 +65,7 @@ ExtensionHub
 
 `0.10.4-dev` 不安装全局 `ReanimationInitializeType` Detour，也不扩大原版 `ReanimationType` 数组。`runtime_reanim_definition` 把已校验的 Raw/compiled 数据转换为 1.0.0.1051 的 16/12/44 字节 Definition/Track/Transform；`external_body_animation_runtime` 独占精确版本 ABI、Holder 内重建和存档 Definition 恢复，植物和僵尸模块只负责各自的配置与生命周期事件。所有贴图和 Definition 在破坏旧 body 前准备完成。运行时以 `templatePlantId`/原版僵尸 ID 对应的真实 `mReanimationType` 为存档载体并在实体创建时复核；JSON 中的 `carrierReanimation` 不一致时记录警告但采用真实模板载体，从而兼容旧工程和旧存档。
 
-`custom_plant_animation_runtime` 在自定义植物首次更新时注入，`custom_zombie_animation_runtime` 以事件总线高优先级监听统一的 Zombie 初始化完成事件并按 `zombies.<id>.animationId` 稀疏注入；精英监听随后在最终 Definition 上绑定 tint 和轨道贴图。高优先级只改变 C++ 监听顺序，不改变已经实机稳定的原生 Hook 安装顺序。读取原版关卡存档时，兼容桥使用已经随 Reanimation 原始结构保存的 `mReanimationType` 选择持久 Definition，因此不同载体可同时存在；同一载体的两个外部 Definition 无法消歧，会拒绝第二个。`initialAction` 已运行，`replaces` 和动作事件仍只是配置/制作器元数据；运行时不安装覆盖全游戏的动作 Hook，后续必须从已确认的植物或僵尸局部调用点接入。完整格式和边界见 `EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`。
+`custom_plant_animation_runtime` 在自定义植物首次更新时注入；`original_plant_animation_runtime` 按 `plants.<id>.animationId` 登记原版植物载体，并复用现有 `Plant::Initialize/Update` 实例入口在首次更新注入；`custom_zombie_animation_runtime` 以事件总线高优先级监听统一的 Zombie 初始化完成事件并按 `zombies.<id>.animationId` 稀疏注入。自定义植物为空但存在原版植物覆盖时，只安装 Plant 初始化/更新 Hook，阳光、冷却、开火和子弹 Hook 保持关闭。读取存档时兼容桥按原始 `mReanimationType` 选择持久 Definition；同一载体的两个不同外部 Definition 无法消歧，会拒绝后者。`initialAction` 已运行，`replaces` 和动作事件仍只是配置/制作器元数据。完整格式和边界见 `EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`。
 
 替换已存在的 body Holder 时不能只重建 Definition：`Zombie::SetupReanimLayers` 已在旧 TrackInstance 上写入路障、铁桶、铁门、旗帜、泳圈等的实例级 `mRenderGroup`。`external_body_animation_runtime` 在 `Destroy` 之前按大小写无关的轨道名快照 render group、clip 和 truncate 状态，`Initialize` 之后再恢复；未命中的新轨道使用初始默认值。这使装备选择仍归原版僵尸逻辑所有，不在 Mod 中硬编码某种防具的显示规则。
 

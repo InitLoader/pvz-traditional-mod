@@ -61,17 +61,15 @@ bool InstallPvZHooks() {
         LogError("Seed chooser UI hook module failed to install.");
         success = false;
     }
+    if (!InstallCustomPlantHooks(moduleBase)) {
+        LogError("Plant instance/animation hook module failed to install.");
+        success = false;
+    }
     if (CustomChooserPlantCount() > 0) {
-        if (!InstallCustomPlantHooks(moduleBase)) {
-            LogError("Custom plant hook module failed to install.");
-            success = false;
-        }
         if (!InstallCustomPlantTextHooks(moduleBase)) {
             LogError("Custom plant text hook module failed to install.");
             success = false;
         }
-    } else {
-        LogInfo("Custom plant catalog is empty; plant instance, fire, projectile, and text hooks are disabled.");
     }
 
     if (success) {

@@ -27,7 +27,7 @@
 | 实体 | 替换原版动画 | 新增实体 |
 |---|---|---|
 | 僵尸 | **可打包、可一键安装**。只合并 `zombies.<id>.animationId` | **只可导出 ZIP 骨架**。真正新增僵尸运行时未完成，拒绝一键安装 |
-| 植物 | **只可保存工程或导出 Raw/compiled**。原版植物替换 Hook 未完成 | **可打包、可一键安装**。当前仍是 `templatePlantId` 兼容路径 |
+| 植物 | **可打包、可一键安装**。只合并 `plants.<id>.animationId` | **可打包、可一键安装**。当前仍是 `templatePlantId` 兼容路径 |
 | UI/其他 | 可编辑和导出 Raw/compiled | 当前不生成实体安装包 |
 
 制作器不能因为文件和 JSON 能生成，就宣称对应运行时已实现。ZIP 中的 `entity.fragment.jsonc` 必须写出 `mode`；新增僵尸还要写 `runtimeStatus: "planned"`。
@@ -62,6 +62,24 @@
 
 安装后这些字段全部保留，只追加或更新 `animationId`。替换模式不得生成 `custom_zombies.generated.jsonc`，也不得从制作器的生命、伤害输入框覆盖原属性。
 
+## 替换原版植物的配置契约
+
+替换大嘴花 ID `6` 时只生成以下稀疏补丁：
+
+```jsonc
+// pvzmod/config/plants/attributes.jsonc
+{
+  "schemaVersion": 1,
+  "plants": {
+    "6": {
+      "animationId": "MY_CHOMPER"
+    }
+  }
+}
+```
+
+该补丁只改变目标原版植物的主体 Reanimation。阳光、冷却、生命、攻击状态机、子弹、卡片、原版 ID 和存档身份继续由游戏管理；未列出的植物不进入替换分支。外部动画必须保留目标植物状态机会请求的同名 `anim_*` 轨道，运行时会优先恢复替换前正在播放的同名动作，无法匹配时才回退 `initialAction`。
+
 ## 原版图片复用与资源所有权
 
 动画轨道中的图片符号分成两类：
@@ -87,7 +105,7 @@
 1. 直接打开游戏目录 `compiled/reanim` 下的原版动画；制作器自动选择“替换原版动画”。检测到 `Zombie_*`、`anim_bucket`、`anim_cone` 等主体轨道时自动选择僵尸。
 2. 在工程检查器或发布确认窗口选择目标实体类型和原版 ID。
 3. 修改轨道、动作或只替换需要变化的图片。未修改的原版图片保持“原版引用”。
-4. 导出检查。僵尸可一键安装；植物在对应运行时完成前只能保存工程或导出 Raw/compiled。
+4. 导出检查。植物和僵尸替换均可打包或一键安装，安装器只合并目标 ID 的 `animationId`。
 
 这条路线不要求先“新建僵尸模板”，也不创建新增实体的数值字段。
 
@@ -107,7 +125,7 @@
 3. 校验资源 ID、路径和跨植物/僵尸载体冲突。
 4. 建立事务备份。
 5. 写动画、Mod 图片、贴图与动画注册。
-6. 按模式写实体配置：新增植物写 `custom_plants.jsonc`；替换僵尸只稀疏合并 `animationId`。
+6. 按模式写实体配置：新增植物写 `custom_plants.jsonc`；替换植物写 `plants/attributes.jsonc`；替换僵尸写 `zombies/attributes.jsonc`，两种替换都只稀疏合并 `animationId`。
 7. 完整重读配置；任何一步失败时恢复所有文件。
 
 ## 旧工程与旧安装迁移

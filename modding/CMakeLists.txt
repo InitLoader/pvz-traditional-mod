@@ -59,6 +59,7 @@ add_library(pvz_wave_core STATIC
     src/external_texture_config.cpp
     src/global_config.cpp
     src/plant_attack_config.cpp
+    src/plant_animation_override_config.cpp
     src/raw_reanim.cpp
     src/reanimation_carrier_catalog.cpp
     src/reanimation_playback_state.cpp
@@ -95,6 +96,7 @@ add_library(pvzmod SHARED
     src/game_tooltip_text.cpp
     src/hook_utils.cpp
     src/logger.cpp
+    src/original_plant_animation_runtime.cpp
     src/plant_catalog_runtime.cpp
     src/plant_attack_hook.cpp
     src/pvz_hook.cpp
