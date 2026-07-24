@@ -336,6 +336,7 @@ try
         }
     });
     source.Tracks[1].IsLockedInEditor = true;
+    source.Tracks[1].IsAlwaysVisibleInEditor = true;
     var portablePath = Path.Combine(root, "PORTABLE_PLANT.pvza");
     var portableResources = new OriginalResourceService();
     var portableFiles = new ProjectFileService(portableResources);
@@ -354,6 +355,8 @@ try
     AssertDocument(source, portableLoaded.Animation);
     Assert(portableLoaded.Animation.Tracks[1].IsLockedInEditor,
         "便携工程没有保留轨道锁定状态");
+    Assert(portableLoaded.Animation.Tracks[1].IsAlwaysVisibleInEditor,
+        "便携工程没有保留防具/附属轨道常显状态");
     Assert(portableLoaded.Actions.Count == 1 && portableLoaded.Actions[0].DisplayName == "便携待机" &&
            Math.Abs(portableLoaded.Actions[0].Rate - 18) < 0.0001,
         "便携工程没有保留动作信息");
@@ -669,6 +672,7 @@ try
     wholeTrackEditor.CurrentX = 5;
     wholeTrackEditor.CurrentFrame = 10;
     wholeTrackEditor.CurrentX = 55;
+    wholeTrackEditor.SetTrackEditorAlwaysVisible(wholeTrackSource, true);
     Assert(wholeTrackEditor.CopySelectedWholeTrack(), "完整轨道没有复制到跨动画剪贴板");
     var duplicatedWholeTrack = wholeTrackEditor.PasteWholeTrackAsNew();
     Assert(duplicatedWholeTrack is not null && duplicatedWholeTrack.Name == "Zombie_body_custom_2",
@@ -684,6 +688,8 @@ try
     Assert(wholeTrackEditor.Project.Curves.Any(curve => curve.TrackId == duplicatedWholeTrack.EditorId &&
                                                        curve.Channel == CurveChannel.X),
         "完整轨道粘贴没有复制曲线关键帧");
+    Assert(duplicatedWholeTrack.IsAlwaysVisibleInEditor,
+        "完整轨道粘贴没有保留防具/附属轨道常显状态");
     wholeTrackEditor.ToggleTrackEditorVisibility(duplicatedWholeTrack);
     Assert(!duplicatedWholeTrack.IsVisibleInEditor, "轨道眼睛没有隐藏编辑器图层");
     wholeTrackEditor.Undo();
@@ -853,6 +859,9 @@ try
     Assert(entityPreview.IsTrackVisible(zombiePreviewProject, bucketTrack,
             new ActionDefinition { Track = "anim_idle" }, bucketTrack),
         "动作编辑视图选择装备轨道后必须允许单独检查该装备");
+    bucketTrack.IsAlwaysVisibleInEditor = true;
+    Assert(entityPreview.IsTrackVisible(zombiePreviewProject, bucketTrack, null),
+        "开启常显后，防具/附属轨道仍被普通僵尸实体预览自动过滤");
 
     var jsoncPath = Path.Combine(root, "sample.jsonc");
     File.WriteAllText(jsoncPath, "{\n  // 保留这条注释\n  \"textures\": []\n}\n");
@@ -1204,10 +1213,6 @@ static void RenderTimelineScrollScreenshot(string path)
             window.UpdateLayout();
             System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(
                 () => window.UpdateLayout(), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-            scrollViewer.ScrollToTop();
-            window.UpdateLayout();
-            System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(
-                () => window.UpdateLayout(), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
 
             var bitmap = new RenderTargetBitmap(780, 300, 96, 96, PixelFormats.Pbgra32);
             bitmap.Render(window);
@@ -1226,7 +1231,7 @@ static void RenderTimelineScrollScreenshot(string path)
     thread.Start();
     thread.Join();
     if (failure is not null) throw failure;
-    Console.WriteLine($"PASS: 时间轴滚动往返后已渲染到 {Path.GetFullPath(path)}");
+    Console.WriteLine($"PASS: 时间轴滚动到底部且固定时间尺后已渲染到 {Path.GetFullPath(path)}");
 }
 
 static AnimationDocument CreateCompositePreviewDocument()

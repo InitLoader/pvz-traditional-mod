@@ -38,6 +38,12 @@ public partial class WorkspaceBrowserControl : UserControl
             _viewModel.ToggleTrackEditorVisibility(track);
         eventArgs.Handled = true;
     }
+    private void TrackAlwaysVisible_Click(object sender, RoutedEventArgs eventArgs)
+    {
+        if (_viewModel is not null && sender is FrameworkElement { Tag: AnimationTrack track })
+            _viewModel.ToggleTrackEditorAlwaysVisible(track);
+        eventArgs.Handled = true;
+    }
     private void TrackLock_Click(object sender, RoutedEventArgs eventArgs)
     {
         if (_viewModel is not null && sender is FrameworkElement { Tag: AnimationTrack track })

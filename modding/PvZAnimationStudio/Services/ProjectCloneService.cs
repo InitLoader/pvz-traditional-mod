@@ -53,6 +53,7 @@ public sealed class ProjectCloneService
                 Name = sourceTrack.Name,
                 EditorId = sourceTrack.EditorId,
                 IsVisibleInEditor = sourceTrack.IsVisibleInEditor,
+                IsAlwaysVisibleInEditor = sourceTrack.IsAlwaysVisibleInEditor,
                 IsLockedInEditor = sourceTrack.IsLockedInEditor
             };
             foreach (var frame in sourceTrack.Frames) track.Frames.Add(frame.Clone());

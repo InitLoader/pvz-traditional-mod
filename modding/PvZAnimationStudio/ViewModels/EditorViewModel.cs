@@ -23,6 +23,7 @@ public sealed class EditorViewModel : ObservableObject
 
     private sealed record WholeTrackClipboard(
         string Name,
+        bool IsAlwaysVisibleInEditor,
         IReadOnlyList<AnimationFrame> Frames,
         IReadOnlyList<AnimationCurveDefinition> Curves,
         IReadOnlyList<CopiedTrackImage> Images);
@@ -402,6 +403,14 @@ public sealed class EditorViewModel : ObservableObject
             if (SelectedTrack is not null) SetTrackEditorLock(SelectedTrack, value);
         }
     }
+    public bool SelectedTrackIsAlwaysVisible
+    {
+        get => SelectedTrack?.IsAlwaysVisibleInEditor ?? false;
+        set
+        {
+            if (SelectedTrack is not null) SetTrackEditorAlwaysVisible(SelectedTrack, value);
+        }
+    }
     public string SelectedTrackImageSymbol => SelectedTrack?.IsGroundTrack == true
         ? "_ground（定位/速度轨道，无贴图）"
         : CurrentResolvedFrame?.Image ?? SelectedTrack?.EditorImageSymbol ?? "无图片";
@@ -618,6 +627,21 @@ public sealed class EditorViewModel : ObservableObject
     public void ToggleTrackEditorVisibility(AnimationTrack track) =>
         SetTrackEditorVisibility(track, !track.IsVisibleInEditor);
 
+    public void SetTrackEditorAlwaysVisible(AnimationTrack track, bool alwaysVisible)
+    {
+        if (!Project.Animation.Tracks.Contains(track) || track.IsAlwaysVisibleInEditor == alwaysVisible) return;
+        RecordUndo(alwaysVisible ? "常显轨道" : "取消常显轨道");
+        track.IsAlwaysVisibleInEditor = alwaysVisible;
+        RaisePropertyChanged(nameof(SelectedTrackIsAlwaysVisible));
+        Status = alwaysVisible
+            ? $"轨道 {track.Name} 已设为常显；切换其他轨道时仍保留在实体预览中"
+            : $"轨道 {track.Name} 已恢复实体预览的自动显示规则";
+        NotifyVisualChanged();
+    }
+
+    public void ToggleTrackEditorAlwaysVisible(AnimationTrack track) =>
+        SetTrackEditorAlwaysVisible(track, !track.IsAlwaysVisibleInEditor);
+
     public void SetTrackEditorLock(AnimationTrack track, bool locked)
     {
         if (!Project.Animation.Tracks.Contains(track) || track.IsLockedInEditor == locked) return;
@@ -664,6 +688,7 @@ public sealed class EditorViewModel : ObservableObject
             .ToArray();
         s_wholeTrackClipboard = new WholeTrackClipboard(
             SelectedTrack.Name,
+            SelectedTrack.IsAlwaysVisibleInEditor,
             SelectedTrack.Frames.Select(frame => frame.Clone()).ToArray(),
             curves,
             images);
@@ -713,7 +738,12 @@ public sealed class EditorViewModel : ObservableObject
         var baseName = name;
         var nameSuffix = 2;
         while (Project.Animation.FindTrack(name) is not null) name = $"{baseName}_{nameSuffix++}";
-        var track = new AnimationTrack { Name = name, IsVisibleInEditor = true };
+        var track = new AnimationTrack
+        {
+            Name = name,
+            IsVisibleInEditor = true,
+            IsAlwaysVisibleInEditor = clipboard.IsAlwaysVisibleInEditor
+        };
         foreach (var sourceFrame in clipboard.Frames)
         {
             var frame = sourceFrame.Clone();
@@ -1513,7 +1543,7 @@ public sealed class EditorViewModel : ObservableObject
                      nameof(FrameLabel), nameof(CurrentHasKey), nameof(CurrentX), nameof(CurrentY),
                      nameof(CurrentSkewX), nameof(CurrentSkewY), nameof(CurrentScaleX), nameof(CurrentScaleY),
                      nameof(CurrentVisibilityFrame), nameof(CurrentAlpha), nameof(CurrentImage), nameof(CurrentText),
-                     nameof(CurrentResolvedFrame), nameof(SelectedTrackIsLocked), nameof(SelectedTrackThumbnail),
+                     nameof(CurrentResolvedFrame), nameof(SelectedTrackIsLocked), nameof(SelectedTrackIsAlwaysVisible), nameof(SelectedTrackThumbnail),
                      nameof(SelectedTrackImageSymbol), nameof(SelectedTrackImagePath), nameof(SelectedTrackImageLayout),
                      nameof(CurrentGroundAction), nameof(CurrentGroundMotion), nameof(HasGroundMotion), nameof(GroundMotionFrameText),
                      nameof(GroundMotionVelocityText), nameof(GroundMotionAverageText), nameof(GroundMotionDistanceText)
@@ -1589,7 +1619,7 @@ public sealed class EditorViewModel : ObservableObject
     {
         foreach (var property in new[]
                  {
-                     nameof(SelectedTrackIsLocked), nameof(SelectedTrackThumbnail), nameof(SelectedTrackImageSymbol),
+                     nameof(SelectedTrackIsLocked), nameof(SelectedTrackIsAlwaysVisible), nameof(SelectedTrackThumbnail), nameof(SelectedTrackImageSymbol),
                      nameof(SelectedTrackImagePath), nameof(SelectedTrackImageLayout)
                  })
             RaisePropertyChanged(property);

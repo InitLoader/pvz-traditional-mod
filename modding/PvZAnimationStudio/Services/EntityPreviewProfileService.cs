@@ -72,7 +72,7 @@ public sealed class EntityPreviewProfileService
         // Optional equipment is hidden for a normal entity preview even while
         // editing an action. Selecting the equipment track itself temporarily
         // reveals it so it can still be authored.
-        if (ReferenceEquals(track, selectedTrack)) return true;
+        if (track.IsAlwaysVisibleInEditor || ReferenceEquals(track, selectedTrack)) return true;
         var hiddenPrefixes = FindProfile(project)?.HiddenTrackPrefixes;
         return hiddenPrefixes is null || hiddenPrefixes.All(prefix =>
             !track.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));

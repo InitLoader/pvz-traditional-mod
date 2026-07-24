@@ -11,6 +11,7 @@ namespace PvZAnimationStudio.Controls;
 
 public sealed class WorkspaceHostControl : Grid
 {
+    private const double SplitterThickness = 10;
     private readonly WorkspaceLayoutPresetService _presets = new();
     private readonly List<AnimationPreviewControl> _previews = [];
     private readonly List<WorkspaceTimelineControl> _timelines = [];
@@ -116,8 +117,9 @@ public sealed class WorkspaceHostControl : Grid
         var ratio = Math.Clamp(node.Ratio, 0.1, 0.9);
         var splitter = new GridSplitter
         {
-            Background = new SolidColorBrush(Color.FromRgb(75, 88, 102)),
+            Background = new SolidColorBrush(Color.FromRgb(82, 99, 116)),
             ShowsPreview = false,
+            ToolTip = "拖动以调整动画视图、时间轴、资源或属性区域大小",
             ResizeBehavior = GridResizeBehavior.PreviousAndNext,
             ResizeDirection = node.Split == WorkspaceSplitDirection.Horizontal
                 ? GridResizeDirection.Columns
@@ -127,12 +129,12 @@ public sealed class WorkspaceHostControl : Grid
         {
             if (node.Split == WorkspaceSplitDirection.Horizontal)
             {
-                var available = Math.Max(1, splitGrid.ActualWidth - 6);
+                var available = Math.Max(1, splitGrid.ActualWidth - SplitterThickness);
                 node.Ratio = Math.Clamp(splitGrid.ColumnDefinitions[0].ActualWidth / available, 0.1, 0.9);
             }
             else
             {
-                var available = Math.Max(1, splitGrid.ActualHeight - 6);
+                var available = Math.Max(1, splitGrid.ActualHeight - SplitterThickness);
                 node.Ratio = Math.Clamp(splitGrid.RowDefinitions[0].ActualHeight / available, 0.1, 0.9);
             }
             LayoutChanged?.Invoke(this, EventArgs.Empty);
@@ -143,9 +145,9 @@ public sealed class WorkspaceHostControl : Grid
         if (node.Split == WorkspaceSplitDirection.Horizontal)
         {
             splitGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(ratio, GridUnitType.Star), MinWidth = 150 });
-            splitGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(6) });
+            splitGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(SplitterThickness) });
             splitGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1 - ratio, GridUnitType.Star), MinWidth = 150 });
-            splitter.Width = 6;
+            splitter.Width = SplitterThickness;
             splitter.Cursor = Cursors.SizeWE;
             Grid.SetColumn(first, 0);
             Grid.SetColumn(splitter, 1);
@@ -154,9 +156,9 @@ public sealed class WorkspaceHostControl : Grid
         else
         {
             splitGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(ratio, GridUnitType.Star), MinHeight = 100 });
-            splitGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(6) });
+            splitGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(SplitterThickness) });
             splitGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1 - ratio, GridUnitType.Star), MinHeight = 100 });
-            splitter.Height = 6;
+            splitter.Height = SplitterThickness;
             splitter.Cursor = Cursors.SizeNS;
             Grid.SetRow(first, 0);
             Grid.SetRow(splitter, 1);

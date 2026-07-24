@@ -197,6 +197,7 @@ public sealed class AnimationTrack : ObservableObject
 {
     private string _name = "track";
     private bool _isVisibleInEditor = true;
+    private bool _isAlwaysVisibleInEditor;
     private bool _isLockedInEditor;
     private ObservableCollection<AnimationFrame> _frames = [];
     private ResolvedAnimationFrame[]? _resolvedFrameCache;
@@ -253,6 +254,21 @@ public sealed class AnimationTrack : ObservableObject
 
     [JsonIgnore]
     public string EditorVisibilityGlyph => IsVisibleInEditor ? "\uE7B3" : "\uED1A";
+
+    // Preview-only override for optional equipment and accessory layers. This
+    // bypasses entity-profile filtering without changing raw/compiled output.
+    public bool IsAlwaysVisibleInEditor
+    {
+        get => _isAlwaysVisibleInEditor;
+        set
+        {
+            if (SetField(ref _isAlwaysVisibleInEditor, value))
+                RaisePropertyChanged(nameof(EditorAlwaysVisibleGlyph));
+        }
+    }
+
+    [JsonIgnore]
+    public string EditorAlwaysVisibleGlyph => IsAlwaysVisibleInEditor ? "\uE718" : "\uE77A";
 
     // Editor-only protection. It is persisted in .pvza projects but ignored by
     // raw/compiled Reanimation codecs and therefore never changes game data.

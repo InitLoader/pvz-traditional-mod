@@ -15,6 +15,8 @@
           </Border>
           <StackPanel Grid.Column="1" Margin="8,0,0,0">
             <CheckBox Content="锁定轨道（禁止编辑）" IsChecked="{Binding SelectedTrackIsLocked, Mode=TwoWay}"/>
+            <CheckBox Margin="0,4,0,0" Content="常显防具/附属层" IsChecked="{Binding SelectedTrackIsAlwaysVisible, Mode=TwoWay}"
+                      ToolTip="只影响编辑器组合预览；切换到其他轨道后仍显示，不写入 Raw/compiled。"/>
             <TextBlock Margin="0,5,0,0" Text="{Binding SelectedTrackImageSymbol}" FontWeight="SemiBold" TextWrapping="Wrap"/>
             <TextBlock Margin="0,3,0,0" Text="{Binding SelectedTrackImageLayout}" Foreground="#9FC3D8"/>
             <TextBlock Margin="0,3,0,0" Text="{Binding SelectedTrackImagePath}" Foreground="#AEB9C4"

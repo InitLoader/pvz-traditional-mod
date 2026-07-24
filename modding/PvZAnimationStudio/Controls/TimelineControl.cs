@@ -9,7 +9,7 @@ namespace PvZAnimationStudio.Controls;
 
 public sealed class TimelineControl : FrameworkElement
 {
-    private const double HeaderWidth = 260;
+    private const double HeaderWidth = 300;
     private const double CellWidth = 14;
     private const double RowHeight = 26;
     private const double RulerHeight = 28;
@@ -86,7 +86,7 @@ public sealed class TimelineControl : FrameworkElement
         var rangeStart = _viewModel.TimelineFrameStart;
         var rangeEnd = _viewModel.TimelineFrameEnd;
         var viewport = GetVisibleBounds();
-        var firstRow = Math.Clamp((int)Math.Floor((viewport.Top - RulerHeight) / RowHeight), 0,
+        var firstRow = Math.Clamp((int)Math.Floor(viewport.Top / RowHeight), 0,
             Math.Max(0, tracks.Count - 1));
         var lastRow = Math.Clamp((int)Math.Ceiling((viewport.Bottom - RulerHeight) / RowHeight), 0,
             Math.Max(0, tracks.Count - 1));
@@ -95,40 +95,11 @@ public sealed class TimelineControl : FrameworkElement
         var lastLocalFrame = Math.Clamp((int)Math.Ceiling((viewport.Right - HeaderWidth) / CellWidth) + 1, 0,
             Math.Max(0, rangeEnd - rangeStart));
 
-        context.DrawRectangle(new SolidColorBrush(Color.FromRgb(38, 44, 52)), null,
-            new Rect(viewport.Left, 0, Math.Max(0, viewport.Width), RulerHeight));
-        if (viewport.Left < HeaderWidth)
+        if (tracks.Count == 0)
         {
-            var rulerTitle = new FormattedText("显示  锁定  图片 / 轨道",
-                CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, new Typeface("Microsoft YaHei UI"), 10,
-                new SolidColorBrush(Color.FromRgb(180, 193, 205)), dpi);
-            context.DrawText(rulerTitle, new Point(8, 7));
+            DrawStickyRuler(context, viewport, firstLocalFrame, lastLocalFrame, dpi, gridPen);
+            return;
         }
-        var fps = _viewModel.EffectivePlaybackRate;
-        for (var localFrame = firstLocalFrame; localFrame <= lastLocalFrame; localFrame++)
-        {
-            var x = HeaderWidth + localFrame * CellWidth;
-            var seconds = localFrame / fps;
-            var roundedSecond = Math.Round(seconds);
-            var major = Math.Abs(seconds - roundedSecond) <= 0.5 / fps;
-            var minorStep = Math.Max(1, (int)Math.Round(fps / 4f));
-            if (!major && localFrame % minorStep != 0) continue;
-            var pen = major
-                ? new Pen(new SolidColorBrush(Color.FromRgb(101, 117, 133)), 1)
-                : gridPen;
-            context.DrawLine(pen, new Point(x, major ? 13 : 20),
-                new Point(x, RulerHeight + tracks.Count * RowHeight));
-            if (!major) continue;
-            var secondLabel = new FormattedText($"{roundedSecond:0}s",
-                CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 10,
-                new SolidColorBrush(Color.FromRgb(205, 216, 226)), dpi);
-            context.DrawText(secondLabel, new Point(x + 2, 2));
-        }
-        context.DrawLine(gridPen, new Point(viewport.Left, RulerHeight), new Point(viewport.Right, RulerHeight));
-        context.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(77, 88, 101)), 1),
-            new Point(HeaderWidth, 0), new Point(HeaderWidth, ActualHeight));
-
-        if (tracks.Count == 0) return;
         for (var row = firstRow; row <= lastRow; row++)
         {
             var track = tracks[row];
@@ -141,21 +112,22 @@ public sealed class TimelineControl : FrameworkElement
                     : new SolidColorBrush(row % 2 == 0 ? Color.FromRgb(30, 35, 42) : Color.FromRgb(27, 32, 39));
             context.DrawRectangle(background, null, new Rect(viewport.Left, y, viewport.Width, RowHeight));
             DrawVisibilityIcon(context, new Point(16, y + RowHeight / 2), track.IsVisibleInEditor);
-            DrawLockIcon(context, new Point(45, y + RowHeight / 2), track.IsLockedInEditor);
+            DrawAlwaysVisibleIcon(context, new Point(45, y + RowHeight / 2), track.IsAlwaysVisibleInEditor);
+            DrawLockIcon(context, new Point(74, y + RowHeight / 2), track.IsLockedInEditor);
             if (track.EditorThumbnail is not null)
-                context.DrawImage(track.EditorThumbnail, new Rect(62, y + 2, 22, 22));
+                context.DrawImage(track.EditorThumbnail, new Rect(91, y + 2, 22, 22));
             else if (track.IsGroundTrack)
-                DrawGroundIcon(context, new Point(72, y + RowHeight / 2));
+                DrawGroundIcon(context, new Point(101, y + RowHeight / 2));
             else
                 context.DrawRectangle(new SolidColorBrush(Color.FromRgb(45, 52, 61)), gridPen,
-                    new Rect(62, y + 3, 20, 20));
+                    new Rect(91, y + 3, 20, 20));
             var label = new FormattedText(
                 track.IsActionTrack ? $"动作范围  {track.Name}" : track.EditorDisplayName,
                 CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
                 new Typeface("Microsoft YaHei UI"), 11,
                 track.IsActionTrack ? Brushes.Plum : track.IsGroundTrack ? Brushes.DeepSkyBlue : Brushes.White, dpi)
-            { MaxTextWidth = HeaderWidth - 96, Trimming = TextTrimming.CharacterEllipsis };
-            context.DrawText(label, new Point(91, y + 5));
+            { MaxTextWidth = HeaderWidth - 130, Trimming = TextTrimming.CharacterEllipsis };
+            context.DrawText(label, new Point(120, y + 5));
             context.DrawLine(gridPen, new Point(viewport.Left, y + RowHeight), new Point(viewport.Right, y + RowHeight));
 
             foreach (var absoluteFrame in _viewModel.GetMeaningfulKeyFrames(track))
@@ -172,10 +144,59 @@ public sealed class TimelineControl : FrameworkElement
 
         var currentLocalFrame = _viewModel.CurrentFrame - rangeStart;
         var playheadX = HeaderWidth + currentLocalFrame * CellWidth + CellWidth / 2;
-        context.DrawLine(new Pen(Brushes.OrangeRed, 2), new Point(playheadX, 0), new Point(playheadX, ActualHeight));
+        context.DrawLine(new Pen(Brushes.OrangeRed, 2),
+            new Point(playheadX, viewport.Top + RulerHeight), new Point(playheadX, viewport.Bottom));
         if (_boxSelecting)
             context.DrawRectangle(new SolidColorBrush(Color.FromArgb(42, 73, 151, 255)),
                 new Pen(new SolidColorBrush(Color.FromRgb(95, 176, 255)), 1), _boxRect);
+        DrawStickyRuler(context, viewport, firstLocalFrame, lastLocalFrame, dpi, gridPen);
+        context.DrawLine(new Pen(Brushes.OrangeRed, 2),
+            new Point(playheadX, viewport.Top), new Point(playheadX, viewport.Top + RulerHeight));
+    }
+
+    private void DrawStickyRuler(
+        DrawingContext context,
+        Rect viewport,
+        int firstLocalFrame,
+        int lastLocalFrame,
+        double dpi,
+        Pen gridPen)
+    {
+        if (_viewModel is null) return;
+        var rulerY = viewport.Top;
+        context.DrawRectangle(new SolidColorBrush(Color.FromRgb(38, 44, 52)), null,
+            new Rect(viewport.Left, rulerY, Math.Max(0, viewport.Width), RulerHeight));
+        if (viewport.Left < HeaderWidth)
+        {
+            var rulerTitle = new FormattedText("显示  常显  锁定  图片 / 轨道",
+                CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, new Typeface("Microsoft YaHei UI"), 10,
+                new SolidColorBrush(Color.FromRgb(180, 193, 205)), dpi);
+            context.DrawText(rulerTitle, new Point(viewport.Left + 8, rulerY + 7));
+        }
+        var fps = _viewModel.EffectivePlaybackRate;
+        for (var localFrame = firstLocalFrame; localFrame <= lastLocalFrame; localFrame++)
+        {
+            var x = HeaderWidth + localFrame * CellWidth;
+            var seconds = localFrame / fps;
+            var roundedSecond = Math.Round(seconds);
+            var major = Math.Abs(seconds - roundedSecond) <= 0.5 / fps;
+            var minorStep = Math.Max(1, (int)Math.Round(fps / 4f));
+            if (!major && localFrame % minorStep != 0) continue;
+            var pen = major
+                ? new Pen(new SolidColorBrush(Color.FromRgb(101, 117, 133)), 1)
+                : gridPen;
+            context.DrawLine(pen, new Point(x, rulerY + (major ? 13 : 20)),
+                new Point(x, rulerY + RulerHeight));
+            if (!major) continue;
+            var secondLabel = new FormattedText($"{roundedSecond:0}s",
+                CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 10,
+                new SolidColorBrush(Color.FromRgb(205, 216, 226)), dpi);
+            context.DrawText(secondLabel, new Point(x + 2, rulerY + 2));
+        }
+        context.DrawLine(gridPen, new Point(viewport.Left, rulerY + RulerHeight),
+            new Point(viewport.Right, rulerY + RulerHeight));
+        context.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(77, 88, 101)), 1),
+            new Point(HeaderWidth, rulerY), new Point(HeaderWidth, viewport.Bottom));
     }
 
     private static void DrawDiamond(DrawingContext context, Point center, Brush fill)
@@ -224,6 +245,25 @@ public sealed class TimelineControl : FrameworkElement
             context.DrawLine(pen, new Point(center.X - 7, center.Y + 7), new Point(center.X + 7, center.Y - 7));
     }
 
+    private static void DrawAlwaysVisibleIcon(DrawingContext context, Point center, bool alwaysVisible)
+    {
+        var color = alwaysVisible ? Color.FromRgb(255, 194, 72) : Color.FromRgb(100, 113, 127);
+        var brush = new SolidColorBrush(color);
+        var pen = new Pen(brush, 1.4);
+        var pin = new StreamGeometry();
+        using (var writer = pin.Open())
+        {
+            writer.BeginFigure(new Point(center.X - 5, center.Y - 7), alwaysVisible, true);
+            writer.LineTo(new Point(center.X + 5, center.Y - 7), true, false);
+            writer.LineTo(new Point(center.X + 3, center.Y - 1), true, false);
+            writer.LineTo(new Point(center.X, center.Y + 2), true, false);
+            writer.LineTo(new Point(center.X - 3, center.Y - 1), true, false);
+        }
+        pin.Freeze();
+        context.DrawGeometry(alwaysVisible ? brush : null, pen, pin);
+        context.DrawLine(pen, new Point(center.X, center.Y + 2), new Point(center.X, center.Y + 8));
+    }
+
     private static void DrawLockIcon(DrawingContext context, Point center, bool locked)
     {
         var color = locked ? Color.FromRgb(245, 194, 86) : Color.FromRgb(112, 124, 137);
@@ -249,11 +289,15 @@ public sealed class TimelineControl : FrameworkElement
         Focus();
         var tracks = _viewModel.TimelineTracks;
         var point = eventArgs.GetPosition(this);
-        if (point.Y < RulerHeight && point.X >= HeaderWidth)
+        var viewport = GetVisibleBounds();
+        if (point.Y >= viewport.Top && point.Y < viewport.Top + RulerHeight)
         {
-            var rulerFrame = (int)((point.X - HeaderWidth) / CellWidth);
-            _viewModel.CurrentFrame = Math.Clamp(_viewModel.TimelineFrameStart + rulerFrame,
-                _viewModel.TimelineFrameStart, _viewModel.TimelineFrameEnd);
+            if (point.X >= HeaderWidth)
+            {
+                var rulerFrame = (int)((point.X - HeaderWidth) / CellWidth);
+                _viewModel.CurrentFrame = Math.Clamp(_viewModel.TimelineFrameStart + rulerFrame,
+                    _viewModel.TimelineFrameStart, _viewModel.TimelineFrameEnd);
+            }
             eventArgs.Handled = true;
             return;
         }
@@ -267,6 +311,12 @@ public sealed class TimelineControl : FrameworkElement
             return;
         }
         if (eventArgs.ChangedButton == MouseButton.Left && point.X < 59)
+        {
+            _viewModel.ToggleTrackEditorAlwaysVisible(tracks[row]);
+            eventArgs.Handled = true;
+            return;
+        }
+        if (eventArgs.ChangedButton == MouseButton.Left && point.X < 88)
         {
             _viewModel.ToggleTrackEditorLock(tracks[row]);
             eventArgs.Handled = true;

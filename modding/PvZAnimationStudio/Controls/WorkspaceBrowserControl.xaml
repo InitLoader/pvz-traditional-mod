@@ -17,6 +17,11 @@
                   <TextBlock Text="{Binding EditorVisibilityGlyph}" FontFamily="Segoe MDL2 Assets" FontSize="14" />
                 </Button>
                 <Button DockPanel.Dock="Left" Width="25" Height="22" Margin="0,0,5,0" Padding="0"
+                        Tag="{Binding}" Click="TrackAlwaysVisible_Click"
+                        ToolTip="常显：绕过防具/附属层自动过滤，切换到其他轨道后仍显示">
+                  <TextBlock Text="{Binding EditorAlwaysVisibleGlyph}" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+                </Button>
+                <Button DockPanel.Dock="Left" Width="25" Height="22" Margin="0,0,5,0" Padding="0"
                         Tag="{Binding}" Click="TrackLock_Click" ToolTip="锁定后禁止修改、移动或删除该轨道的关键帧">
                   <TextBlock Text="{Binding EditorLockGlyph}" FontFamily="Segoe MDL2 Assets" FontSize="14" />
                 </Button>
