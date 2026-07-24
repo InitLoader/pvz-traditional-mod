@@ -104,6 +104,18 @@
           <TextBlock Grid.Row="1" Text="隐藏模板附件"/><CheckBox Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding ProjectHideTemplateAttachments, Mode=TwoWay}" ToolTip="保存并导出附件显示策略；当前 DLL 尚未执行此字段。"/>
         </Grid>
       </GroupBox>
+      <GroupBox Header="发布用途">
+        <StackPanel Margin="3">
+          <ComboBox ItemsSource="{Binding IntegrationModes}"
+                    DisplayMemberPath="Label"
+                    SelectedValuePath="Mode"
+                    SelectedValue="{Binding ProjectIntegrationMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+          <TextBlock Margin="0,6,0,0" Foreground="#9FC3D8" TextWrapping="Wrap"
+                     Text="{Binding ProjectIntegrationModeSummary}"/>
+          <TextBlock Margin="0,5,0,0" Foreground="#9EABB8" TextWrapping="Wrap"
+                     Text="发布时只复制动画实际引用的 Mod 图片；原版图片符号保持原引用，不重复写入 textures.jsonc。"/>
+        </StackPanel>
+      </GroupBox>
       <GroupBox Header="植物 / 僵尸配置">
         <Grid>
           <Grid.ColumnDefinitions><ColumnDefinition Width="115"/><ColumnDefinition Width="*" MinWidth="120"/></Grid.ColumnDefinitions>

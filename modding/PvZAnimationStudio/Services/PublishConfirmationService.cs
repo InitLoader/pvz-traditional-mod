@@ -13,6 +13,7 @@ public enum PublishOperation
 
 public sealed record PublishProjectDraft(
     EntityKind Kind,
+    EntityIntegrationMode IntegrationMode,
     string Id,
     string DisplayName,
     string Description,
@@ -29,6 +30,7 @@ public sealed record PublishProjectDraft(
 {
     public static PublishProjectDraft FromProject(EditorProject project) => new(
         project.Kind,
+        project.IntegrationMode,
         project.Id,
         project.DisplayName,
         project.Description,
@@ -63,21 +65,27 @@ public sealed class PublishConfirmationService
         if (!sourceProject.Actions.Any(action =>
                 string.Equals(action.Id, draft.InitialActionId, StringComparison.OrdinalIgnoreCase)))
             errors.Add($"初始动作 {draft.InitialActionId} 不存在。");
-        if (draft.NumericEntityId < 0)
+        var addsEntity = draft.IntegrationMode == EntityIntegrationMode.AddEntity;
+        if (addsEntity && draft.NumericEntityId < 0)
             errors.Add("数字 ID 不能为负数。");
-        if (draft.Health is < 1 or > 1_000_000)
+        if (addsEntity && draft.Health is < 1 or > 1_000_000)
             errors.Add("生命必须在 1–1000000 之间。");
-        if (draft.Damage is < 0 or > 1_000_000)
+        if (addsEntity && draft.Damage is < 0 or > 1_000_000)
             errors.Add("伤害必须在 0–1000000 之间。");
 
         if (draft.Kind == EntityKind.Plant)
         {
             if (!PlantTemplateCatalog.IsRuntimeTemplate(draft.TemplateEntityId))
                 errors.Add($"植物模板 ID 必须在 0–{PlantTemplateCatalog.LastRuntimeTemplateId} 之间。");
-            if (draft.Cost is < 0 or > 100_000) errors.Add("阳光必须在 0–100000 之间。");
-            if (draft.RechargeTime is < 0 or > 1_000_000) errors.Add("冷却必须在 0–1000000 之间。");
-            if (draft.LaunchRate is < 1 or > 1_000_000) errors.Add("攻击间隔必须在 1–1000000 之间。");
-            if (draft.ShotsPerAttack is < 1 or > 1000) errors.Add("每次发射数必须在 1–1000 之间。");
+            if (addsEntity)
+            {
+                if (draft.Cost is < 0 or > 100_000) errors.Add("阳光必须在 0–100000 之间。");
+                if (draft.RechargeTime is < 0 or > 1_000_000) errors.Add("冷却必须在 0–1000000 之间。");
+                if (draft.LaunchRate is < 1 or > 1_000_000) errors.Add("攻击间隔必须在 1–1000000 之间。");
+                if (draft.ShotsPerAttack is < 1 or > 1000) errors.Add("每次发射数必须在 1–1000 之间。");
+            }
+            if (!addsEntity && operation is PublishOperation.Package or PublishOperation.Install)
+                errors.Add("当前运行时尚未接入原版植物动画替换；可先保存工程或导出 Raw/compiled，不能生成会误导为可用的安装包。");
         }
         else if (draft.Kind == EntityKind.Zombie)
         {
@@ -86,6 +94,8 @@ public sealed class PublishConfirmationService
             if (draft.Id.Contains("PLANT", StringComparison.OrdinalIgnoreCase) ||
                 draft.DisplayName.Contains("植物", StringComparison.Ordinal))
                 errors.Add("当前选择的是僵尸，但字符串 ID 或名称仍包含“PLANT/植物”；请改成明确的僵尸 ID 和名称。");
+            if (addsEntity && operation == PublishOperation.Install)
+                errors.Add("真正新增僵尸运行时尚未完成；新增模式只能导出 ZIP 资产骨架，不能一键安装并伪装成原版僵尸替换。");
         }
         else if (operation is PublishOperation.Package or PublishOperation.Install)
         {

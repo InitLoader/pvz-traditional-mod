@@ -13,6 +13,12 @@ public enum EntityKind
     Other
 }
 
+public enum EntityIntegrationMode
+{
+    ReplaceOriginal,
+    AddEntity
+}
+
 public enum AnimationOutputFormat
 {
     Raw,
@@ -520,8 +526,9 @@ public sealed class EditorProject : ObservableObject
     private string? _sourceAnimationPath;
     private string _initialActionId = "idle";
     private bool _hideTemplateAttachments = true;
+    private EntityIntegrationMode _integrationMode = EntityIntegrationMode.AddEntity;
 
-    public int SchemaVersion { get; set; } = 4;
+    public int SchemaVersion { get; set; } = 5;
     public string Id { get => _id; set => SetField(ref _id, value); }
     public string DisplayName { get => _displayName; set => SetField(ref _displayName, value); }
     public string Description { get => _description; set => SetField(ref _description, value); }
@@ -533,6 +540,7 @@ public sealed class EditorProject : ObservableObject
     public string? SourceAnimationPath { get => _sourceAnimationPath; set => SetField(ref _sourceAnimationPath, value); }
     public string InitialActionId { get => _initialActionId; set => SetField(ref _initialActionId, value); }
     public bool HideTemplateAttachments { get => _hideTemplateAttachments; set => SetField(ref _hideTemplateAttachments, value); }
+    public EntityIntegrationMode IntegrationMode { get => _integrationMode; set => SetField(ref _integrationMode, value); }
 
     public int NumericEntityId { get; set; } = 1000;
     public int TemplateEntityId { get; set; }
@@ -549,5 +557,6 @@ public sealed class EditorProject : ObservableObject
     public ObservableCollection<AnimationCurveDefinition> Curves { get; set; } = [];
     public Dictionary<string, string> ImageBindings { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, ImageLayoutDefinition> ImageLayouts { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public HashSet<string> OriginalImageReferences { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public WorkspaceLayoutState WorkspaceLayout { get; set; } = WorkspaceLayoutState.CreateDefault();
 }

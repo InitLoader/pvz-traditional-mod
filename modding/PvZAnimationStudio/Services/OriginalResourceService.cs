@@ -17,6 +17,7 @@ public sealed record ImageResourceInfo(BitmapSource Bitmap, int Columns = 1, int
 public sealed class OriginalResourceService
 {
     private readonly Dictionary<string, string> _symbolIndex = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _originalSymbols = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, (int Columns, int Rows)> _resourceLayout = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ImageResourceInfo?> _imageCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, BitmapSource> _bitmapPathCache = new(StringComparer.OrdinalIgnoreCase);
@@ -27,6 +28,7 @@ public sealed class OriginalResourceService
     public void RebuildIndex(string? gameRoot)
     {
         _symbolIndex.Clear();
+        _originalSymbols.Clear();
         _resourceLayout.Clear();
         _imageCache.Clear();
         _bitmapPathCache.Clear();
@@ -52,9 +54,11 @@ public sealed class OriginalResourceService
                                         Path.GetExtension(file).Equals(".JPEG", StringComparison.OrdinalIgnoreCase)))
             {
                 var stem = Path.GetFileNameWithoutExtension(file);
-                AddSymbol($"IMAGE_REANIM_{NormalizeSymbol(stem)}", file);
-                AddSymbol($"IMAGE_{NormalizeSymbol(stem)}", file);
-                AddSymbol(NormalizeSymbol(stem), file);
+                var isOriginal = !directory.Contains(
+                    Path.Combine("pvzmod", "images"), StringComparison.OrdinalIgnoreCase);
+                AddSymbol($"IMAGE_REANIM_{NormalizeSymbol(stem)}", file, isOriginal);
+                AddSymbol($"IMAGE_{NormalizeSymbol(stem)}", file, isOriginal);
+                AddSymbol(NormalizeSymbol(stem), file, isOriginal);
             }
         }
         _indexedRoot = fullRoot;
@@ -72,6 +76,7 @@ public sealed class OriginalResourceService
         while (project.ImageBindings.ContainsKey(candidate))
             candidate = $"{symbol}_{suffix++}";
         project.ImageBindings[candidate] = Path.GetFullPath(file);
+        project.OriginalImageReferences.Remove(candidate);
         project.ImageLayouts[candidate] = new ImageLayoutDefinition();
         _imageCache.Remove(candidate);
         _thumbnailCache.Remove(candidate);
@@ -113,6 +118,32 @@ public sealed class OriginalResourceService
             RebuildIndex(project.GameRoot);
         var normalized = NormalizeSymbol(symbol);
         return _symbolIndex.TryGetValue(normalized, out var original) && File.Exists(original) ? original : null;
+    }
+
+    public bool IsOriginalGameSymbol(EditorProject project, string? symbol)
+    {
+        if (string.IsNullOrWhiteSpace(symbol)) return false;
+        if (!string.Equals(_indexedRoot, project.GameRoot, StringComparison.OrdinalIgnoreCase))
+            RebuildIndex(project.GameRoot);
+        return _originalSymbols.Contains(NormalizeSymbol(symbol));
+    }
+
+    public void MarkOriginalReferences(EditorProject project, bool preferOriginalResources = false)
+    {
+        foreach (var symbol in project.Animation.Tracks.SelectMany(track => track.Frames)
+                     .Select(frame => frame.Image)
+                     .Where(symbol => !string.IsNullOrWhiteSpace(symbol))
+                     .Select(symbol => symbol!)
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (!IsOriginalGameSymbol(project, symbol)) continue;
+            if (preferOriginalResources)
+            {
+                project.ImageBindings.Remove(symbol);
+                project.ImageLayouts.Remove(symbol);
+            }
+            if (!project.ImageBindings.ContainsKey(symbol)) project.OriginalImageReferences.Add(symbol);
+        }
     }
 
     public ImageResourceInfo? ResolveImage(EditorProject project, string? symbol)
@@ -221,7 +252,7 @@ public sealed class OriginalResourceService
                     var assetBase = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(manifestPath))!, defaultPath, path);
                     var absolute = new[] { assetBase + ".png", assetBase + ".jpg", assetBase + ".jpeg" }
                         .FirstOrDefault(File.Exists);
-                    if (absolute is not null) AddSymbol(symbol, absolute);
+                    if (absolute is not null) AddSymbol(symbol, absolute, true);
                 }
             }
         }
@@ -231,7 +262,12 @@ public sealed class OriginalResourceService
         }
     }
 
-    private void AddSymbol(string symbol, string path) => _symbolIndex.TryAdd(NormalizeSymbol(symbol), path);
+    private void AddSymbol(string symbol, string path, bool isOriginal)
+    {
+        var normalized = NormalizeSymbol(symbol);
+        _symbolIndex.TryAdd(normalized, path);
+        if (isOriginal) _originalSymbols.Add(normalized);
+    }
 
     private static BitmapSource LoadBitmap(string path)
     {

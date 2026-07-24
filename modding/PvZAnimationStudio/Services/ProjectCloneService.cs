@@ -21,6 +21,7 @@ public sealed class ProjectCloneService
             SourceAnimationPath = source.SourceAnimationPath,
             InitialActionId = source.InitialActionId,
             HideTemplateAttachments = source.HideTemplateAttachments,
+            IntegrationMode = source.IntegrationMode,
             NumericEntityId = source.NumericEntityId,
             TemplateEntityId = source.TemplateEntityId,
             Cost = source.Cost,
@@ -37,6 +38,7 @@ public sealed class ProjectCloneService
                 item => item.Key,
                 item => new ImageLayoutDefinition { Columns = item.Value.Columns, Rows = item.Value.Rows },
                 StringComparer.OrdinalIgnoreCase),
+            OriginalImageReferences = new HashSet<string>(source.OriginalImageReferences, StringComparer.OrdinalIgnoreCase),
             WorkspaceLayout = source.WorkspaceLayout.Clone()
         };
         clone.Actions = new ObservableCollection<ActionDefinition>(source.Actions.Select(CloneAction));

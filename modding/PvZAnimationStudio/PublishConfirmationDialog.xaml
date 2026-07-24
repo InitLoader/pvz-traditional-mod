@@ -28,6 +28,14 @@
 
     <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
       <StackPanel Margin="0,0,8,0">
+        <GroupBox Header="接入模式">
+          <StackPanel Margin="4">
+            <ComboBox x:Name="ModeCombo" Margin="6,4" DisplayMemberPath="Name"
+                      SelectionChanged="Field_Changed"/>
+            <TextBlock x:Name="ModeDescriptionText" Margin="6,3,6,5" Foreground="#9FC3D8"
+                       TextWrapping="Wrap"/>
+          </StackPanel>
+        </GroupBox>
         <GroupBox Header="必须确认">
           <Grid Margin="4">
             <Grid.ColumnDefinitions>
@@ -56,10 +64,10 @@
             <TextBlock Grid.Row="2" VerticalAlignment="Center" Text="中文名称 *" />
             <TextBox x:Name="NameBox" Grid.Row="2" Grid.Column="1" Margin="6,4" />
 
-            <TextBlock Grid.Row="3" VerticalAlignment="Center" Text="数字 ID *" />
+            <TextBlock x:Name="NumericIdLabel" Grid.Row="3" VerticalAlignment="Center" Text="数字 ID *" />
             <TextBox x:Name="NumericIdBox" Grid.Row="3" Grid.Column="1" Margin="6,4" />
 
-            <TextBlock Grid.Row="4" VerticalAlignment="Center" Text="模板 ID *" />
+            <TextBlock x:Name="TemplateIdLabel" Grid.Row="4" VerticalAlignment="Center" Text="模板 ID *" />
             <TextBox x:Name="TemplateIdBox" Grid.Row="4" Grid.Column="1" Margin="6,4" TextChanged="Field_Changed" />
 
             <TextBlock Grid.Row="5" VerticalAlignment="Center" Text="模板与载体" />
@@ -79,7 +87,7 @@
           </Grid>
         </GroupBox>
 
-        <GroupBox Header="通用战斗属性">
+        <GroupBox x:Name="CommonCombatFields" Header="通用战斗属性">
           <Grid Margin="4">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="150" />

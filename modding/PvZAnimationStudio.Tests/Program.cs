@@ -286,8 +286,9 @@ try
                 .Select(frame => frame.Image).Where(symbol => !string.IsNullOrWhiteSpace(symbol))
                 .Distinct(StringComparer.OrdinalIgnoreCase).Count();
             Assert(loadedOriginalPortable.ImageBindings.Count == usedSymbols &&
+                   loadedOriginalPortable.OriginalImageReferences.Count == usedSymbols &&
                    loadedOriginalPortable.ImageBindings.Values.All(File.Exists),
-                "原版 compiled 保存为便携工程时没有嵌入全部实际使用图片");
+                "原版 compiled 保存为便携工程时没有同时保留预览图片和原版资源来源标记");
         }
         Console.WriteLine($"PASS: {originals.Length} 个原版 compiled 文件已全部完成读取、compiled 重打包、Raw 导出和二次读取。");
     }
@@ -1020,11 +1021,11 @@ try
     jsoncEditor.UpsertObjectProperty(zombieJsoncPath, "zombies", "0", new System.Text.Json.Nodes.JsonObject
     {
         ["bodyHealth"] = 270,
+        ["armorLevel"] = 1,
         ["animationId"] = "CUSTOM_NORMAL_ZOMBIE"
     });
-    jsoncEditor.UpsertObjectProperty(zombieJsoncPath, "zombies", "0", new System.Text.Json.Nodes.JsonObject
+    jsoncEditor.MergeObjectProperty(zombieJsoncPath, "zombies", "0", new System.Text.Json.Nodes.JsonObject
     {
-        ["bodyHealth"] = 300,
         ["animationId"] = "CUSTOM_NORMAL_ZOMBIE_V2"
     });
     var zombieJsonc = File.ReadAllText(zombieJsoncPath);
@@ -1033,9 +1034,30 @@ try
     Assert(zombieJsonc.Contains("CUSTOM_NORMAL_ZOMBIE_V2", StringComparison.Ordinal) &&
            !zombieJsonc.Contains("CUSTOM_NORMAL_ZOMBIE\"", StringComparison.Ordinal),
         "僵尸动画覆盖项没有按模板 ID 更新");
+    Assert(zombieJsonc.Contains("\"bodyHealth\": 270", StringComparison.Ordinal) &&
+           zombieJsonc.Contains("\"armorLevel\": 1", StringComparison.Ordinal),
+        "稀疏动画合并错误删除了原僵尸的生命或其他自定义字段");
 
     var fakePng = Path.Combine(root, "body.png");
     File.WriteAllBytes(fakePng, [137, 80, 78, 71, 13, 10, 26, 10]);
+    var originalIndexRoot = Path.Combine(root, "original-index");
+    Directory.CreateDirectory(Path.Combine(originalIndexRoot, "reanim"));
+    File.Copy(fakePng, Path.Combine(originalIndexRoot, "reanim", "test_body.png"));
+    var directOriginalProject = new EditorProject
+    {
+        GameRoot = originalIndexRoot,
+        Animation = CreateDocument(),
+        ImageBindings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["IMAGE_REANIM_TEST_BODY"] = fakePng
+        }
+    };
+    var directOriginalResources = new OriginalResourceService();
+    directOriginalResources.RebuildIndex(originalIndexRoot);
+    directOriginalResources.MarkOriginalReferences(directOriginalProject, preferOriginalResources: true);
+    Assert(directOriginalProject.OriginalImageReferences.Contains("IMAGE_REANIM_TEST_BODY") &&
+           !directOriginalProject.ImageBindings.ContainsKey("IMAGE_REANIM_TEST_BODY"),
+        "直接打开原版动画时没有清除旧工程的同名外部绑定并恢复原版图片来源");
     var project = new EditorProject
     {
         Id = "TEST_PLANT",
@@ -1060,17 +1082,31 @@ try
             ["IMAGE_REANIM_TEST_BODY"] = fakePng
         }
     };
+    var originalPng = Path.Combine(root, "original-body.png");
+    File.WriteAllBytes(originalPng, [137, 80, 78, 71, 13, 10, 26, 10]);
+    var packageProject = new ProjectCloneService().Clone(project);
+    var originalTrack = new AnimationTrack { Name = "original_part" };
+    originalTrack.EnsureFrameCount(packageProject.Animation.FrameCount);
+    originalTrack.Frames[0].Image = "IMAGE_REANIM_ORIGINAL_BODY";
+    packageProject.Animation.Tracks.Add(originalTrack);
+    packageProject.ImageBindings["IMAGE_REANIM_ORIGINAL_BODY"] = originalPng;
+    packageProject.OriginalImageReferences.Add("IMAGE_REANIM_ORIGINAL_BODY");
     var zipPath = Path.Combine(root, "package.zip");
-    new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor()).CreatePackage(project, zipPath);
+    new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor()).CreatePackage(packageProject, zipPath);
     using (var zip = ZipFile.OpenRead(zipPath))
     {
         Assert(zip.Entries.Any(entry => entry.FullName.EndsWith("TEST_PLANT.reanim.compiled", StringComparison.Ordinal)), "包内缺少 compiled 动画");
         Assert(zip.Entries.Any(entry => entry.FullName.EndsWith("entity.fragment.jsonc", StringComparison.Ordinal)), "包内缺少实体配置片段");
         Assert(zip.Entries.Any(entry => entry.FullName.EndsWith("body.png", StringComparison.Ordinal)), "包内缺少图片");
+        Assert(!zip.Entries.Any(entry => entry.FullName.EndsWith("original-body.png", StringComparison.Ordinal)),
+            "打包错误复制了可复用的原版图片");
         var animationFragment = zip.Entries.Single(entry => entry.FullName.EndsWith("animations.fragment.jsonc", StringComparison.Ordinal));
         using var reader = new StreamReader(animationFragment.Open());
         var animationJson = System.Text.Json.Nodes.JsonNode.Parse(reader.ReadToEnd())!;
         var generatedAnimation = animationJson["animations"]![0]!;
+        Assert(generatedAnimation["images"]!["IMAGE_REANIM_TEST_BODY"] is not null &&
+               generatedAnimation["images"]!["IMAGE_REANIM_ORIGINAL_BODY"] is null,
+            "动画配置没有仅注册实际使用的 Mod 图片并让原版符号走运行时回退");
         Assert(generatedAnimation["carrierReanimation"]!.GetValue<string>() == "REANIM_CATTAIL",
             "植物打包没有按 templatePlantId 强制写入真实载体");
         Assert(generatedAnimation["initialAction"]!.GetValue<string>() == "idle", "动画包没有写入初始动作");
@@ -1089,10 +1125,11 @@ try
         "{\n  \"schemaVersion\": 1,\n  \"animations\": []\n}\n");
     var installedZombieConfig = Path.Combine(root, "pvzmod", "config", "zombies", "attributes.jsonc");
     File.WriteAllText(installedZombieConfig,
-        "{\n  // keep zombie 2\n  \"schemaVersion\": 1,\n  \"zombies\": {\n    \"2\": { \"bodyHealth\": 640 }\n  }\n}\n");
+        "{\n  // keep zombie 2\n  \"schemaVersion\": 1,\n  \"zombies\": {\n    \"0\": { \"bodyHealth\": 270, \"armorLevel\": 1 },\n    \"2\": { \"bodyHealth\": 640 }\n  }\n}\n");
     var zombieProject = new EditorProject
     {
         Kind = EntityKind.Zombie,
+        IntegrationMode = EntityIntegrationMode.ReplaceOriginal,
         Id = "SHARED_ENTITY",
         DisplayName = "测试僵尸",
         TemplateEntityId = 0,
@@ -1117,6 +1154,12 @@ try
     Assert(installedZombieText.Contains("\"0\"", StringComparison.Ordinal) &&
            installedZombieText.Contains("SHARED_ENTITY", StringComparison.Ordinal),
         "僵尸工程一键安装没有写入实际生效的 attributes.jsonc");
+    Assert(installedZombieText.Contains("\"bodyHealth\": 270", StringComparison.Ordinal) &&
+           installedZombieText.Contains("\"armorLevel\": 1", StringComparison.Ordinal) &&
+           !installedZombieText.Contains("\"attackDamage\"", StringComparison.Ordinal),
+        "替换原版僵尸动画时错误覆盖了生命、护甲或攻击字段");
+    Assert(!File.Exists(Path.Combine(root, "pvzmod", "config", "zombies", "custom_zombies.generated.jsonc")),
+        "替换模式仍生成了伪新增僵尸配置");
     var installedAnimations = System.Text.Json.Nodes.JsonNode.Parse(
         File.ReadAllText(Path.Combine(root, "pvzmod", "config", "resources", "animations.jsonc")))!;
     Assert(installedAnimations["animations"]![0]!["carrierReanimation"]!.GetValue<string>() == "REANIM_ZOMBIE",
@@ -1159,7 +1202,53 @@ try
         var entityJson = System.Text.Json.Nodes.JsonNode.Parse(reader.ReadToEnd())!;
         Assert(entityJson["zombies"]!["0"]!["animationId"]!.GetValue<string>() == "SHARED_ENTITY",
             "僵尸 ZIP 没有生成可合并到 attributes.jsonc 的稀疏覆盖片段");
+        Assert(entityJson["mode"]!.GetValue<string>() == "replaceOriginal" &&
+               entityJson["zombies"]!["0"]!["bodyHealth"] is null,
+            "替换模式 ZIP 没有标记模式，或仍携带了不应覆盖的数值字段");
     }
+
+    var addZombieProject = new ProjectCloneService().Clone(zombieProject);
+    addZombieProject.IntegrationMode = EntityIntegrationMode.AddEntity;
+    addZombieProject.Id = "NEW_RUNTIME_ZOMBIE";
+    var addZombieZipPath = Path.Combine(root, "new-zombie-package.zip");
+    new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor())
+        .CreatePackage(addZombieProject, addZombieZipPath);
+    using (var addZombieZip = ZipFile.OpenRead(addZombieZipPath))
+    {
+        var entityFragment = addZombieZip.Entries.Single(entry =>
+            entry.FullName.EndsWith("entity.fragment.jsonc", StringComparison.Ordinal));
+        using var reader = new StreamReader(entityFragment.Open());
+        var entityJson = System.Text.Json.Nodes.JsonNode.Parse(reader.ReadToEnd())!;
+        Assert(entityJson["mode"]!.GetValue<string>() == "addEntity" &&
+               entityJson["runtimeStatus"]!.GetValue<string>() == "planned" &&
+               entityJson["zombie"] is not null && entityJson["zombies"] is null,
+            "新增僵尸 ZIP 没有生成独立实体骨架，或仍伪装成原版覆盖片段");
+    }
+    var addZombieInstallRejected = false;
+    try
+    {
+        new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor())
+            .InstallToGame(addZombieProject, root);
+    }
+    catch (InvalidDataException exception) when (exception.Message.Contains("真正新增僵尸运行时尚未完成", StringComparison.Ordinal))
+    {
+        addZombieInstallRejected = true;
+    }
+    Assert(addZombieInstallRejected, "新增僵尸在运行时未完成时仍被允许一键安装");
+
+    var replacePlantProject = new ProjectCloneService().Clone(project);
+    replacePlantProject.IntegrationMode = EntityIntegrationMode.ReplaceOriginal;
+    var replacePlantPackageRejected = false;
+    try
+    {
+        new ProjectPackageService(new ReanimCodecService(), new JsoncArrayEditor())
+            .CreatePackage(replacePlantProject, Path.Combine(root, "replace-plant.zip"));
+    }
+    catch (InvalidDataException exception) when (exception.Message.Contains("原版植物动画替换", StringComparison.Ordinal))
+    {
+        replacePlantPackageRejected = true;
+    }
+    Assert(replacePlantPackageRejected, "原版植物动画替换运行时未完成时仍生成了误导性安装包");
 
     var rollbackRoot = Path.Combine(root, "rollback-game");
     Directory.CreateDirectory(Path.Combine(rollbackRoot, "pvzmod", "config", "resources"));
@@ -1177,6 +1266,7 @@ try
     var rollbackProject = new EditorProject
     {
         Kind = EntityKind.Zombie,
+        IntegrationMode = EntityIntegrationMode.ReplaceOriginal,
         Id = "ROLLBACK_ZOMBIE",
         DisplayName = "回滚测试僵尸",
         TemplateEntityId = 0,
@@ -1455,6 +1545,7 @@ static void RenderPublishConfirmationScreenshot(string path)
             var project = new EditorProject
             {
                 Kind = EntityKind.Zombie,
+                IntegrationMode = EntityIntegrationMode.ReplaceOriginal,
                 Id = "NEW_zb",
                 DisplayName = "自定义普通僵尸",
                 Description = "最终确认窗口可以在安装前修改必填属性。",

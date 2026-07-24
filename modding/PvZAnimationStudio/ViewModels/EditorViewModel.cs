@@ -9,6 +9,8 @@ public readonly record struct CurveKeySelection(CurveChannel Channel, int Frame)
 
 public sealed class EditorViewModel : ObservableObject
 {
+    public sealed record IntegrationModeOption(EntityIntegrationMode Mode, string Label);
+
     private sealed record CopiedCurveKey(
         CurveChannel Channel, CurveInterpolationMode Interpolation, CurveKeyDefinition Key);
 
@@ -79,6 +81,11 @@ public sealed class EditorViewModel : ObservableObject
     public ObservableCollection<ActionDefinition> Actions => Project.Actions;
     public IReadOnlyList<ActionTemplate> ActionTemplates => _actionCatalog.Templates;
     public IReadOnlyList<PlantTemplateDefinition> PlantTemplates => PlantTemplateCatalog.RuntimeTemplates;
+    public IReadOnlyList<IntegrationModeOption> IntegrationModes { get; } =
+    [
+        new(EntityIntegrationMode.ReplaceOriginal, "替换原版动画"),
+        new(EntityIntegrationMode.AddEntity, "新增实体")
+    ];
     public IReadOnlyList<AnimationTrack> TimelineTracks =>
         _timelineTracksCache ??= _actionView.GetTimelineTracks(Project.Animation, SelectedAction);
     public ActionFrameRange ActiveRange =>
@@ -109,6 +116,22 @@ public sealed class EditorViewModel : ObservableObject
     public string ProjectId { get => Project.Id; set => SetProjectValue("修改字符串 ID", Project.Id, value, item => Project.Id = item); }
     public string ProjectDisplayName { get => Project.DisplayName; set => SetProjectValue("修改中文名称", Project.DisplayName, value, item => Project.DisplayName = item); }
     public string ProjectDescription { get => Project.Description; set => SetProjectValue("修改介绍", Project.Description, value, item => Project.Description = item); }
+    public EntityIntegrationMode ProjectIntegrationMode
+    {
+        get => Project.IntegrationMode;
+        set
+        {
+            if (Project.IntegrationMode == value) return;
+            SetProjectValue("修改接入模式", Project.IntegrationMode, value, item => Project.IntegrationMode = item);
+            RaisePropertyChanged(nameof(ProjectIntegrationModeSummary));
+        }
+    }
+    public string ProjectIntegrationModeSummary => Project.IntegrationMode switch
+    {
+        EntityIntegrationMode.ReplaceOriginal =>
+            "只替换所选原版实体的主体动画；不创建新数字 ID，不写新增实体配置，也不复制可复用的原版图片。",
+        _ => "创建新的实体资产骨架；植物当前仍走模板兼容运行时，真正新增僵尸运行时尚未完成。"
+    };
     public string ProjectCarrierReanimation { get => Project.CarrierReanimation; set => SetProjectValue("修改载体动画", Project.CarrierReanimation, value, item => Project.CarrierReanimation = item); }
     public string ProjectInitialActionId { get => Project.InitialActionId; set => SetProjectValue("修改初始动作", Project.InitialActionId, value, item => Project.InitialActionId = item); }
     public bool ProjectHideTemplateAttachments { get => Project.HideTemplateAttachments; set => SetProjectValue("修改模板附件显示", Project.HideTemplateAttachments, value, item => Project.HideTemplateAttachments = item); }
@@ -652,6 +675,7 @@ public sealed class EditorViewModel : ObservableObject
         {
             Project.ImageBindings.Remove(oldSymbol);
             Project.ImageLayouts.Remove(oldSymbol);
+            Project.OriginalImageReferences.Remove(oldSymbol);
         }
 
         RefreshTrackThumbnail(track);
@@ -1649,6 +1673,7 @@ public sealed class EditorViewModel : ObservableObject
         foreach (var property in new[]
                  {
                      nameof(ProjectKind), nameof(ProjectId), nameof(ProjectDisplayName), nameof(ProjectDescription),
+                     nameof(ProjectIntegrationMode), nameof(ProjectIntegrationModeSummary), nameof(IntegrationModes),
                      nameof(ProjectCarrierReanimation), nameof(ProjectInitialActionId), nameof(ProjectHideTemplateAttachments),
                      nameof(ProjectOutputFormat), nameof(ProjectGameRoot),
                      nameof(ProjectNumericEntityId), nameof(ProjectTemplateEntityId), nameof(ProjectTemplateSummary),

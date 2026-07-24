@@ -44,6 +44,7 @@
 - `actions` 至少包含一个动作；每个动作通过 `track` 指向 Raw `.reanim` 的 `anim_*` 轨道。
 - 事件使用相对动作帧 `frame` 或 `normalizedTime`，二者必须且只能填写一个。
 - 自定义植物和 `zombies/attributes.jsonc` 的 `animationId` 已支持把注册动画注入主体 Reanimation；附属 Reanimation 和通用动作事件仍处于分阶段接入，完整边界见 `modding/EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`。
+- 动画制作器发布时区分“替换原版动画”和“新增实体”。替换原版僵尸只合并目标 `zombies.<id>.animationId`；未修改的原版图片不复制、不注册，`animations[].images` 省略对应符号并由运行时复用原版 Definition。真正新增僵尸尚未完成，不能把新增描述写进原版覆盖表。详见 `modding/ANIMATION_REPLACE_AND_ADD_MODES.md`。
 
 精英视觉示例：
 

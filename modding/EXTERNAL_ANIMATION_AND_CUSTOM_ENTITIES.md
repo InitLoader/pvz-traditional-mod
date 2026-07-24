@@ -169,7 +169,7 @@ compiled/reanim/                            # 游戏本体已有的原版 compil
 }
 ```
 
-上例只改变普通僵尸 ID `0`；没有写出的 ID 不受影响。`animationId` 与 `bodyHealth`、`attackDamage`、`armorRolls` 可以独立省略或组合。完全退出并重启游戏后生效。动画制作器的“一键安装”会把当前僵尸工程按 `templateZombieId` 合并到该对象，保留其他 ID、注释并在首次修改前生成 `.pvzstudio.bak`。
+上例只改变普通僵尸 ID `0`；没有写出的 ID 不受影响。`animationId` 与 `bodyHealth`、`attackDamage`、`armorRolls` 可以独立省略或组合。完全退出并重启游戏后生效。动画制作器选择“替换原版动画”时，一键安装只按目标原版 ID 合并 `animationId`，不会改写同一对象内的生命、攻击、防具或其他字段；选择“新增实体”时不会再把新僵尸伪装成该稀疏覆盖。完整模式契约见 [`ANIMATION_REPLACE_AND_ADD_MODES.md`](ANIMATION_REPLACE_AND_ADD_MODES.md)。
 
 ## 5. Raw 与 compiled 安全边界
 

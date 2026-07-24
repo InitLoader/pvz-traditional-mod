@@ -21,6 +21,7 @@ public sealed class ProjectPackageService
     public void CreatePackage(EditorProject project, string zipPath)
     {
         Validate(project);
+        ValidatePackageMode(project);
         var staging = Path.Combine(Path.GetTempPath(), "PvZAnimationStudio", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(staging);
         try
@@ -57,10 +58,9 @@ public sealed class ProjectPackageService
         var entityConfig = project.Kind == EntityKind.Plant
             ? Path.Combine(gameRoot, "pvzmod", "config", "plants", "custom_plants.jsonc")
             : Path.Combine(gameRoot, "pvzmod", "config", "zombies", "attributes.jsonc");
-        var generatedPath = Path.Combine(gameRoot, "pvzmod", "config", "zombies", "custom_zombies.generated.jsonc");
         var transactionTargets = new List<string> { absoluteAnimation, textureConfig, animationConfig, entityConfig };
-        if (project.Kind == EntityKind.Zombie) transactionTargets.Add(generatedPath);
-        transactionTargets.AddRange(project.ImageBindings.Values.Select(source =>
+        transactionTargets.AddRange(PublishableImageBindings(project).Select(item =>
+            item.Value).Select(source =>
             Path.Combine(gameRoot, "pvzmod", "images", kindDirectory, entityDirectory, Path.GetFileName(source))));
         var transaction = new InstallFileTransaction(transactionTargets);
         try
@@ -72,24 +72,18 @@ public sealed class ProjectPackageService
                 _jsoncEditor.Upsert(textureConfig, "textures", "id", texture);
             _jsoncEditor.Upsert(animationConfig, "animations", "id", animationItem);
 
-            if (project.Kind == EntityKind.Plant)
+            if (project.Kind == EntityKind.Plant && project.IntegrationMode == EntityIntegrationMode.AddEntity)
             {
                 _jsoncEditor.Upsert(entityConfig, "plants", "id", CreatePlantJson(project));
             }
-            else
+            else if (project.Kind == EntityKind.Zombie &&
+                     project.IntegrationMode == EntityIntegrationMode.ReplaceOriginal)
             {
-                _jsoncEditor.UpsertObjectProperty(
+                _jsoncEditor.MergeObjectProperty(
                     entityConfig,
                     "zombies",
                     project.TemplateEntityId.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    CreateZombieRuntimeOverrideJson(project));
-                var root = new JsonObject
-                {
-                    ["schemaVersion"] = 1,
-                    ["note"] = "由 PvZ 动画制作器生成；自定义僵尸运行时模块接入后直接使用。",
-                    ["zombie"] = CreateZombieJson(project)
-                };
-                File.WriteAllText(generatedPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), new UTF8Encoding(false));
+                    CreateZombieAnimationReplacementJson(project));
             }
             ValidateInstalledResourceConfigs(textureConfig, animationConfig);
             transaction.Commit();
@@ -104,7 +98,11 @@ public sealed class ProjectPackageService
     public void ValidateForPublish(EditorProject project, string? gameRoot = null)
     {
         Validate(project);
-        if (!string.IsNullOrWhiteSpace(gameRoot)) ValidateInstallCollisions(project, Path.GetFullPath(gameRoot));
+        if (!string.IsNullOrWhiteSpace(gameRoot))
+        {
+            ValidateInstallMode(project);
+            ValidateInstallCollisions(project, Path.GetFullPath(gameRoot));
+        }
     }
 
     private void WritePackageTree(EditorProject project, string staging)
@@ -130,17 +128,37 @@ public sealed class ProjectPackageService
         });
         WriteJson(Path.Combine(generatedRoot, "entity.fragment.jsonc"), CreateEntityFragment(project));
         File.WriteAllText(Path.Combine(staging, "安装说明.txt"),
-            "此包由 PvZ 动画制作器生成。\r\n" +
-            "推荐在制作器中选择“安装到游戏”，工具会备份并合并 JSONC。\r\n" +
-            "手工安装时复制 pvzmod 目录，并把 generated 下的 fragment 合并到对应配置。\r\n",
+            CreateInstallInstructions(project),
             new UTF8Encoding(false));
+    }
+
+    private static string CreateInstallInstructions(EditorProject project)
+    {
+        var mode = project.IntegrationMode == EntityIntegrationMode.ReplaceOriginal
+            ? "替换原版动画"
+            : "新增实体";
+        var support = project.Kind switch
+        {
+            EntityKind.Zombie when project.IntegrationMode == EntityIntegrationMode.ReplaceOriginal =>
+                "当前版本支持在制作器中一键安装；只会给目标原版僵尸合并 animationId。",
+            EntityKind.Plant when project.IntegrationMode == EntityIntegrationMode.AddEntity =>
+                "当前版本支持模板兼容型新增植物的一键安装。",
+            EntityKind.Zombie =>
+                "真正新增僵尸运行时尚未完成；本 ZIP 仅是资产和配置骨架，不能直接一键安装。",
+            _ => "当前运行时尚未支持此接入组合；本 ZIP 不代表游戏内可直接使用。"
+        };
+        return "此包由 PvZ 动画制作器生成。\r\n" +
+               $"接入模式：{mode}。\r\n" +
+               support + "\r\n" +
+               "原版图片只保留符号引用，不会复制进 pvzmod/images；只有动画实际使用的 Mod 图片会被打包和注册。\r\n" +
+               "手工处理时请按 generated 下的 fragment 合并配置，不要把新增实体片段误写到原版实体覆盖表。\r\n";
     }
 
     private static List<JsonObject> CopyImagesAndCreateTextureItems(
         EditorProject project, string root, string kindDirectory, string entityDirectory)
     {
         var result = new List<JsonObject>();
-        foreach (var (symbol, source) in project.ImageBindings.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
+        foreach (var (symbol, source) in PublishableImageBindings(project))
         {
             if (!File.Exists(source)) throw new FileNotFoundException($"图片不存在：{source}", source);
             var fileName = Path.GetFileName(source);
@@ -160,7 +178,7 @@ public sealed class ProjectPackageService
     private static JsonObject CreateAnimationJson(EditorProject project, string relativeAnimation)
     {
         var images = new JsonObject();
-        foreach (var symbol in project.ImageBindings.Keys.OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
+        foreach (var symbol in PublishableImageBindings(project).Select(item => item.Key))
             images[symbol] = NormalizeResourceId(symbol);
         var actions = new JsonObject();
         foreach (var action in project.Actions)
@@ -243,33 +261,56 @@ public sealed class ProjectPackageService
         ["animationId"] = NormalizeResourceId(project.Id)
     };
 
-    private static JsonObject CreateZombieRuntimeOverrideJson(EditorProject project) => new()
+    private static JsonObject CreateZombieAnimationReplacementJson(EditorProject project) => new()
     {
-        ["bodyHealth"] = project.Health,
-        ["attackDamage"] = project.Damage,
         ["animationId"] = NormalizeResourceId(project.Id)
     };
 
     private static JsonObject CreateEntityFragment(EditorProject project)
     {
+        if (project.IntegrationMode == EntityIntegrationMode.ReplaceOriginal)
+        {
+            var templateId = project.TemplateEntityId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return new JsonObject
+            {
+                ["schemaVersion"] = 1,
+                ["mode"] = "replaceOriginal",
+                ["targetKind"] = project.Kind == EntityKind.Zombie ? "zombie" : "plant",
+                ["targetOriginalId"] = project.TemplateEntityId,
+                ["zombies"] = project.Kind == EntityKind.Zombie
+                    ? new JsonObject { [templateId] = CreateZombieAnimationReplacementJson(project) }
+                    : null
+            };
+        }
         if (project.Kind == EntityKind.Plant)
         {
             return new JsonObject
             {
                 ["schemaVersion"] = 1,
+                ["mode"] = "addEntity",
                 ["plant"] = CreatePlantJson(project)
             };
         }
-        var templateId = project.TemplateEntityId.ToString(System.Globalization.CultureInfo.InvariantCulture);
         return new JsonObject
         {
             ["schemaVersion"] = 1,
-            ["zombie"] = CreateZombieJson(project),
-            ["zombies"] = new JsonObject
-            {
-                [templateId] = CreateZombieRuntimeOverrideJson(project)
-            }
+            ["mode"] = "addEntity",
+            ["runtimeStatus"] = "planned",
+            ["zombie"] = CreateZombieJson(project)
         };
+    }
+
+    private static IReadOnlyList<KeyValuePair<string, string>> PublishableImageBindings(EditorProject project)
+    {
+        var used = project.Animation.Tracks.SelectMany(track => track.Frames)
+            .Select(frame => frame.Image)
+            .Where(symbol => !string.IsNullOrWhiteSpace(symbol))
+            .Select(symbol => symbol!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return project.ImageBindings
+            .Where(item => used.Contains(item.Key) && !project.OriginalImageReferences.Contains(item.Key))
+            .OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private static void WriteJson(string path, JsonObject root)
@@ -410,6 +451,31 @@ public sealed class ProjectPackageService
         EntityKind.Ui => "UI",
         _ => "其他实体"
     };
+
+    private static void ValidatePackageMode(EditorProject project)
+    {
+        if (project.Kind is not (EntityKind.Plant or EntityKind.Zombie))
+            throw new InvalidDataException("当前 Mod 打包只支持植物或僵尸动画工程。");
+        if (project.IntegrationMode == EntityIntegrationMode.ReplaceOriginal &&
+            project.Kind == EntityKind.Plant)
+            throw new InvalidDataException(
+                "当前运行时尚未接入原版植物动画替换；请先保存工程或导出 Raw/compiled。 ");
+    }
+
+    private static void ValidateInstallMode(EditorProject project)
+    {
+        if (project.Kind == EntityKind.Zombie &&
+            project.IntegrationMode == EntityIntegrationMode.ReplaceOriginal) return;
+        if (project.Kind == EntityKind.Plant &&
+            project.IntegrationMode == EntityIntegrationMode.AddEntity) return;
+        if (project.Kind == EntityKind.Zombie)
+            throw new InvalidDataException(
+                "真正新增僵尸运行时尚未完成；新增模式只能打包资产骨架，不能一键安装。 ");
+        if (project.Kind == EntityKind.Plant)
+            throw new InvalidDataException(
+                "当前运行时尚未接入原版植物动画替换；请先保存工程或导出 Raw/compiled。 ");
+        throw new InvalidDataException("当前一键安装只支持新增植物或替换原版僵尸动画。 ");
+    }
 
     private static void Validate(EditorProject project)
     {

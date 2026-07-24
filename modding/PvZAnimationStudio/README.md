@@ -34,8 +34,9 @@
 - Blender 式区域工作区：拖动加宽后的 10 像素分隔条调整任意面板大小，可把时间轴拉高、把资源或属性栏拉宽；每区可切换动画视图、时间轴、曲线编辑器、资源与工程或属性检查器；右上角斜纹拖拽或 `↔/↕` 可继续拆分，`↗` 可打开共享同一工程状态的独立窗口。
 - 右上角可切换动画制作、双动画视图、双时间轴、曲线动画和专注动画工作区；布局使用比例尺寸随窗口自适应，并随 `.pvza` 工程保存。
 - 生成 `.reanim`、`.reanim.compiled`、Mod ZIP、贴图/动画/实体 JSONC 片段。
-- 导出 `.reanim`/compiled、打包 ZIP 或一键安装前都会打开“最终检查”窗口：实体类型、字符串/数字 ID、中文名称、模板、初始动作、生命、伤害和植物专用属性可在这里最后修改；必须勾选“已核对”且全部必填值通过校验才会继续。
-- 一键把动画、图片和配置合并到 `pvzmod` 分类目录；首次改写配置前生成 `.pvzstudio.bak`。如果已有同名动画属于另一种植物/僵尸载体，安装会在写文件前拒绝；任一步失败会事务式恢复安装前配置与资源。
+- 工程和“最终检查”窗口明确区分“替换原版动画”与“新增实体”。从游戏 `compiled/reanim` 打开原版资源时自动进入替换模式；僵尸主体轨道还会自动选择僵尸，不必先新建一个伪新增僵尸模板。
+- 一键安装按模式限制：当前支持新增植物的模板兼容路径，以及替换原版僵尸主体动画；真正新增僵尸只能导出标记为 `planned` 的 ZIP 骨架，原版植物替换只能保存工程或导出 Raw/compiled。
+- 安装只复制动画实际引用的 Mod 图片并写入贴图映射；未修改的原版图片保留符号引用，运行时直接复用，不会重复进入 `pvzmod/images` 和贴图配置。首次改写配置前生成 `.pvzstudio.bak`，任一步失败会事务式恢复安装前配置与资源。
 - 图片符号会转换为 DLL 接受的 1–64 位资源 ID。超长或含特殊字符的符号使用稳定短哈希避免不同图片被压成同名，不再因一张图片使整个外部资源注册表失效。
 
 原版 `compiled/reanim` 目录的 143 个 compiled 文件已完成“读取 → 重新打包 → 再读取”回归。原版少数动画含同名轨道，工具会按顺序保留，不能擅自去重。
@@ -43,6 +44,8 @@
 48 个独立植物动画和 38 个僵尸/僵尸效果动画的逐项结果、特殊组合与预期空文件见 [`ORIGINAL_ASSET_AUDIT.md`](ORIGINAL_ASSET_AUDIT.md)。
 
 完整植物 `SeedType`、中文名称、载体 Reanimation 和 compiled 文件映射见 [`PLANT_TEMPLATE_IDS.md`](PLANT_TEMPLATE_IDS.md)。编辑器属性检查器使用同一全局目录提供 `0–48` 模板速选；`49–52` 会被识别为模式专用植物，但禁止误导出为普通 `templatePlantId`。
+
+替换/新增模式、图片所有权、支持矩阵和旧工程迁移规则见 [`../ANIMATION_REPLACE_AND_ADD_MODES.md`](../ANIMATION_REPLACE_AND_ADD_MODES.md)。
 
 ## `_ground` 如何表示原版移动速度
 
@@ -134,7 +137,7 @@ pvzmod/config/plants/custom_plants.jsonc # 新植物配置
 pvzmod/config/zombies/                    # 生成的新僵尸配置
 ```
 
-ZIP 中使用 `generated/<id>/*.fragment.jsonc`，便于人工审查后合并；“一键安装”按字符串资源 ID 更新贴图/动画数组，植物按逻辑 ID 更新卡片数组，僵尸按 `templateZombieId` 更新 `zombies/attributes.jsonc` 的稀疏对象，均保留文件其他注释和条目并生成首次备份。这是当前兼容流程，不再向其中加入 Lua、DLL、依赖或全局配置管理；后续由 `PvZModManager` 接管最终合并、安装和回滚。
+ZIP 中使用 `generated/<id>/*.fragment.jsonc`，每个实体片段都写明 `mode`，便于人工审查后按正确语义合并。“新增植物”按逻辑 ID 更新卡片数组；“替换原版僵尸”只按目标原版 ID 合并 `animationId`，不写生命、攻击、防具，也不生成伪新增僵尸文件。只有实际使用的 Mod 图片进入贴图/动画映射，原版图片保持原版引用。配置均保留其他字段、注释和条目并生成首次备份。这是当前兼容流程，不再向其中加入 Lua、DLL、依赖或全局配置管理；后续由 `PvZModManager` 接管最终合并、安装和回滚。
 
 安装前还会检查动画骨架与实体类型：出现 `Zombie_*`、`anim_bucket`、`anim_cone` 或 `anim_screendoor` 等明确僵尸轨道时不能选择植物；植物/僵尸不能复用已经由另一载体占用的字符串 ID。确认窗口里的修改进入同一次撤销历史，因此确认后仍可 `Ctrl+Z` 恢复。
 
@@ -152,7 +155,7 @@ ZIP 中使用 `generated/<id>/*.fragment.jsonc`，便于人工审查后合并；
 
 - 可以安全编辑、重打包和登记原创动画资源。
 - 自定义植物填写 `animationId` 后会替换模板的主体动画；“替换原版轨道”、事件和目标动作会完整写入工程及导出 JSONC，但当前发布 DLL 只执行 `initialAction`，尚未启用影响全游戏的动作拦截原型。选择植物或僵尸模板时编辑器会同步真实载体 Reanimation，打包/一键安装阶段还会按模板 ID 再次强制校正，避免错误载体写入存档。
-- 僵尸工程一键安装后会把 `bodyHealth`、`attackDamage` 和 `animationId` 写到 `zombies.<templateZombieId>`；DLL 在该类僵尸完成原版初始化后替换主体 Definition。`carrierReanimation` 必须与模板实际主体一致，动作轨道必须沿用原版 AI 请求的 `anim_*` 名称。当前仍是原版 ZombieType 的动画/属性覆盖，不会创建新的僵尸逻辑 ID 或 AI。
+- 僵尸“替换原版动画”一键安装只把 `animationId` 稀疏合并到 `zombies.<targetOriginalId>`；已有的 `bodyHealth`、`attackDamage`、防具和其他自定义字段全部保留。DLL 在该类僵尸完成原版初始化后替换主体 Definition。`carrierReanimation` 必须与目标实际主体一致，动作轨道必须沿用原版 AI 请求的 `anim_*` 名称。真正“新增实体”模式不会写入原版覆盖表，在新 ZombieType 运行时完成前拒绝一键安装。
 - 多头、独立眨眼和其他附属 Reanimation 当前仍由模板创建，尚不能驱动外部主体动作；制作完整新外观时应把可见部件合成进同一个 body Definition。多个真正独立外部附件 Definition 仍待后续运行时接入。
 - `FIRE_PROJECTILE`、`PLAY_ACTION` 可在编辑器中制作、校验和打包，但当前 DLL 不执行这些事件；它们等待安全的植物局部动作控制器，而不是通过全局 Reanimation Hook 强行接入。
 - 僵尸配置目前生成到独立文件，等待 `custom_zombie_runtime` 接入，避免假装已经能在游戏中生成真正新僵尸。

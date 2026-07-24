@@ -57,6 +57,7 @@ public partial class MainWindow : Window
         {
             _viewModel.Project.GameRoot = localGameRoot;
             _resources.RebuildIndex(localGameRoot);
+            _resources.MarkOriginalReferences(_viewModel.Project);
         }
         UpdatePlaybackInterval();
         UpdateToolButtons();
@@ -141,6 +142,14 @@ public partial class MainWindow : Window
         {
             _viewModel.Project.GameRoot = gameRoot;
             _resources.RebuildIndex(gameRoot);
+            var openedOriginalAnimation = IsOriginalGameAnimation(fileName, gameRoot);
+            _resources.MarkOriginalReferences(_viewModel.Project, openedOriginalAnimation);
+            if (openedOriginalAnimation)
+            {
+                _viewModel.ProjectIntegrationMode = EntityIntegrationMode.ReplaceOriginal;
+                if (PublishConfirmationService.LooksLikeZombieBody(_viewModel.Project))
+                    _viewModel.ProjectKind = EntityKind.Zombie;
+            }
         }
         _viewModel.Status = $"已读取 {Path.GetFileName(fileName)}：{document.Tracks.Count} 轨 / {document.FrameCount} 帧";
         Dispatcher.BeginInvoke(WorkspaceHost.FrameAllViews, DispatcherPriority.Loaded);
@@ -166,6 +175,7 @@ public partial class MainWindow : Window
         var project = _projectFiles.Load(fileName);
         _viewModel.ReplaceProject(project);
         _resources.RebuildIndex(project.GameRoot);
+        _resources.MarkOriginalReferences(_viewModel.Project);
         WorkspaceHost.ApplyLayout(project.WorkspaceLayout);
         SelectWorkspacePreset(WorkspacePreset.Custom);
         _viewModel.Status = $"已打开便携工程：{project.DisplayName}";
@@ -285,6 +295,7 @@ public partial class MainWindow : Window
         try
         {
             _viewModel.ProjectKind = draft.Kind;
+            _viewModel.ProjectIntegrationMode = draft.IntegrationMode;
             _viewModel.ProjectId = draft.Id;
             _viewModel.ProjectDisplayName = draft.DisplayName;
             _viewModel.ProjectDescription = draft.Description;
@@ -327,6 +338,7 @@ public partial class MainWindow : Window
         }
         _viewModel.ProjectGameRoot = dialog.FolderName;
         _resources.RebuildIndex(dialog.FolderName);
+        _resources.MarkOriginalReferences(_viewModel.Project);
         _viewModel.Status = $"已索引原版资源：{dialog.FolderName}";
         WorkspaceHost.FrameAllViews();
         return true;
@@ -529,6 +541,16 @@ public partial class MainWindow : Window
             directory = directory.Parent;
         }
         return null;
+    }
+
+    private static bool IsOriginalGameAnimation(string fileName, string gameRoot)
+    {
+        var animationPath = Path.GetFullPath(fileName);
+        var originalRoot = Path.GetFullPath(Path.Combine(gameRoot, "compiled", "reanim"));
+        return animationPath.StartsWith(
+            originalRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) +
+            Path.DirectorySeparatorChar,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     private static int FindRepresentativeFrame(AnimationDocument document)

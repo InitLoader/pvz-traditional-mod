@@ -8,6 +8,7 @@ namespace PvZAnimationStudio;
 public partial class PublishConfirmationDialog : Window
 {
     private sealed record KindChoice(EntityKind Kind, string Name);
+    private sealed record ModeChoice(EntityIntegrationMode Mode, string Name);
 
     private readonly EditorProject _project;
     private readonly PublishOperation _operation;
@@ -36,6 +37,13 @@ public partial class PublishConfirmationDialog : Window
         };
         KindCombo.SelectedItem = ((IEnumerable<KindChoice>)KindCombo.ItemsSource)
             .First(choice => choice.Kind == project.Kind);
+        ModeCombo.ItemsSource = new[]
+        {
+            new ModeChoice(EntityIntegrationMode.ReplaceOriginal, "替换原版动画"),
+            new ModeChoice(EntityIntegrationMode.AddEntity, "新增实体")
+        };
+        ModeCombo.SelectedItem = ((IEnumerable<ModeChoice>)ModeCombo.ItemsSource)
+            .First(choice => choice.Mode == project.IntegrationMode);
         IdBox.Text = project.Id;
         NameBox.Text = project.DisplayName;
         DescriptionBox.Text = project.Description;
@@ -56,6 +64,8 @@ public partial class PublishConfirmationDialog : Window
     }
 
     private EntityKind SelectedKind => (KindCombo.SelectedItem as KindChoice)?.Kind ?? _project.Kind;
+    private EntityIntegrationMode SelectedMode =>
+        (ModeCombo.SelectedItem as ModeChoice)?.Mode ?? _project.IntegrationMode;
 
     private void Field_Changed(object sender, RoutedEventArgs eventArgs)
     {
@@ -68,7 +78,20 @@ public partial class PublishConfirmationDialog : Window
         var templateId = int.TryParse(TemplateIdBox.Text, out var parsed) ? parsed : -1;
         TemplateSummaryText.Text = _confirmation.DescribeTemplate(SelectedKind, templateId);
         CarrierText.Text = "载体：" + _confirmation.ResolveCarrier(SelectedKind, templateId, _project.CarrierReanimation);
-        PlantFields.Visibility = SelectedKind == EntityKind.Plant ? Visibility.Visible : Visibility.Collapsed;
+        var addsEntity = SelectedMode == EntityIntegrationMode.AddEntity;
+        ModeDescriptionText.Text = addsEntity
+            ? "新增实体会生成实体资产骨架。植物当前仍是模板兼容路径；真正新增僵尸只能打包，不能一键安装。"
+            : "替换模式只绑定所选原版实体的主体动画，不创建新增实体配置，也不会复制可复用的原版图片。当前一键安装只支持僵尸替换。";
+        NumericIdLabel.Visibility = addsEntity ? Visibility.Visible : Visibility.Collapsed;
+        NumericIdBox.Visibility = addsEntity ? Visibility.Visible : Visibility.Collapsed;
+        TemplateIdLabel.Text = addsEntity ? "模板 ID *" : "目标原版 ID *";
+        CommonCombatFields.Visibility = addsEntity ? Visibility.Visible : Visibility.Collapsed;
+        PlantFields.Visibility = addsEntity && SelectedKind == EntityKind.Plant
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        AcknowledgeBox.Content = addsEntity
+            ? "我已核对新增实体类型、ID、模板和数值"
+            : "我已核对替换目标、动画 ID 和原版模板";
 
         if (PublishConfirmationService.LooksLikeZombieBody(_project) && SelectedKind != EntityKind.Zombie)
         {
@@ -96,6 +119,7 @@ public partial class PublishConfirmationDialog : Window
         var shots = ParseInt(ShotsBox, "每次发射数", parseErrors);
         var draft = new PublishProjectDraft(
             SelectedKind,
+            SelectedMode,
             IdBox.Text.Trim(),
             NameBox.Text.Trim(),
             DescriptionBox.Text.Trim(),

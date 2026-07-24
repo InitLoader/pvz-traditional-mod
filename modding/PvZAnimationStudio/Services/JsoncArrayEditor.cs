@@ -74,6 +74,34 @@ public sealed class JsoncArrayEditor
         File.WriteAllText(path, text[..end] + insertion + text[end..], new UTF8Encoding(false));
     }
 
+    public void MergeObjectProperty(string path, string objectProperty, string key, JsonObject patch)
+    {
+        if (!File.Exists(path))
+        {
+            UpsertObjectProperty(path, objectProperty, key, (JsonObject)patch.DeepClone());
+            return;
+        }
+
+        var text = File.ReadAllText(path);
+        var (start, end) = FindObject(text, objectProperty);
+        var property = FindTopLevelObjectProperties(text, start + 1, end)
+            .FirstOrDefault(item => string.Equals(item.Key, key, StringComparison.Ordinal));
+        var merged = new JsonObject();
+        if (property != default)
+        {
+            var colon = text.IndexOf(':', property.Start, property.End - property.Start);
+            if (colon >= 0)
+            {
+                merged = JsonNode.Parse(
+                    text[(colon + 1)..property.End], documentOptions: ReadOptions) as JsonObject
+                    ?? new JsonObject();
+            }
+        }
+        foreach (var (field, value) in patch)
+            merged[field] = value?.DeepClone();
+        UpsertObjectProperty(path, objectProperty, key, merged);
+    }
+
     private static (int Start, int End) FindArray(string text, string property)
     {
         var index = 0;
