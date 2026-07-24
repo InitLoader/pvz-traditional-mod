@@ -23,6 +23,8 @@
 
 当前不安装全局 `ReanimationInitializeType` Detour，也不把自定义 Definition 写入原版固定数组。运行时在实体完成原版初始化后，只替换已有 body Holder 的 Definition 和 TrackInstance；构建、贴图加载、载体不匹配或存档消歧失败时保留原模板动画。模板创建的附属头部、独立眨眼和其他 Reanimation 仍使用模板资源；如果一个新角色需要完整多部件外观，应先在制作器中合成为一个外部 body Definition。该功能是“原版僵尸类型的主体动画覆盖”，还不是真正新增独立 ZombieType、AI 或动作状态机。
 
+僵尸主体替换还必须保留原版已经对 TrackInstance 做完的分层结果。运行时在释放旧 Definition 前按轨道名记录 `renderGroup`、`ignoreClipRect` 和 `truncateDisappearingFrames`，新 Definition 初始化后恢复同名轨道。因此 compiled 里可以继续保留全部原版可选防具轨道，游戏中只有该实例实际拥有的路障、铁桶、铁门等会显示，而不是在外部动画里手工删轨道。
+
 ## 2. 原版动画模型
 
 PvZ 的 Reanimation 是分层变换动画，不是 GIF：

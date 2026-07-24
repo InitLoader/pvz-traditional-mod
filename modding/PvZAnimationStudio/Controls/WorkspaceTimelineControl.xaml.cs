@@ -36,5 +36,7 @@ public partial class WorkspaceTimelineControl : UserControl
     private void CopyKeys_Click(object sender, RoutedEventArgs eventArgs) => Timeline.CopySelectedKeyframes();
     private void CopyTrackKeys_Click(object sender, RoutedEventArgs eventArgs) => Timeline.CopyCurrentTrackKeyframes();
     private void PasteKeys_Click(object sender, RoutedEventArgs eventArgs) => Timeline.PasteCopiedKeyframes();
+    private void CopyWholeTrack_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.CopySelectedWholeTrack();
+    private void PasteWholeTrack_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.PasteWholeTrackAsNew();
     private void FullTimeline_Click(object sender, RoutedEventArgs eventArgs) => _viewModel?.ClearActionView();
 }

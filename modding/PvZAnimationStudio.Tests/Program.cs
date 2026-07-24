@@ -585,6 +585,47 @@ try
            copyPasteEditor.IsMeaningfulKey(copyTargetTrack, 16),
         "粘贴关键帧没有作为一次操作恢复");
 
+    var wholeTrackImagePath = Path.Combine(root, "whole-track.png");
+    File.WriteAllBytes(wholeTrackImagePath, [0x50, 0x4E, 0x47]);
+    var wholeTrackEditor = new EditorViewModel(new ActionCatalogService());
+    var wholeTrackSource = wholeTrackEditor.SelectedTrack!;
+    wholeTrackSource.Name = "Zombie_body_custom";
+    wholeTrackSource.Frames[0].Image = "IMAGE_REANIM_WHOLE_TRACK";
+    wholeTrackEditor.Project.ImageBindings["IMAGE_REANIM_WHOLE_TRACK"] = wholeTrackImagePath;
+    wholeTrackEditor.Project.ImageLayouts["IMAGE_REANIM_WHOLE_TRACK"] =
+        new ImageLayoutDefinition { Columns = 2, Rows = 3 };
+    wholeTrackEditor.CurrentFrame = 0;
+    wholeTrackEditor.CurrentX = 5;
+    wholeTrackEditor.CurrentFrame = 10;
+    wholeTrackEditor.CurrentX = 55;
+    Assert(wholeTrackEditor.CopySelectedWholeTrack(), "完整轨道没有复制到跨动画剪贴板");
+    var duplicatedWholeTrack = wholeTrackEditor.PasteWholeTrackAsNew();
+    Assert(duplicatedWholeTrack is not null && duplicatedWholeTrack.Name == "Zombie_body_custom_2",
+        "同一动画粘贴完整轨道没有创建第二条唯一命名的轨道");
+    var duplicatedSymbol = duplicatedWholeTrack!.Frames[0].Image;
+    Assert(duplicatedSymbol == "IMAGE_REANIM_WHOLE_TRACK_COPY" &&
+           wholeTrackEditor.Project.ImageBindings.TryGetValue(duplicatedSymbol, out var duplicateImagePath) &&
+           duplicateImagePath == wholeTrackImagePath,
+        "完整轨道粘贴没有创建独立图片符号和绑定");
+    Assert(wholeTrackEditor.Project.ImageLayouts.TryGetValue(duplicatedSymbol!, out var duplicateLayout) &&
+           duplicateLayout.Columns == 2 && duplicateLayout.Rows == 3,
+        "完整轨道粘贴没有保留图片精灵表布局");
+    Assert(wholeTrackEditor.Project.Curves.Any(curve => curve.TrackId == duplicatedWholeTrack.EditorId &&
+                                                       curve.Channel == CurveChannel.X),
+        "完整轨道粘贴没有复制曲线关键帧");
+    wholeTrackEditor.ToggleTrackEditorVisibility(duplicatedWholeTrack);
+    Assert(!duplicatedWholeTrack.IsVisibleInEditor, "轨道眼睛没有隐藏编辑器图层");
+    wholeTrackEditor.Undo();
+    Assert(wholeTrackEditor.Project.Animation.FindTrack("Zombie_body_custom_2")!.IsVisibleInEditor,
+        "轨道眼睛状态没有进入撤销历史");
+
+    var crossAnimationEditor = new EditorViewModel(new ActionCatalogService());
+    var crossAnimationTrack = crossAnimationEditor.PasteWholeTrackAsNew();
+    Assert(crossAnimationTrack is not null &&
+           crossAnimationTrack.Frames[0].Image == "IMAGE_REANIM_WHOLE_TRACK_COPY" &&
+           crossAnimationEditor.Project.ImageBindings.ContainsKey("IMAGE_REANIM_WHOLE_TRACK_COPY"),
+        "打开另一动画后没有携带整轨和图片资源完成跨动画粘贴");
+
     var crossingTimelineEditor = new EditorViewModel(new ActionCatalogService());
     crossingTimelineEditor.CurrentFrame = 5;
     crossingTimelineEditor.CurrentX = 10;
@@ -739,8 +780,8 @@ try
     Assert(!entityPreview.IsTrackVisible(zombiePreviewProject, bucketTrack, null),
         "普通僵尸实体预览必须隐藏铁桶等可选装备轨道");
     Assert(entityPreview.IsTrackVisible(zombiePreviewProject, bucketTrack,
-            new ActionDefinition { Track = "anim_idle" }),
-        "动作编辑视图必须允许检查被实体配置隐藏的装备轨道");
+            new ActionDefinition { Track = "anim_idle" }, bucketTrack),
+        "动作编辑视图选择装备轨道后必须允许单独检查该装备");
 
     var jsoncPath = Path.Combine(root, "sample.jsonc");
     File.WriteAllText(jsoncPath, "{\n  // 保留这条注释\n  \"textures\": []\n}\n");

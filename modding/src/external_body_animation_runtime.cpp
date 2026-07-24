@@ -4,6 +4,7 @@
 #include "hook_utils.h"
 #include "logger.h"
 #include "reanimation_carrier_catalog.h"
+#include "reanimation_track_instance_state.h"
 
 #include <cstdint>
 #include <limits>
@@ -258,8 +259,11 @@ bool ApplyExternalBodyAnimation(
         return false;
     }
 
+    const ReanimationTrackInstanceStateMap previousTrackState =
+        CaptureReanimationTrackInstanceState(body);
     DestroyReanimationContents(body);
     InitializeReanimation(body, runtimeDefinition);
+    RestoreReanimationTrackInstanceState(body, previousTrackState);
     SetFramesForLayer(body, initialAction->track.c_str());
     Field<float>(body, kReanimationRateOffset) = static_cast<float>(initialAction->rate);
     Field<int>(body, kReanimationLoopTypeOffset) = ToGameLoopType(initialAction->loop);

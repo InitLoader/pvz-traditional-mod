@@ -82,8 +82,9 @@ public sealed class AnimationPreviewControl : FrameworkElement
         {
             foreach (var track in _viewModel.Project.Animation.Tracks)
             {
-                if (track.IsActionTrack || !track.HasRenderableContent ||
-                    !_entityProfiles.IsTrackVisible(_viewModel.Project, track, _viewModel.SelectedAction)) continue;
+                if (!track.IsVisibleInEditor || track.IsActionTrack || !track.HasRenderableContent ||
+                    !_entityProfiles.IsTrackVisible(
+                        _viewModel.Project, track, _viewModel.SelectedAction, _viewModel.SelectedTrack)) continue;
                 var frame = track.ResolveFrame(previewFrame.Frame);
                 if (frame.Frame < 0 || frame.Alpha <= 0 || string.IsNullOrWhiteSpace(frame.Image)) continue;
                 var image = _resources.ResolveImage(_viewModel.Project, frame.Image);
@@ -142,8 +143,9 @@ public sealed class AnimationPreviewControl : FrameworkElement
         if (_viewModel is null || _resources is null) return;
         foreach (var track in _viewModel.Project.Animation.Tracks)
         {
-            if (track.IsActionTrack || track.Frames.Count == 0 ||
-                !_entityProfiles.IsTrackVisible(_viewModel.Project, track, _viewModel.SelectedAction)) continue;
+            if (!track.IsVisibleInEditor || track.IsActionTrack || track.Frames.Count == 0 ||
+                !_entityProfiles.IsTrackVisible(
+                    _viewModel.Project, track, _viewModel.SelectedAction, _viewModel.SelectedTrack)) continue;
             var frame = track.ResolveFrame(previewFrame.Frame);
             if (frame.Frame < 0 || frame.Alpha <= 0 || string.IsNullOrWhiteSpace(frame.Image)) continue;
             var image = _resources.ResolveImage(_viewModel.Project, frame.Image);

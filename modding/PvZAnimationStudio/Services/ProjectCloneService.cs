@@ -48,7 +48,12 @@ public sealed class ProjectCloneService
         var result = new AnimationDocument { Fps = source.Fps, DoScale = source.DoScale };
         foreach (var sourceTrack in source.Tracks)
         {
-            var track = new AnimationTrack { Name = sourceTrack.Name, EditorId = sourceTrack.EditorId };
+            var track = new AnimationTrack
+            {
+                Name = sourceTrack.Name,
+                EditorId = sourceTrack.EditorId,
+                IsVisibleInEditor = sourceTrack.IsVisibleInEditor
+            };
             foreach (var frame in sourceTrack.Frames) track.Frames.Add(frame.Clone());
             result.Tracks.Add(track);
         }

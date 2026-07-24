@@ -7,6 +7,7 @@
 #include "plant_attack_config.h"
 #include "raw_reanim.h"
 #include "reanimation_carrier_catalog.h"
+#include "reanimation_track_instance_state.h"
 #include "reanim_loader.h"
 #include "runtime_reanim_definition.h"
 #include "seed_ui_config.h"
@@ -1016,6 +1017,42 @@ void TestReanimationCarrierCatalog() {
            "unsupported template IDs must not silently select a carrier");
 }
 
+void TestReanimationTrackInstanceStateTransfer() {
+    struct FakeDefinition {
+        pvzmod::RuntimeReanimatorTrack* tracks;
+        int trackCount;
+        float fps;
+        void* atlas;
+    };
+    std::array<pvzmod::RuntimeReanimatorTrack, 2> tracks = {{
+        {"anim_bucket", nullptr, 0},
+        {"Zombie_body", nullptr, 0}
+    }};
+    FakeDefinition definition{tracks.data(), static_cast<int>(tracks.size()), 12.0f, nullptr};
+    alignas(8) std::array<std::byte, 0x60 * 2> instances{};
+    alignas(8) std::array<std::byte, 0x60> reanimation{};
+    *reinterpret_cast<void**>(reanimation.data() + 0x0C) = &definition;
+    *reinterpret_cast<void**>(reanimation.data() + 0x58) = instances.data();
+    *reinterpret_cast<int*>(instances.data() + 0x48) = -1;
+    *reinterpret_cast<bool*>(instances.data() + 0x5C) = true;
+    *reinterpret_cast<bool*>(instances.data() + 0x5D) = false;
+    *reinterpret_cast<int*>(instances.data() + 0x60 + 0x48) = 3;
+
+    const auto captured = pvzmod::CaptureReanimationTrackInstanceState(reanimation.data());
+    *reinterpret_cast<int*>(instances.data() + 0x48) = 0;
+    *reinterpret_cast<bool*>(instances.data() + 0x5C) = false;
+    *reinterpret_cast<bool*>(instances.data() + 0x5D) = true;
+    *reinterpret_cast<int*>(instances.data() + 0x60 + 0x48) = 0;
+    pvzmod::RestoreReanimationTrackInstanceState(reanimation.data(), captured);
+
+    Expect(*reinterpret_cast<int*>(instances.data() + 0x48) == -1 &&
+           *reinterpret_cast<bool*>(instances.data() + 0x5C) &&
+           !*reinterpret_cast<bool*>(instances.data() + 0x5D),
+           "body replacement should preserve hidden equipment and per-track clipping state");
+    Expect(*reinterpret_cast<int*>(instances.data() + 0x60 + 0x48) == 3,
+           "body replacement should preserve original shield draw order");
+}
+
 }  // namespace
 
 int main() {
@@ -1048,6 +1085,7 @@ int main() {
     TestRepositoryExternalAnimationExample();
     TestEliteZombieConfigAndPriority();
     TestReanimationCarrierCatalog();
+    TestReanimationTrackInstanceStateTransfer();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " test(s) failed.\n";

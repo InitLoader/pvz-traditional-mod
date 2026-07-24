@@ -47,6 +47,8 @@ ExtensionHub
 
 时间轴关键帧剪贴板属于 `EditorViewModel` 会话状态，不进入 `.pvza`，使多个时间轴区域共享同一份复制内容。复制入口只接受单一源轨道，并以最早选中帧为相对零点；每个条目保存离散 `i/font/text` 和真正的曲线关键点、插值及手柄。存在曲线时禁止把逐帧烘焙样本误当成关键点；没有曲线元数据的旧 Reanimation 显式值才升级为关键点。粘贴先无烘焙移除目标帧的旧曲线点，再写入复制点、统一烘焙目标轨道并恢复离散字符串；整次操作只记录一次撤销。动作标记轨道和视觉轨道类型必须一致，动作局部视图中超出动作尾部的粘贴必须拒绝并提示先插帧。
 
+完整轨道剪贴板与关键帧剪贴板分离，并作为进程级会话状态供多窗口、多动画共享。它深拷贝全部 Transform、曲线/手柄、图片绑定和子帧布局；粘贴始终创建新 `EditorId`、唯一轨道名和唯一图片符号，禁止新旧轨道共用后续可变曲线或图片定义。`IsVisibleInEditor` 是 `.pvza` 编辑元数据，只影响预览和时间轴，Raw/compiled 编解码器必须忽略它，因此眼睛隐藏不会意外删除游戏图层。
+
 编辑器输出必须经过独立运行时管线才能进入游戏。它不能绕过 `custom_reanim_definition`、`animation_instance_hook`、动作事件总线或自定义实体侧挂状态，也不能因 UI 中存在“新僵尸”表单就宣称游戏端已经支持新僵尸。
 
 ## 0.10.1 原版 compiled 资源读取
@@ -60,6 +62,8 @@ ExtensionHub
 `0.10.4-dev` 不安装全局 `ReanimationInitializeType` Detour，也不扩大原版 `ReanimationType` 数组。`runtime_reanim_definition` 把已校验的 Raw/compiled 数据转换为 1.0.0.1051 的 16/12/44 字节 Definition/Track/Transform；`external_body_animation_runtime` 独占精确版本 ABI、Holder 内重建和存档 Definition 恢复，植物和僵尸模块只负责各自的配置与生命周期事件。所有贴图和 Definition 在破坏旧 body 前准备完成。运行时以 `templatePlantId`/原版僵尸 ID 对应的真实 `mReanimationType` 为存档载体并在实体创建时复核；JSON 中的 `carrierReanimation` 不一致时记录警告但采用真实模板载体，从而兼容旧工程和旧存档。
 
 `custom_plant_animation_runtime` 在自定义植物首次更新时注入，`custom_zombie_animation_runtime` 以事件总线高优先级监听统一的 Zombie 初始化完成事件并按 `zombies.<id>.animationId` 稀疏注入；精英监听随后在最终 Definition 上绑定 tint 和轨道贴图。高优先级只改变 C++ 监听顺序，不改变已经实机稳定的原生 Hook 安装顺序。读取原版关卡存档时，兼容桥使用已经随 Reanimation 原始结构保存的 `mReanimationType` 选择持久 Definition，因此不同载体可同时存在；同一载体的两个外部 Definition 无法消歧，会拒绝第二个。`initialAction` 已运行，`replaces` 和动作事件仍只是配置/制作器元数据；运行时不安装覆盖全游戏的动作 Hook，后续必须从已确认的植物或僵尸局部调用点接入。完整格式和边界见 `EXTERNAL_ANIMATION_AND_CUSTOM_ENTITIES.md`。
+
+替换已存在的 body Holder 时不能只重建 Definition：`Zombie::SetupReanimLayers` 已在旧 TrackInstance 上写入路障、铁桶、铁门、旗帜、泳圈等的实例级 `mRenderGroup`。`external_body_animation_runtime` 在 `Destroy` 之前按大小写无关的轨道名快照 render group、clip 和 truncate 状态，`Initialize` 之后再恢复；未命中的新轨道使用初始默认值。这使装备选择仍归原版僵尸逻辑所有，不在 Mod 中硬编码某种防具的显示规则。
 
 ## 0.9.0 精英与通用外部贴图边界
 

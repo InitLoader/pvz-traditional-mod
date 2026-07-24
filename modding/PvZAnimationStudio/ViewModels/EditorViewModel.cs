@@ -18,12 +18,24 @@ public sealed class EditorViewModel : ObservableObject
     private sealed record TimelineKeyClipboard(
         bool IsActionTrack, IReadOnlyList<CopiedTimelineKey> Keys);
 
+    private sealed record CopiedTrackImage(
+        string Symbol, string? SourcePath, int Columns, int Rows);
+
+    private sealed record WholeTrackClipboard(
+        string Name,
+        IReadOnlyList<AnimationFrame> Frames,
+        IReadOnlyList<AnimationCurveDefinition> Curves,
+        IReadOnlyList<CopiedTrackImage> Images);
+
+    private static WholeTrackClipboard? s_wholeTrackClipboard;
+
     private readonly ActionCatalogService _actionCatalog;
     private readonly TweenService _tweenService = new();
     private readonly ActionViewService _actionView = new();
     private readonly ProjectCloneService _cloneService = new();
     private readonly EditHistoryService _history = new();
     private readonly AnimationCurveService _curveService = new();
+    private readonly OriginalResourceService _resources;
     private EditorProject _project;
     private AnimationTrack? _selectedTrack;
     private ActionDefinition? _selectedAction;
@@ -35,14 +47,16 @@ public sealed class EditorViewModel : ObservableObject
     private bool _editTransactionActive;
     private TimelineKeyClipboard? _timelineKeyClipboard;
 
-    public EditorViewModel(ActionCatalogService actionCatalog)
+    public EditorViewModel(ActionCatalogService actionCatalog, OriginalResourceService? resources = null)
     {
         _actionCatalog = actionCatalog;
+        _resources = resources ?? new OriginalResourceService();
         _project = CreateDefaultProject(EntityKind.Plant);
         _selectedTrack = _project.Animation.Tracks.FirstOrDefault(track => !track.IsActionTrack);
     }
 
     public event EventHandler? VisualStateChanged;
+    public event EventHandler? ImageBindingsChanged;
 
     public EditorProject Project
     {
@@ -461,6 +475,129 @@ public sealed class EditorViewModel : ObservableObject
         RaisePropertyChanged(nameof(Tracks));
         RaiseTimelineProperties();
         NotifyVisualChanged();
+    }
+
+    public void SetTrackEditorVisibility(AnimationTrack track, bool visible)
+    {
+        if (!Project.Animation.Tracks.Contains(track) || track.IsVisibleInEditor == visible) return;
+        RecordUndo(visible ? "显示轨道" : "隐藏轨道");
+        track.IsVisibleInEditor = visible;
+        Status = visible ? $"已显示轨道 {track.Name}" : $"已在编辑器中隐藏轨道 {track.Name}";
+        NotifyVisualChanged();
+    }
+
+    public void ToggleTrackEditorVisibility(AnimationTrack track) =>
+        SetTrackEditorVisibility(track, !track.IsVisibleInEditor);
+
+    public bool CopySelectedWholeTrack()
+    {
+        if (SelectedTrack is null)
+        {
+            Status = "请先选择要复制的轨道。";
+            return false;
+        }
+
+        var symbols = SelectedTrack.Frames
+            .Select(frame => frame.Image)
+            .Where(symbol => !string.IsNullOrWhiteSpace(symbol))
+            .Select(symbol => symbol!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var images = new List<CopiedTrackImage>(symbols.Length);
+        foreach (var symbol in symbols)
+        {
+            var layout = Project.ImageLayouts.TryGetValue(symbol, out var configured)
+                ? configured
+                : null;
+            var resolved = layout is null ? _resources.ResolveImage(Project, symbol) : null;
+            images.Add(new CopiedTrackImage(
+                symbol,
+                _resources.ResolvePath(Project, symbol),
+                Math.Max(1, layout?.Columns ?? resolved?.SafeColumns ?? 1),
+                Math.Max(1, layout?.Rows ?? resolved?.SafeRows ?? 1)));
+        }
+        var curves = Project.Curves
+            .Where(curve => curve.TrackId == SelectedTrack.EditorId)
+            .Select(curve => curve.Clone())
+            .ToArray();
+        s_wholeTrackClipboard = new WholeTrackClipboard(
+            SelectedTrack.Name,
+            SelectedTrack.Frames.Select(frame => frame.Clone()).ToArray(),
+            curves,
+            images);
+        Status = $"已复制完整轨道 {SelectedTrack.Name}，包含 {images.Count} 个图片资源；可打开另一动画后粘贴。";
+        return true;
+    }
+
+    public AnimationTrack? PasteWholeTrackAsNew()
+    {
+        var clipboard = s_wholeTrackClipboard;
+        if (clipboard is null)
+        {
+            Status = "还没有复制完整轨道。";
+            return null;
+        }
+        if (clipboard.Frames.Count == 0 || clipboard.Frames.Count > 20000)
+        {
+            Status = "复制的轨道帧数无效。";
+            return null;
+        }
+
+        RecordUndo("粘贴完整轨道");
+        var imageSymbols = Project.ImageBindings.Keys
+            .Concat(Project.Animation.Tracks.SelectMany(track => track.Frames)
+                .Select(frame => frame.Image)
+                .Where(symbol => !string.IsNullOrWhiteSpace(symbol))
+                .Select(symbol => symbol!))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var imageMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var image in clipboard.Images)
+        {
+            var baseSymbol = image.Symbol + "_COPY";
+            var targetSymbol = baseSymbol;
+            var suffix = 2;
+            while (!imageSymbols.Add(targetSymbol)) targetSymbol = $"{baseSymbol}_{suffix++}";
+            imageMap[image.Symbol] = targetSymbol;
+            if (!string.IsNullOrWhiteSpace(image.SourcePath) && File.Exists(image.SourcePath))
+                Project.ImageBindings[targetSymbol] = image.SourcePath;
+            Project.ImageLayouts[targetSymbol] = new ImageLayoutDefinition
+            {
+                Columns = Math.Max(1, image.Columns),
+                Rows = Math.Max(1, image.Rows)
+            };
+        }
+
+        var name = clipboard.Name;
+        var baseName = name;
+        var nameSuffix = 2;
+        while (Project.Animation.FindTrack(name) is not null) name = $"{baseName}_{nameSuffix++}";
+        var track = new AnimationTrack { Name = name, IsVisibleInEditor = true };
+        foreach (var sourceFrame in clipboard.Frames)
+        {
+            var frame = sourceFrame.Clone();
+            if (frame.Image is not null && imageMap.TryGetValue(frame.Image, out var mapped))
+                frame.Image = mapped;
+            track.Frames.Add(frame);
+        }
+        var targetFrameCount = Math.Max(Project.Animation.FrameCount, track.Frames.Count);
+        if (targetFrameCount > Project.Animation.FrameCount)
+            Project.Animation.EnsureUniformFrameCount(targetFrameCount);
+        track.EnsureFrameCount(Math.Max(1, targetFrameCount));
+        Project.Animation.Tracks.Add(track);
+        foreach (var sourceCurve in clipboard.Curves)
+        {
+            var curve = sourceCurve.Clone();
+            curve.TrackId = track.EditorId;
+            Project.Curves.Add(curve);
+        }
+        SelectedTrack = track;
+        RaisePropertyChanged(nameof(Tracks));
+        RaiseTimelineProperties();
+        RaiseFrameProperties();
+        ImageBindingsChanged?.Invoke(this, EventArgs.Empty);
+        NotifyVisualChanged();
+        Status = $"已粘贴为新轨道 {track.Name}；轨道、曲线和 {imageMap.Count} 个独立图片绑定均已复制。";
+        return track;
     }
 
     public void SetKeyframe()

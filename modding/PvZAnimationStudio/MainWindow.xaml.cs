@@ -29,12 +29,13 @@ public partial class MainWindow : Window
         InitializeComponent();
         _projectFiles = new ProjectFileService(_resources);
         _packages = new ProjectPackageService(_codec, new JsoncArrayEditor());
-        _viewModel = new EditorViewModel(_actionCatalog);
+        _viewModel = new EditorViewModel(_actionCatalog, _resources);
         DataContext = _viewModel;
         WorkspaceHost.Bind(_viewModel, _resources);
         WorkspaceHost.ApplyLayout(_viewModel.Project.WorkspaceLayout);
         WorkspaceHost.ImportImagesRequested += (_, _) => ImportImages();
         WorkspaceHost.ChooseGameRootRequested += (_, _) => ChooseGameRoot();
+        _viewModel.ImageBindingsChanged += (_, _) => WorkspaceHost.RefreshImageBindings();
         WorkspaceHost.LayoutChanged += (_, _) =>
         {
             _viewModel.Project.WorkspaceLayout = WorkspaceHost.ExportLayout();
@@ -322,6 +323,8 @@ public partial class MainWindow : Window
     private void CopyCurrentKey_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.CopyTimelineKeys([]);
     private void CopyTrackKeys_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.CopyCurrentTrackKeyframes();
     private void PasteKeys_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.PasteTimelineKeys();
+    private void CopyWholeTrack_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.CopySelectedWholeTrack();
+    private void PasteWholeTrack_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.PasteWholeTrackAsNew();
     private void LinearTween_Click(object sender, RoutedEventArgs eventArgs) => RunGuarded(() => _viewModel.CreateTween(TweenCurve.Linear));
     private void SmoothTween_Click(object sender, RoutedEventArgs eventArgs) => RunGuarded(() => _viewModel.CreateTween(TweenCurve.SmoothStep));
     private void InsertFrame_Click(object sender, RoutedEventArgs eventArgs) => _viewModel.InsertFrame();
@@ -360,6 +363,12 @@ public partial class MainWindow : Window
         { _viewModel.Undo(); eventArgs.Handled = true; }
         else if (eventArgs.Key == Key.Y && modifiers.HasFlag(ModifierKeys.Control))
         { _viewModel.Redo(); eventArgs.Handled = true; }
+        else if (eventArgs.Key == Key.C && modifiers.HasFlag(ModifierKeys.Control) &&
+                 modifiers.HasFlag(ModifierKeys.Shift))
+        { _viewModel.CopySelectedWholeTrack(); eventArgs.Handled = true; }
+        else if (eventArgs.Key == Key.V && modifiers.HasFlag(ModifierKeys.Control) &&
+                 modifiers.HasFlag(ModifierKeys.Shift))
+        { _viewModel.PasteWholeTrackAsNew(); eventArgs.Handled = true; }
         else if (eventArgs.Key == Key.S && modifiers.HasFlag(ModifierKeys.Control))
         { SaveProject_Click(sender, new RoutedEventArgs()); eventArgs.Handled = true; }
         else if (eventArgs.Key == Key.O && modifiers.HasFlag(ModifierKeys.Control))
@@ -543,7 +552,7 @@ public partial class MainWindow : Window
     private void Help_Click(object sender, RoutedEventArgs eventArgs)
     {
         MessageBox.Show(this,
-            "基本流程：\n1. 选择游戏目录。\n2. 打开任意目录中的 .reanim.compiled，或新建工程。\n3. 拖动区域分隔线调整大小；右上角 ↔/↕ 或斜纹拖拽可拆分区域，↗ 可打开独立窗口。\n4. 每个区域可切换动画视图、时间轴、曲线编辑器、资源或属性；右上角可选曲线动画工作区。\n5. 时间轴或曲线区的空白位置随时按住左键拖动即可框选，Ctrl/Shift 追加；可批量拖动，Delete/Backspace 批量删除。时间轴中 Ctrl+C 复制框选或当前关键帧，Ctrl+V 以当前帧为起点粘贴到当前轨道；“复制轨道”可复制当前动作范围内的整轨关键帧。跨过已有关键帧会交换顺序，不会合并吞帧。\n6. 两个关键帧之间插入空帧，或删除两端之间的中间关键帧，都会自动重算连续位移、旋转、缩放和透明度；动作标记的 f=0/-1 始终使用阶梯值，动作范围会和补间终点一起延长，播放不会提前结束或末帧瞬移。曲线区可拖关键点与 Bezier 手柄。\n7. Q 选择，W/E 切换移动/旋转操纵器；G/R/S 进入鼠标移动/中心旋转/缩放，左键确认，右键或 Esc 取消；K 设置关键帧。\n8. 保存为 .pvza 会把动画、曲线手柄、动作、属性、工作区和所有图片嵌入同一个文件。\n\n撤销/重做：Ctrl+Z / Ctrl+Y，最多保留最近 100 步。方向键微调部件，Shift+方向键加速。",
+            "基本流程：\n1. 选择游戏目录。\n2. 打开任意目录中的 .reanim.compiled，或新建工程。\n3. 拖动区域分隔线调整大小；右上角 ↔/↕ 或斜纹拖拽可拆分区域，↗ 可打开独立窗口。\n4. 每个区域可切换动画视图、时间轴、曲线编辑器、资源或属性；右上角可选曲线动画工作区。\n5. 时间轴或曲线区的空白位置随时按住左键拖动即可框选，Ctrl/Shift 追加；可批量拖动，Delete/Backspace 批量删除。时间轴中 Ctrl+C 复制框选或当前关键帧，Ctrl+V 以当前帧为起点粘贴到当前轨道；“复制轨道”可复制当前动作范围内的整轨关键帧。“复制整轨+图片”或 Ctrl+Shift+C 还会复制图片和曲线，切换动画后用 Ctrl+Shift+V 粘贴为独立新轨道。轨道左侧眼睛只隐藏编辑器图层，不影响导出。跨过已有关键帧会交换顺序，不会合并吞帧。\n6. 两个关键帧之间插入空帧，或删除两端之间的中间关键帧，都会自动重算连续位移、旋转、缩放和透明度；动作标记的 f=0/-1 始终使用阶梯值，动作范围会和补间终点一起延长，播放不会提前结束或末帧瞬移。曲线区可拖关键点与 Bezier 手柄。\n7. Q 选择，W/E 切换移动/旋转操纵器；G/R/S 进入鼠标移动/中心旋转/缩放，左键确认，右键或 Esc 取消；K 设置关键帧。\n8. 保存为 .pvza 会把动画、曲线手柄、动作、属性、工作区和所有图片嵌入同一个文件。\n\n撤销/重做：Ctrl+Z / Ctrl+Y，最多保留最近 100 步。方向键微调部件，Shift+方向键加速。",
             "制作流程", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 

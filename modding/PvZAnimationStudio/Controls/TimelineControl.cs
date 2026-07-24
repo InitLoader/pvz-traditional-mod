@@ -88,13 +88,14 @@ public sealed class TimelineControl : FrameworkElement
                     ? new SolidColorBrush(Color.FromRgb(48, 40, 62))
                     : new SolidColorBrush(row % 2 == 0 ? Color.FromRgb(30, 35, 42) : Color.FromRgb(27, 32, 39));
             context.DrawRectangle(background, null, new Rect(0, y, ActualWidth, RowHeight));
+            DrawVisibilityIcon(context, new Point(16, y + RowHeight / 2), track.IsVisibleInEditor);
             var label = new FormattedText(
                 track.IsActionTrack ? $"动作范围  {track.Name}" : track.Name,
                 CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
                 new Typeface("Microsoft YaHei UI"), 11,
                 track.IsActionTrack ? Brushes.Plum : Brushes.White, dpi)
-            { MaxTextWidth = HeaderWidth - 12, Trimming = TextTrimming.CharacterEllipsis };
-            context.DrawText(label, new Point(7, y + 5));
+            { MaxTextWidth = HeaderWidth - 40, Trimming = TextTrimming.CharacterEllipsis };
+            context.DrawText(label, new Point(33, y + 5));
             context.DrawLine(gridPen, new Point(0, y + RowHeight), new Point(ActualWidth, y + RowHeight));
 
             for (var absoluteFrame = rangeStart; absoluteFrame <= rangeEnd; absoluteFrame++)
@@ -141,6 +142,27 @@ public sealed class TimelineControl : FrameworkElement
         context.DrawGeometry(fill, null, geometry);
     }
 
+    private static void DrawVisibilityIcon(DrawingContext context, Point center, bool visible)
+    {
+        var color = visible ? Color.FromRgb(208, 220, 232) : Color.FromRgb(105, 115, 126);
+        var pen = new Pen(new SolidColorBrush(color), 1.4);
+        var geometry = new StreamGeometry();
+        using (var writer = geometry.Open())
+        {
+            writer.BeginFigure(new Point(center.X - 8, center.Y), false, false);
+            writer.BezierTo(new Point(center.X - 4, center.Y - 6), new Point(center.X + 4, center.Y - 6),
+                new Point(center.X + 8, center.Y), true, false);
+            writer.BezierTo(new Point(center.X + 4, center.Y + 6), new Point(center.X - 4, center.Y + 6),
+                new Point(center.X - 8, center.Y), true, false);
+        }
+        geometry.Freeze();
+        context.DrawGeometry(null, pen, geometry);
+        if (visible)
+            context.DrawEllipse(new SolidColorBrush(color), null, center, 2.5, 2.5);
+        else
+            context.DrawLine(pen, new Point(center.X - 7, center.Y + 7), new Point(center.X + 7, center.Y - 7));
+    }
+
     private void OnMouseDown(object sender, MouseButtonEventArgs eventArgs)
     {
         if (_viewModel is null) return;
@@ -150,6 +172,12 @@ public sealed class TimelineControl : FrameworkElement
         var row = (int)(point.Y / RowHeight);
         if (row < 0 || row >= tracks.Count) return;
         _viewModel.SelectedTrack = tracks[row];
+        if (eventArgs.ChangedButton == MouseButton.Left && point.X < 31)
+        {
+            _viewModel.ToggleTrackEditorVisibility(tracks[row]);
+            eventArgs.Handled = true;
+            return;
+        }
         if (point.X >= HeaderWidth)
         {
             var localFrame = (int)((point.X - HeaderWidth) / CellWidth);

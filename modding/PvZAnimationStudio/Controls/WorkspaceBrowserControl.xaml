@@ -8,7 +8,19 @@
           <Button Content="＋ 轨道" Click="AddTrack_Click" />
           <Button Content="－ 轨道" Click="RemoveTrack_Click" />
         </StackPanel>
-        <ListBox ItemsSource="{Binding Tracks}" SelectedItem="{Binding SelectedTrack, Mode=TwoWay}" DisplayMemberPath="Name" />
+        <ListBox ItemsSource="{Binding Tracks}" SelectedItem="{Binding SelectedTrack, Mode=TwoWay}">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <DockPanel LastChildFill="True">
+                <Button DockPanel.Dock="Left" Width="25" Height="22" Margin="0,0,5,0" Padding="0"
+                        Tag="{Binding}" Click="TrackVisibility_Click" ToolTip="仅在编辑器预览中显示或隐藏该轨道">
+                  <TextBlock Text="{Binding EditorVisibilityGlyph}" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+                </Button>
+                <TextBlock Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+              </DockPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
       </DockPanel>
     </TabItem>
     <TabItem Header="动作">

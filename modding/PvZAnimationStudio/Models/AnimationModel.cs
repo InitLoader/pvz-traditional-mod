@@ -172,6 +172,7 @@ public sealed class ResolvedAnimationFrame
 public sealed class AnimationTrack : ObservableObject
 {
     private string _name = "track";
+    private bool _isVisibleInEditor = true;
 
     public string EditorId { get; set; } = Guid.NewGuid().ToString("N");
 
@@ -182,6 +183,21 @@ public sealed class AnimationTrack : ObservableObject
     }
 
     public ObservableCollection<AnimationFrame> Frames { get; set; } = [];
+
+    // Preview-only state. Raw/compiled codecs export only Reanimation fields,
+    // so hiding a layer here never changes the in-game animation.
+    public bool IsVisibleInEditor
+    {
+        get => _isVisibleInEditor;
+        set
+        {
+            if (SetField(ref _isVisibleInEditor, value))
+                RaisePropertyChanged(nameof(EditorVisibilityGlyph));
+        }
+    }
+
+    [JsonIgnore]
+    public string EditorVisibilityGlyph => IsVisibleInEditor ? "\uE7B3" : "\uED1A";
 
     [JsonIgnore]
     public bool HasRenderableContent => Frames.Any(frame =>
